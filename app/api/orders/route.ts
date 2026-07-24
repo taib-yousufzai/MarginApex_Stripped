@@ -660,8 +660,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Merge script_settings overrides with instrument lot sizes from Zerodha CSV.
   // script_settings takes priority (admin overrides); instruments table is the dynamic source.
   const dbScriptSettings = [
+    ...(scriptSettingsResult?.data as any[] ?? []),  // script_settings wins on conflict (first entry wins in getLotSizeFallback)
     ...exactInstrumentLotSize,
-    ...(scriptSettingsResult?.data as any[] ?? []),  // script_settings wins on conflict (later entry wins in getLotSizeFallback)
   ];
   const blockedScript = blockedScriptsResult?.data;
   
