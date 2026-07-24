@@ -493,11 +493,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let kiteInst = kite_instrument || symbol;
   
-  if (kiteInst === 'NIFTY_INDEX' || kiteInst === 'NIFTY 50') kiteInst = 'NSE:NIFTY 50';
-  else if (kiteInst === 'BANKNIFTY_INDEX' || kiteInst === 'NIFTY BANK') kiteInst = 'NSE:NIFTY BANK';
-  else if (kiteInst === 'FINNIFTY_INDEX' || kiteInst === 'NIFTY FIN SERVICE') kiteInst = 'NSE:NIFTY FIN SERVICE';
-  else if (kiteInst === 'SENSEX_INDEX' || kiteInst === 'SENSEX') kiteInst = 'BSE:SENSEX';
-  else if (kiteInst === 'BANKEX_INDEX' || kiteInst === 'BANKEX') kiteInst = 'BSE:BANKEX';
+  if (!kiteInst.includes(':') && dbSegment !== 'CRYPTO') {
+    let prefix = 'NSE';
+    if (dbSegment.includes('OPT') || dbSegment.includes('FUT')) prefix = 'NFO';
+    const upper = kiteInst.toUpperCase();
+    if (upper.startsWith('SENSEX') || upper.startsWith('BANKEX')) prefix = 'BFO';
+    else if (['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => upper.startsWith(c))) prefix = 'MCX';
+    else if (['EURINR', 'USDINR', 'GBPINR', 'JPYINR'].some(c => upper.startsWith(c))) prefix = 'CDS';
+    kiteInst = `${prefix}:${kiteInst}`;
+  }
+  
+  if (kiteInst === 'NSE:NIFTY_INDEX' || kiteInst === 'NSE:NIFTY 50') kiteInst = 'NSE:NIFTY 50';
+  else if (kiteInst === 'NSE:BANKNIFTY_INDEX' || kiteInst === 'NSE:NIFTY BANK') kiteInst = 'NSE:NIFTY BANK';
+  else if (kiteInst === 'NSE:FINNIFTY_INDEX' || kiteInst === 'NSE:NIFTY FIN SERVICE') kiteInst = 'NSE:NIFTY FIN SERVICE';
+  else if (kiteInst === 'BFO:SENSEX_INDEX' || kiteInst === 'BFO:SENSEX' || kiteInst === 'BSE:SENSEX') kiteInst = 'BSE:SENSEX';
+  else if (kiteInst === 'BFO:BANKEX_INDEX' || kiteInst === 'BFO:BANKEX' || kiteInst === 'BSE:BANKEX') kiteInst = 'BSE:BANKEX';
 
   const instrumentsToFetch = [kiteInst];
   const isOption = dbSegment.includes('OPT');
