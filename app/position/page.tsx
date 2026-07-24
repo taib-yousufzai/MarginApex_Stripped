@@ -311,7 +311,12 @@ export default function PositionPage() {
       setIsFetchingPreview(true);
       setConvertPreviewBrokerage(null);
       try {
-        const res = await fetch(`/api/positions/${pos.id}/convert-preview?product_type=${newType}`);
+        const session = await getSession();
+        const res = await fetch(`/api/positions/${pos.id}/convert-preview?product_type=${newType}`, {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          }
+        });
         const data = await res.json();
         if (data.carryBrokerage !== undefined) {
           setConvertPreviewBrokerage(data.carryBrokerage);
@@ -1514,7 +1519,7 @@ export default function PositionPage() {
                 <div className="pos-modal-desc" style={{ color: 'var(--text-secondary)' }}>
                   {convertConfirmPos?.product_type === 'INTRADAY' ? (
                     <>
-                      Converting to CARRY will apply an overnight carry brokerage fee. This fee is deferred and will be charged when you exit the position.
+                      Converting to CARRY will immediately deduct a carry brokerage fee from your balance.
                     </>
                   ) : (
                     <>
