@@ -505,6 +505,24 @@ export async function GET(request: NextRequest) {
       return (a.tradingsymbol || '').localeCompare(b.tradingsymbol || '');
     });
 
+    // Filter out expired contracts by parsing the date from the symbol (e.g. CRUDEOIL26JUNFUT)
+    validRows = validRows.filter((r: any) => {
+      if (!r.expiry && r.tradingsymbol && r.tradingsymbol.includes('FUT')) {
+        const match = r.tradingsymbol.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/);
+        if (match) {
+          const year = parseInt(match[1], 10) + 2000;
+          const monthIndex = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'].indexOf(match[2]);
+          
+          // Set to the end of the month for a rough expiry check
+          const roughExpiry = new Date(year, monthIndex + 1, 0);
+          if (roughExpiry < new Date()) {
+            return false; // It's expired
+          }
+        }
+      }
+      return true;
+    });
+
     // We only need the top 50 matches for the UI to stay performant
     validRows = validRows.slice(0, 50);
 

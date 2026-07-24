@@ -146,7 +146,9 @@ export class Datafeed implements IBasicDataFeed {
     // no-op: symbol search is not supported in this datafeed
   }
 
-  // getServerTime removed to fix real-time countdown bug (fallback to local clock)
+  getServerTime(callback: (serverTime: number) => void): void {
+    callback(Math.floor(Date.now() / 1000));
+  }
 
   // ---------------------------------------------------------------------------
   // Public extension (called by ChartContainer)

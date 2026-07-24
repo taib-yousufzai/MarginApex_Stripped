@@ -701,8 +701,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // LTP from parallel fetch
   let kiteLtp = quotesMap[kiteInst] ?? null;
-  let kiteBid = quotesMap[`${kiteInst}_bid`] ?? kiteLtp;
-  let kiteAsk = quotesMap[`${kiteInst}_ask`] ?? kiteLtp;
+  let kiteBid = quotesMap[`${kiteInst}_bid`] || kiteLtp;
+  let kiteAsk = quotesMap[`${kiteInst}_ask`] || kiteLtp;
+
+  // Extra safety: if they are 0 for some reason despite the || fallback, force them to LTP
+  if (kiteBid <= 0) kiteBid = kiteLtp;
+  if (kiteAsk <= 0) kiteAsk = kiteLtp;
 
   if (!kiteLtp || kiteLtp <= 0) {
     if (client_price && client_price > 0) {

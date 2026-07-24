@@ -217,6 +217,7 @@ export default function ChartContainer({
     const lastPrice = liveQuote?.lastPrice ?? liveQuote?.last_price;
     if (loading || candles.length === 0) return;
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
+    
     datafeedRef.current?.updateLive(lastPrice, Date.now());
   }, [liveQuote]); // eslint-disable-line react-hooks/exhaustive-deps
 

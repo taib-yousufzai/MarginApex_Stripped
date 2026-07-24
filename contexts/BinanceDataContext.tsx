@@ -142,7 +142,7 @@ export const BinanceDataProvider = ({ children }: { children: React.ReactNode })
         setQuotes(prev => ({ ...prev, ...pending }));
         pendingUpdatesRef.current = {};
       }
-    }, 500); // 500ms for crypto to save renders
+    }, 100); // 100ms for ultra-fast crypto rendering
 
     const fetchInitialQuotes = async () => {
       if (wsManager.isConnected) return;

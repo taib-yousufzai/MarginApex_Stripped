@@ -11,6 +11,26 @@ export function deriveExchange(symbolName: string): string {
   if (symbolName.startsWith('MCX:')) return 'MCX';
   if (symbolName.startsWith('NFO:') || symbolName.startsWith('BFO:')) return 'NSE';
   if (symbolName.startsWith('CDS:')) return 'NSE';
+
+  // Guess exchange based on commodity/currency names if no prefix is provided
+  const upper = symbolName.toUpperCase();
+  if (
+    upper.startsWith('CRUDE') || upper.startsWith('GOLD') || 
+    upper.startsWith('SILVER') || upper.startsWith('NATURALGAS') || 
+    upper.startsWith('NATGAS') || upper.startsWith('COPPER') || 
+    upper.startsWith('ZINC') || upper.startsWith('ALUMINIUM') || 
+    upper.startsWith('LEAD')
+  ) {
+    return 'MCX';
+  }
+  
+  if (
+    upper.startsWith('EURINR') || upper.startsWith('USDINR') || 
+    upper.startsWith('GBPINR') || upper.startsWith('JPYINR')
+  ) {
+    return 'CDS';
+  }
+
   return 'NSE';
 }
 
@@ -55,9 +75,9 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
   const colonIdx = symbolName.indexOf(':');
   const rawName = colonIdx >= 0 ? symbolName.slice(colonIdx + 1) : symbolName;
   const name = formatShortName(rawName);
-  const ticker = symbolName;
-
+  
   const exchange = isCrypto ? 'BINANCE' : deriveExchange(symbolName);
+  const ticker = (isCrypto || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
   
   let session = '0915-1530';
   if (isCrypto) session = '24x7';
