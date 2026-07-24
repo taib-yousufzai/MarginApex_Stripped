@@ -537,7 +537,7 @@ export default function FundsPage() {
                     <div className="withdraw-container fadeInUp">
                       <div className="margin-available-box" style={{ position: 'relative' }}>
                         <div className="margin-header">
-                          <span className="margin-label">WITHDRAWAL DETAILS</span>
+                          <span className="margin-label">Available for Withdrawal</span>
                           <div style={{ position: 'relative', display: 'inline-block', marginLeft: '8px' }}>
                             <i className="fas fa-info-circle" style={{ color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => setShowRules(!showRules)} />
                             {showRules && rules && (
