@@ -191,15 +191,18 @@ export async function GET(request: Request) {
         // Intraday brokerage is handled inside close_position based on entry/exit logic, 
         // carryBrokerage should theoretically be 0 for INTRADAY product_type anyway, 
         // but we compute it if needed by existing logic
-        const carryBrokerage = calculateCarryBrokerage({
-          productType: pos.product_type,
-          qty: Number(pos.qty_open),
-          entryPrice: Number(pos.entry_price),
-          carryCommissionType: segSetting?.carry_commission_type,
-          carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
-          commissionType: segSetting?.commission_type,
-          commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
-        });
+        let carryBrokerage = 0;
+        if (!pos.carry_brokerage_paid) {
+          carryBrokerage = calculateCarryBrokerage({
+            productType: pos.product_type,
+            qty: Number(pos.qty_open),
+            entryPrice: Number(pos.entry_price),
+            carryCommissionType: segSetting?.carry_commission_type,
+            carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
+            commissionType: segSetting?.commission_type,
+            commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
+          });
+        }
         
         const { error: rpcErr } = await admin.rpc('close_position', {
           p_position_id: pos.id,

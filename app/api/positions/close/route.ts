@@ -279,16 +279,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           }
 
           // --- CARRY BROKERAGE (deferred from entry to exit) ---
-          const carryBrokerage = calculateCarryBrokerage({
-            productType: pos.product_type,
-            qty: Number(pos.qty_open),
-            entryPrice: Number(pos.entry_price),
-            lots: Number(pos.lots || 0) || undefined,
-            carryCommissionType: segSetting?.carry_commission_type,
-            carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
-            commissionType: segSetting?.commission_type,
-            commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
-          });
+          let carryBrokerage = 0;
+          if (!pos.carry_brokerage_paid) {
+            carryBrokerage = calculateCarryBrokerage({
+              productType: pos.product_type,
+              qty: Number(pos.qty_open),
+              entryPrice: Number(pos.entry_price),
+              lots: Number(pos.lots || 0) || undefined,
+              carryCommissionType: segSetting?.carry_commission_type,
+              carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
+              commissionType: segSetting?.commission_type,
+              commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
+            });
+          }
 
           // Call RPC with retry logic for deadlocks
           let pnl: any;

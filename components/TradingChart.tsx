@@ -1050,7 +1050,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       const underlying = symbol.toUpperCase().replace('_INDEX', '').replace('NSE:', '').replace('INDEX', '').trim();
       let prefix = 'NFO';
       if (underlying.includes('SENSEX') || underlying.includes('BANKEX')) prefix = 'BFO';
-      else if (['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS'].includes(underlying)) prefix = 'MCX';
+      else if (['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => underlying.startsWith(c))) prefix = 'MCX';
 
       orderKiteInstrument = chainContract.kiteId || `${prefix}:${orderSymbol}`;
       orderSegment = 'INDEX-OPT';
@@ -1059,7 +1059,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       if (orderSymbol && (orderSymbol.endsWith('CE') || orderSymbol.endsWith('PE') || orderSymbol.endsWith('FUT') || orderSymbol.includes('FUT')) && !orderKiteInstrument.includes(':')) {
         let prefix = 'NFO';
         if (orderSymbol.startsWith('SENSEX') || orderSymbol.startsWith('BANKEX')) prefix = 'BFO';
-        else if (orderSymbol.startsWith('GOLD') || orderSymbol.startsWith('SILVER') || orderSymbol.startsWith('CRUDE') || orderSymbol.startsWith('NATGAS')) prefix = 'MCX';
+        else if (['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => orderSymbol.startsWith(c))) prefix = 'MCX';
         else if (orderSymbol.startsWith('EURINR') || orderSymbol.startsWith('USDINR') || orderSymbol.startsWith('GBPINR') || orderSymbol.startsWith('JPYINR')) prefix = 'CDS';
         orderKiteInstrument = `${prefix}:${orderSymbol}`;
       }
@@ -2205,7 +2205,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         if (chainContract) {
                           const n = chainContract.name.toUpperCase();
                           const isBse = n.includes('SENSEX') || n.includes('BANKEX');
-                          const isMcx = n.includes('GOLD') || n.includes('SILVER') || n.includes('CRUDEOIL') || n.includes('NATURALGAS') || n.includes('COPPER');
+                          const isMcx = ['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => n.includes(c));
                           if (isMcx) {
                             setSegment('MCX - Options');
                           } else if (isBse) {

@@ -77,15 +77,18 @@ export async function POST(request: Request): Promise<Response> {
       exitPrice = Math.round(exitPrice * 100) / 100;
 
       // Carry brokerage deferred to exit
-      const carryBrokerage = calculateCarryBrokerage({
-        productType: pos.product_type,
-        qty: Number(pos.qty_open),
-        entryPrice: Number(pos.entry_price),
-        carryCommissionType: bufSettings?.carry_commission_type,
-        carryCommissionValue: bufSettings?.carry_commission_value,
-        commissionType: bufSettings?.commission_type,
-        commissionValue: bufSettings?.commission_value,
-      });
+      let carryBrokerage = 0;
+      if (!pos.carry_brokerage_paid) {
+        carryBrokerage = calculateCarryBrokerage({
+          productType: pos.product_type,
+          qty: Number(pos.qty_open),
+          entryPrice: Number(pos.entry_price),
+          carryCommissionType: bufSettings?.carry_commission_type,
+          carryCommissionValue: bufSettings?.carry_commission_value,
+          commissionType: bufSettings?.commission_type,
+          commissionValue: bufSettings?.commission_value,
+        });
+      }
 
       const { error: rpcErr } = await adminClient.rpc('close_position', {
         p_position_id: pos.id,

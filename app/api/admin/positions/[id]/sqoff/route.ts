@@ -74,15 +74,18 @@ export async function POST(
     //   - Inserting exit order row
     //   - Writing to act_logs
     // Carry brokerage deferred to exit
-    const carryBrokerage = calculateCarryBrokerage({
-      productType: position.product_type,
-      qty: Number(position.qty_open),
-      entryPrice: Number(position.entry_price),
-      carryCommissionType: segSetting?.carry_commission_type,
-      carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
-      commissionType: segSetting?.commission_type,
-      commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
-    });
+    let carryBrokerage = 0;
+    if (!position.carry_brokerage_paid) {
+      carryBrokerage = calculateCarryBrokerage({
+        productType: position.product_type,
+        qty: Number(position.qty_open),
+        entryPrice: Number(position.entry_price),
+        carryCommissionType: segSetting?.carry_commission_type,
+        carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
+        commissionType: segSetting?.commission_type,
+        commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
+      });
+    }
 
     const { data: pnl, error: rpcErr } = await adminClient.rpc('close_position', {
       p_position_id: id,

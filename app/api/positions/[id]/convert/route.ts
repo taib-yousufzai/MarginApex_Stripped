@@ -117,16 +117,55 @@ export async function POST(
       }
     }
 
-    // 3.5 Carry Brokerage is NO LONGER deducted immediately.
-    // It is deferred to exit time by `temp_merge.sql` and `close/route.ts`.
-
     // 4. Update the position row itself in the positions table
     const updateData: any = { 
       product_type,
       margin_required: newMarginRequired,
       locked_margin: newMarginRequired
     };
-    // No need to set carry_brokerage_paid as it will be charged at exit
+
+    // 3.5 Deduct carry brokerage if converting to CARRY and not yet paid
+    let carryBrokerageToCharge = 0;
+    if (product_type === 'CARRY' && !pos.carry_brokerage_paid) {
+      carryBrokerageToCharge = calculateCarryBrokerage({
+        productType: 'CARRY',
+        qty: Number(pos.qty_open),
+        entryPrice: Number(pos.entry_price),
+        lots: Number(pos.lots || 0) || undefined,
+        carryCommissionType: segSetting?.carry_commission_type,
+        commissionType: segSetting?.commission_type,
+        carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
+        commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
+      });
+
+      if (carryBrokerageToCharge > 0) {
+        // Free margin check must include the brokerage fee
+        if (freeMargin < (marginDifference + carryBrokerageToCharge)) {
+          return NextResponse.json({
+            error: `Insufficient margin. Free margin: ₹${freeMargin.toFixed(2)}, Required: ₹${(marginDifference + carryBrokerageToCharge).toFixed(2)} (including ₹${carryBrokerageToCharge.toFixed(2)} carry brokerage)`
+          }, { status: 400 });
+        }
+        
+        // Deduct from profile balance
+        const newBalance = Number(profile.balance || 0) - carryBrokerageToCharge;
+        const { error: balanceErr } = await admin.from('profiles').update({ balance: newBalance }).eq('id', user.id);
+        
+        if (balanceErr) {
+          console.error('[Positions Convert API] Error deducting brokerage:', balanceErr);
+          return NextResponse.json({ error: 'Failed to deduct carry brokerage' }, { status: 500 });
+        }
+        
+        // Log it
+        await admin.from('act_logs').insert({
+          user_id: user.id,
+          action: 'BROKERAGE_DEDUCTION',
+          reason: `Carry Brokerage charged on conversion to CARRY for ${pos.symbol} (Qty: ${pos.qty_open}) | Amount: ₹${carryBrokerageToCharge.toFixed(2)}`,
+          ip_address: request.headers.get('x-forwarded-for') || '127.0.0.1'
+        });
+        
+        updateData.carry_brokerage_paid = true;
+      }
+    }
 
     const { error: posUpdateErr } = await admin.from('positions')
       .update(updateData)

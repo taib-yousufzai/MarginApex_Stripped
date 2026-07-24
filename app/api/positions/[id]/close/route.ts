@@ -306,16 +306,19 @@ export async function POST(
   // --- CARRY BROKERAGE (deferred from entry to exit) ---
   // Intraday brokerage was already charged at entry time (×2).
   // Carry brokerage is only charged at exit if the position is currently CARRY.
-  let carryBrokerage = calculateCarryBrokerage({
-    productType: pos.product_type,
-    qty: Number(pos.qty_open),
-    entryPrice: Number(pos.entry_price),
-    lots: Number(pos.lots || 0) || undefined,
-    carryCommissionType: segSetting?.carry_commission_type,
-    carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
-    commissionType: segSetting?.commission_type,
-    commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
-  });
+  let carryBrokerage = 0;
+  if (!pos.carry_brokerage_paid) {
+    carryBrokerage = calculateCarryBrokerage({
+      productType: pos.product_type,
+      qty: Number(pos.qty_open),
+      entryPrice: Number(pos.entry_price),
+      lots: Number(pos.lots || 0) || undefined,
+      carryCommissionType: segSetting?.carry_commission_type,
+      carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
+      commissionType: segSetting?.commission_type,
+      commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
+    });
+  }
 
   // Carry brokerage is always charged at exit for CARRY positions.
   // Conversions no longer deduct it upfront, so there's no need to check for CARRY_CONV txs.
