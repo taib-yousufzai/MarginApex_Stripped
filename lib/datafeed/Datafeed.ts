@@ -49,6 +49,7 @@ export class Datafeed implements IBasicDataFeed {
     setTimeout(() => {
       callback({
         supported_resolutions: ['1', '2', '3', '5', '10', '15', '30', '60', 'D'] as ResolutionString[],
+        supports_time: true,
       } satisfies DatafeedConfiguration);
     }, 0);
   }

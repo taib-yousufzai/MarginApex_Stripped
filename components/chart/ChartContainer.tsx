@@ -273,6 +273,7 @@ export default function ChartContainer({
         <div style={{
           position: 'absolute', inset: 0, zIndex: 10,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: isDark ? '#071824' : '#FFFFFF',
         }}>
           <div style={{ color: '#F23645', fontSize: '13px', fontWeight: 600, maxWidth: '80%', textAlign: 'center' }}>
             {error}
