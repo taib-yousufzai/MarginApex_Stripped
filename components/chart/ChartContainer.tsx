@@ -117,10 +117,11 @@ export default function ChartContainer({
         theme: isDark ? 'dark' : 'light',
         autosize: true,
         saved_data: savedData,
+        custom_css_url: '/charting_library/custom.css',
         client_id: 'marginapexx',
         user_id: 'public_user',
         auto_save_delay: 1,
-        disabled_features: ['header_widget', 'timeframes_toolbar'],
+        disabled_features: ['timeframes_toolbar'],
         enabled_features: ['countdown'],
         overrides: {
           "mainSeriesProperties.showCountdown": true
