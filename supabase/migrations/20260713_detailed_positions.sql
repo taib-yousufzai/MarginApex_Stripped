@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS public.place_order(uuid,text,text,text,text,text,text,numeric,numeric,numeric,numeric,text,numeric,numeric,numeric,boolean,numeric);
+
 CREATE OR REPLACE FUNCTION public.place_order(
   p_user_id uuid, p_symbol text, p_kite_inst text, p_segment text, p_side text, p_order_type text, p_product_type text, p_qty numeric, p_lots numeric, p_ltp numeric, p_fill_price numeric, p_info text, p_trigger_price numeric, p_stop_loss numeric, p_target numeric, p_is_exit boolean, p_buffer_fee numeric
 )
