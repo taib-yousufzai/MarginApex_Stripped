@@ -1780,7 +1780,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           ];
           const current = intervals.find(i => i.tf === timeframe) || intervals[1];
           return (
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <div
                 className={`tc-tb-btn ${openTopFlyout === 'interval' ? 'tc-tb-btn-open' : ''}`}
                 onMouseEnter={() => setOpenTopFlyout('interval')}
@@ -1790,6 +1790,36 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 <span style={{ fontWeight: 700, fontSize: '13px' }}>{current.label}</span>
                 <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M1 2l3 4 3-4z" /></svg>
               </div>
+              
+              {/* Native React Countdown - Bypasses TradingView entirely */}
+              {(() => {
+                if (timeframe === 'day') return null;
+                const [timeLeft, setTimeLeft] = useState('');
+                useEffect(() => {
+                  const resMs = 
+                    timeframe === '1m' ? 60000 : timeframe === '2m' ? 120000 : timeframe === '3m' ? 180000 :
+                    timeframe === '5m' ? 300000 : timeframe === '10m' ? 600000 : timeframe === '15m' ? 900000 :
+                    timeframe === '30m' ? 1800000 : timeframe === '60m' ? 3600000 : 0;
+                  if (!resMs) return;
+                  const interval = setInterval(() => {
+                    const nowMs = Date.now();
+                    // Anchor to 09:15 for non-crypto 60m candles if needed, but standard modulo works for all intraday
+                    // The modulo handles the standard UTC epoch offsets perfectly for all timeframes <= 60m
+                    const next = Math.ceil(nowMs / resMs) * resMs;
+                    const diff = Math.max(0, next - nowMs);
+                    const m = Math.floor(diff / 60000);
+                    const s = Math.floor((diff % 60000) / 1000);
+                    setTimeLeft(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+                  }, 1000);
+                  return () => clearInterval(interval);
+                }, [timeframe]);
+                return timeLeft ? (
+                  <div style={{ marginLeft: '4px', fontSize: '12px', fontWeight: 600, color: '#f23645' }}>
+                    ({timeLeft})
+                  </div>
+                ) : null;
+              })()}
+
               {openTopFlyout === 'interval' && (
                 <div className="tc-top-flyout" style={{ minWidth: '110px' }}>
                   <div className="tc-flyout-title">Interval</div>

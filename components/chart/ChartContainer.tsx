@@ -121,9 +121,9 @@ export default function ChartContainer({
         user_id: 'public_user',
         auto_save_delay: 1,
         disabled_features: ['timeframes_toolbar'],
-        enabled_features: ['countdown'],
+        enabled_features: [],
         overrides: {
-          "mainSeriesProperties.showCountdown": true
+          "mainSeriesProperties.showCountdown": false
         }
       });
 
