@@ -855,10 +855,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       }
 
-      // Optimistic UI
-      onSuccess?.();
-      onClose();
-
       placeOrder({
         symbol: item.symbol,
         kite_instrument: computedKiteSymbol || item.symbol,
@@ -877,6 +873,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         if (res.success) {
           window.dispatchEvent(new Event('order_placed'));
           showToast(res.order?.message || `${placeSide} order placed for ${item.symbol}`);
+          onSuccess?.();
+          onClose();
         } else {
           showToast(`Order Failed: ${res.error}`, true);
         }
