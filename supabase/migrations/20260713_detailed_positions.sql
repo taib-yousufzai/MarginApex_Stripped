@@ -45,8 +45,7 @@ BEGIN
   )
   RETURNING * INTO v_order;
 
-  -- Store linked position ID in local variable if provided
-  v_order.linked_position_id := p_info;
+  -- Use p_info directly as linked_position_id (it is passed as text)
 
   -- Brokerage logic
   SELECT trading_mode INTO v_trading_mode
@@ -139,10 +138,10 @@ BEGIN
 
   -- Lock and fetch active position
   IF v_order.is_exit THEN
-    IF v_order.linked_position_id IS NOT NULL THEN
+    IF p_info IS NOT NULL THEN
       SELECT * INTO v_pos
       FROM public.positions
-      WHERE id = v_order.linked_position_id::uuid
+      WHERE id = p_info::uuid
         AND user_id = v_order.user_id
       FOR UPDATE;
       v_pos_found := FOUND;
