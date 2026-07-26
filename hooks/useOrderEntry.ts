@@ -55,8 +55,10 @@ export function useOrderEntry() {
       const result = await response.json();
 
       if (!response.ok) {
-        console.error('[API Error]', result);
-        throw new Error(result.details || result.error || 'Failed to place order');
+        console.warn('[API Error]', result);
+        const errorMsg = result.details || result.error || 'Failed to place order';
+        setError(errorMsg);
+        return { success: false, error: errorMsg };
       }
 
       return { success: true, order: result };

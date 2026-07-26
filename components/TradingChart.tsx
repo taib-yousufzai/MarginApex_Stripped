@@ -1248,6 +1248,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       lots: effectiveLots,
       order_type: 'MARKET',
       product_type: pos.product_type || 'INTRADAY',
+      client_price: pos.current_ltp || pos.avg_price || pos.entry_price || currentPrice,
       is_exit: true,
       linked_position_id: pos.id
     });
@@ -1328,7 +1329,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       lots: effectiveUseLots ? qVal : (finalQty / lotSize),
       order_type: 'MARKET',
       product_type: 'INTRADAY',
-      client_price: 0,
+      client_price: currentPrice,
       is_exit: false
     });
 
