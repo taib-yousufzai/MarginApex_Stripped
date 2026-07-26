@@ -1196,16 +1196,22 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   };
 
   const quickExitLock = useRef(false);
+  const exitingPosIds = useRef<Set<string>>(new Set());
+  const [, setForceRender] = useState(0);
 
   // Direct quick-exit (instant market close of selected lot size)
   const handleQuickExit = async (pos: EnrichedPosition) => {
-    if (quickExitLock.current) return;
+    if (quickExitLock.current || exitingPosIds.current.has(pos.id)) return;
     quickExitLock.current = true;
+    exitingPosIds.current.add(pos.id);
+    setForceRender(prev => prev + 1);
 
     const qVal = Number(qtyValue) || 0;
     if (qVal <= 0) {
       showToast("Invalid quantity", true);
       quickExitLock.current = false;
+      exitingPosIds.current.delete(pos.id);
+      setForceRender(prev => prev + 1);
       return;
     }
     const isScalper = profile?.trading_mode === 'scalper';
@@ -1242,10 +1248,14 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         refreshPositions();
         fetchBalance();
         quickExitLock.current = false;
+        // Do NOT remove from exitingPosIds on success. 
+        // It should stay permanently locked until the position disappears from the UI.
       }, 1000); // Give DB time to match
     } else {
       showToast(res.error || 'Exit failed', true);
       quickExitLock.current = false;
+      exitingPosIds.current.delete(pos.id);
+      setForceRender(prev => prev + 1);
     }
   };
 
@@ -1688,7 +1698,14 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           </div>
           <div className="position-actions">
             <button className="position-action-btn add-position-btn" onClick={() => handleAddMorePosition(pos)}>+ Add More</button>
-            <button className="position-action-btn exit-position-btn" onClick={() => handleExitPosition(pos)}>Exit</button>
+            <button 
+              className="position-action-btn exit-position-btn" 
+              onClick={() => handleExitPosition(pos)}
+              disabled={exitingPosIds.current.has(pos.id)}
+              style={{ opacity: exitingPosIds.current.has(pos.id) ? 0.5 : 1, cursor: exitingPosIds.current.has(pos.id) ? 'not-allowed' : 'pointer' }}
+            >
+              {exitingPosIds.current.has(pos.id) ? 'Exiting...' : 'Exit'}
+            </button>
           </div>
         </div>
       );
@@ -2124,12 +2141,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
                   {currentInstrumentPosition.side === 'BUY' ? (
                     <>
-                      <button className="trade-btn exit-position-chart-btn" onClick={() => handleExitPosition(currentInstrumentPosition)}>
+                      <button 
+                        className="trade-btn exit-position-chart-btn" 
+                        onClick={() => handleExitPosition(currentInstrumentPosition)}
+                        disabled={exitingPosIds.current.has(currentInstrumentPosition.id)}
+                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1 }}
+                      >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
                             <path d="M10 1l3 3-3 3" /><path d="M13 4H5" /><path d="M7 13H2a1 1 0 01-1-1V2a1 1 0 011-1h5" />
                           </svg>
-                          EXIT LONG
+                          {exitingPosIds.current.has(currentInstrumentPosition.id) ? 'EXITING...' : 'EXIT LONG'}
                         </span>
                       </button>
                       <button id="buyButton" className="trade-btn buy" onClick={() => {
@@ -2169,12 +2191,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                       }}>
                         <span className="btn-label">SELL</span>
                       </button>
-                      <button className="trade-btn exit-position-chart-btn" onClick={() => handleExitPosition(currentInstrumentPosition)}>
+                      <button 
+                        className="trade-btn exit-position-chart-btn" 
+                        onClick={() => handleExitPosition(currentInstrumentPosition)}
+                        disabled={exitingPosIds.current.has(currentInstrumentPosition.id)}
+                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1 }}
+                      >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
                             <path d="M10 1l3 3-3 3" /><path d="M13 4H5" /><path d="M7 13H2a1 1 0 01-1-1V2a1 1 0 011-1h5" />
                           </svg>
-                          EXIT SHORT
+                          {exitingPosIds.current.has(currentInstrumentPosition.id) ? 'EXITING...' : 'EXIT SHORT'}
                         </span>
                       </button>
                     </>
