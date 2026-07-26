@@ -627,6 +627,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const [addMoreSymbol, setAddMoreSymbol] = useState<string | null>(null);
   const [addMoreSegment, setAddMoreSegment] = useState<string | null>(null);
   const [addMoreLtp, setAddMoreLtp] = useState<number | null>(null);
+  const [addMoreKiteInst, setAddMoreKiteInst] = useState<string | null>(null);
   const [postOrderSegment, setPostOrderSegment] = useState<'chain' | 'orders' | 'positions' | 'main' | null>(null);
   const [orderBlockTitle, setOrderBlockTitle] = useState<string>(symbol);
   const [modifyOrderId, setModifyOrderId] = useState<string | null>(null);
@@ -1113,6 +1114,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setAddMoreSymbol(null);
       setAddMoreSegment(null);
       setAddMoreLtp(null);
+      setAddMoreKiteInst(null);
       setExitPositionId(null);
       setOrderBlockTitle(symbol);
       refreshOrders();
@@ -1277,6 +1279,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setAddMoreSymbol(pos.symbol);
     setAddMoreSegment(pos.settlement || segment);
     setAddMoreLtp(pos.current_ltp || pos.avg_price || pos.entry_price);
+    setAddMoreKiteInst(pos.kite_instrument || pos.symbol);
     setOrderSide(pos.side);
     setQtyValue(pos.qty_open);
     setUseLots(false);
