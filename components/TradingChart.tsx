@@ -436,19 +436,6 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar 
           }
         </div>
       </div>
-      <TradeSheet
-        item={tradeSheetItem}
-        side={tradeSheetSide}
-        onClose={() => { setTradeSheetItem(null); setModifyOrderId(null); }}
-        onSuccess={() => { setTradeSheetItem(null); setModifyOrderId(null); }}
-        exitMode={tradeSheetExitMode}
-        productType={tradeSheetProductType}
-        isFromPositions={tradeSheetIsAddMore}
-        linkedPosId={tradeSheetLinkedPosId}
-        initialExitQty={tradeSheetInitialExitQty}
-        isModify={!!modifyOrderId}
-        modifyingOrderId={modifyOrderId}
-      />
     </div>
   );
 };
@@ -2687,6 +2674,20 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           {toast.msg}
         </div>
       )}
+      
+      <TradeSheet
+        item={tradeSheetItem}
+        side={tradeSheetSide}
+        onClose={() => { setTradeSheetItem(null); setModifyOrderId(null); }}
+        onSuccess={() => { setTradeSheetItem(null); setModifyOrderId(null); }}
+        exitMode={tradeSheetExitMode}
+        productType={tradeSheetProductType}
+        isFromPositions={tradeSheetIsAddMore}
+        linkedPosId={tradeSheetLinkedPosId}
+        initialExitQty={tradeSheetInitialExitQty}
+        isModify={!!modifyOrderId}
+        modifyingOrderId={modifyOrderId}
+      />
     </div>
   );
 }
