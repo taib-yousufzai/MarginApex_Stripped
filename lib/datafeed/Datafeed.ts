@@ -163,7 +163,7 @@ export class Datafeed implements IBasicDataFeed {
    * Should only be called after the loading guards in ChartContainer confirm
    * that `loading === false`, `candles.length > 0`, and the price is finite > 0.
    */
-  updateLive(lastPrice: number, nowMs: number): void {
-    this.realtimeProvider.update(lastPrice, nowMs);
+  updateLive(lastPrice: number, nowMs: number, volume?: number) {
+    this.realtimeProvider.update(lastPrice, nowMs, volume);
   }
 }

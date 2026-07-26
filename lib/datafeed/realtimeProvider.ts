@@ -34,7 +34,7 @@ export class RealtimeProvider {
     }
   }
 
-  update(lastPrice: number, nowMs: number): void {
+  update(lastPrice: number, nowMs: number, volume?: number): void {
     for (const entry of this.subscribers.values()) {
       const resMs = resolutionToMs(entry.resolution);
       const prev = entry.lastBar;
@@ -59,6 +59,7 @@ export class RealtimeProvider {
         high:  isNewCandle ? lastPrice : Math.max(prev!.high, lastPrice),
         low:   isNewCandle ? lastPrice : Math.min(prev!.low, lastPrice),
         close: lastPrice,
+        volume: volume ?? (isNewCandle ? 1 : ((prev?.volume ?? 0) + 1)),
       };
 
       entry.lastBar = { ...bar };

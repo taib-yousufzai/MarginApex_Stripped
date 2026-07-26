@@ -221,10 +221,11 @@ export default function ChartContainer({
 
   useEffect(() => {
     const lastPrice = liveQuote?.lastPrice ?? liveQuote?.last_price;
+    const volume = liveQuote?.volume ?? liveQuote?.v;
     if (loading || candles.length === 0) return;
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
     
-    datafeedRef.current?.updateLive(lastPrice, Date.now());
+    datafeedRef.current?.updateLive(lastPrice, Date.now(), volume);
   }, [liveQuote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Task 8.5: Theme sync via MutationObserver ─────────────────────────────
