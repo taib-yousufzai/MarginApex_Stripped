@@ -1,3 +1,7 @@
 .layout__area--top {
-  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  top: -9999px !important;
+  height: 0 !important;
 }
