@@ -12,6 +12,7 @@ import OptionChainTable from '@/app/option-chain/OptionChainTable';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
+import { calculateMarginPortion } from '@/lib/marginCalculator';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
 import TradeSheet, { TradeSheetItem } from '@/components/TradeSheet';
 import './trading-chart.css';
