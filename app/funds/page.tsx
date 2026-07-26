@@ -535,39 +535,18 @@ export default function FundsPage() {
 
                   {activeTab === 'withdraw' && (
                     <div className="withdraw-container fadeInUp">
-                      <div className="margin-available-box" style={{ position: 'relative' }}>
-                        <div className="margin-header">
-                          <span className="margin-label">Available for Withdrawal</span>
-                          <div style={{ position: 'relative', display: 'inline-block', marginLeft: '8px' }}>
-                            <i className="fas fa-info-circle" style={{ color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => setShowRules(!showRules)} />
-                            {showRules && rules && (
-                              <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: '8px', background: 'var(--card-bg)', border: '1px solid var(--border-card)', padding: '12px', borderRadius: '8px', zIndex: 10, width: '220px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', textAlign: 'left' }}>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-primary)', marginBottom: '8px' }}><strong>Timings:</strong> {rules.start_time} - {rules.end_time}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-primary)', marginBottom: '8px' }}><strong>Days:</strong> {(rules.allowed_days || []).join(', ')}</div>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-primary)' }}><strong>Min Withdraw:</strong> ₹{rules.min_withdraw}</div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="margin-value">₹{balance?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}</div>
-                        <div className="margin-footer"><i className="fas fa-shield-check"></i> 100% Secure Withdrawal</div>
-                      </div>
-
                       <div className="withdrawal-rules-list" style={{ marginBottom: '24px', background: 'var(--card-bg)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-card)' }}>
                         <h4 style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Important Details</h4>
                         
                         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-                           <i className="far fa-clock" style={{ color: 'var(--text-muted)', width: '24px', textAlign: 'center' }}></i>
                            <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}><strong>Timings:</strong> {rules?.start_time || '10:00 AM'} to {rules?.end_time || '6:00 PM'} ({(rules?.allowed_days || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']).join(', ')})</span>
                         </div>
                         
                         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-                           <i className="fas fa-coins" style={{ color: 'var(--text-muted)', width: '24px', textAlign: 'center' }}></i>
                            <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}><strong>Min Withdrawal:</strong> ₹{rules?.min_withdraw || '1000'}</span>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center' }}>
-                           <i className="fas fa-level-up-alt" style={{ color: 'var(--text-muted)', width: '24px', textAlign: 'center' }}></i>
                            <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}><strong>Daily Limit:</strong> No Limit</span>
                         </div>
                       </div>
