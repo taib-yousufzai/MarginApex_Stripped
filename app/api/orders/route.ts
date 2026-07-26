@@ -583,7 +583,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })(),
 
     // Script settings for lot size lookup (admin overrides)
-    admin.from('script_settings').select('symbol, lot_size'),
+    admin.from('script_settings').select('symbol, lot_size').in('symbol', [symbol, kiteInst, underlyingId]),
 
     // Template scripts enforcement
     profile.template_id 

@@ -30,7 +30,7 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 
 let globalOrdersCache: MyOrder[] = [];
 
-export function useMyOrders(refreshInterval = 10_000): UseMyOrdersResult {
+export function useMyOrders(refreshInterval = 15000): UseMyOrdersResult {
   const [orders,  setOrders]  = useState<MyOrder[]>(globalOrdersCache);
   const [loading, setLoading] = useState(globalOrdersCache.length === 0);
   const [error,   setError]   = useState<string | null>(null);

@@ -38,7 +38,7 @@ export default function PositionPage() {
       }
     });
   }, []);
-  const { positions, loading: posLoading, error: posError, refresh, updatePositionLocally, startConversion, endConversion } = useMyPositions(5000);
+  const { positions, loading: posLoading, error: posError, refresh, updatePositionLocally, startConversion, endConversion } = useMyPositions(15000);
   const { closePosition, closePositionsBatch, loading: closingPos } = useOrderEntry();
 
   // Listen for position-closed events fired by TradingChart so we immediately

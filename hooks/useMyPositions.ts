@@ -182,7 +182,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
 
     const timer = setInterval(() => {
       if (!isSubscribed) fetchPositions();
-    }, 5000); // DB fetch fallback
+    }, 15000); // DB fetch fallback
 
     return () => {
       clearInterval(timer);
