@@ -53,17 +53,22 @@ export class RealtimeProvider {
       }
 
       const isNewCandle = !prev || boundary > prev.time;
-      const bar: Bar = {
-        time:  boundary,
-        open:  isNewCandle ? lastPrice : (prev?.open ?? lastPrice),
-        high:  isNewCandle ? lastPrice : Math.max(prev!.high, lastPrice),
-        low:   isNewCandle ? lastPrice : Math.min(prev!.low, lastPrice),
-        close: lastPrice,
-        volume: volume ?? (isNewCandle ? 1 : ((prev?.volume ?? 0) + 1)),
-      };
-
-      entry.lastBar = { ...bar };
-      entry.callback({ ...bar });
+      if (!entry.lastBar || isNewCandle) {
+        entry.lastBar = {
+          time:  boundary,
+          open:  lastPrice,
+          high:  lastPrice,
+          low:   lastPrice,
+          close: lastPrice,
+          volume: volume ?? 1,
+        };
+      } else {
+        entry.lastBar.high = Math.max(entry.lastBar.high, lastPrice);
+        entry.lastBar.low = Math.min(entry.lastBar.low, lastPrice);
+        entry.lastBar.close = lastPrice;
+        entry.lastBar.volume = volume ?? ((entry.lastBar.volume ?? 0) + 1);
+      }
+      entry.callback(entry.lastBar);
     }
   }
 }
