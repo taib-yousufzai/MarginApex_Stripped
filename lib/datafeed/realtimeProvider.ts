@@ -17,6 +17,9 @@ export interface SubscriberEntry {
 
 export class RealtimeProvider {
   private subscribers = new Map<string, SubscriberEntry>();
+  private lastUpdateTime = 0;
+  private pendingUpdate: { lastPrice: number, nowMs: number, volume?: number } | null = null;
+  private updateTimeout: ReturnType<typeof setTimeout> | null = null;
 
   subscribe(uid: string, entry: SubscriberEntry): void {
     this.subscribers.set(uid, entry);
@@ -35,6 +38,29 @@ export class RealtimeProvider {
   }
 
   update(lastPrice: number, nowMs: number, volume?: number): void {
+    this.pendingUpdate = { lastPrice, nowMs, volume };
+    const now = Date.now();
+
+    if (now - this.lastUpdateTime > 250) {
+      this.flushUpdate();
+    } else if (!this.updateTimeout) {
+      this.updateTimeout = setTimeout(() => {
+        this.flushUpdate();
+      }, 250 - (now - this.lastUpdateTime));
+    }
+  }
+
+  private flushUpdate() {
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+      this.updateTimeout = null;
+    }
+    if (!this.pendingUpdate) return;
+
+    this.lastUpdateTime = Date.now();
+    const { lastPrice, nowMs, volume } = this.pendingUpdate;
+    this.pendingUpdate = null;
+
     for (const entry of this.subscribers.values()) {
       const resMs = resolutionToMs(entry.resolution);
       const prev = entry.lastBar;
