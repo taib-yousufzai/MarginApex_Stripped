@@ -808,6 +808,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       mode = profileRes.data?.trading_mode || 'normal';
       console.log('[TradingChart] Profile trading_mode:', mode, 'error:', profileRes.error?.message);
       setProfile({ trading_mode: mode });
+      // Initialize Scalp toggle based on user's default trading mode
+      setIsTradeOnChartActive(mode === 'scalper');
     } catch (err) {
       console.warn('Failed to fetch profile:', err);
     }
@@ -1201,7 +1203,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // Exit position via order panel (allows choosing Market/SL)
   const handleExitPosition = (pos: EnrichedPosition) => {
-    if (isTradeOnChartActive || profile?.trading_mode === 'scalper') {
+    if (isTradeOnChartActive) {
       handleQuickExit(pos);
       return;
     }
@@ -2193,7 +2195,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         </span>
                       </button>
                       <button id="buyButton" className="trade-btn buy" onClick={() => {
-                        if (isTradeOnChartActive || profile?.trading_mode === 'scalper') {
+                        if (isTradeOnChartActive) {
                           handleQuickMarketOrder('BUY');
                         } else {
                           if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
@@ -2223,7 +2225,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   ) : (
                     <>
                       <button id="sellButton" className="trade-btn sell" onClick={() => {
-                        if (isTradeOnChartActive || profile?.trading_mode === 'scalper') {
+                        if (isTradeOnChartActive) {
                           handleQuickMarketOrder('SELL');
                         } else {
                           if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
@@ -2268,7 +2270,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
               ) : (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
                   <button id="sellButton" className="trade-btn sell" onClick={() => {
-                    if (isTradeOnChartActive || profile?.trading_mode === 'scalper') {
+                    if (isTradeOnChartActive) {
                       handleQuickMarketOrder('SELL');
                     } else {
                       if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
@@ -2295,7 +2297,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     <span className="btn-label">SELL</span>
                   </button>
                   <button id="buyButton" className="trade-btn buy" onClick={() => {
-                    if (isTradeOnChartActive || profile?.trading_mode === 'scalper') {
+                    if (isTradeOnChartActive) {
                       handleQuickMarketOrder('BUY');
                     } else {
                       if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
