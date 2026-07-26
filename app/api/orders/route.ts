@@ -1307,6 +1307,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   };
 
   let orderId: string;
+  let lockKey = `order_lock:${user.id}:${symbol}`;
+  const { getRedisClient } = await import('@/lib/redis');
+  const redis = getRedisClient();
+  const acquired = await redis.set(lockKey, '1', 'PX', 2000, 'NX');
+  if (!acquired) {
+    return NextResponse.json({ error: 'Order processing in progress. Please wait a second before placing another order.' }, { status: 429 });
+  }
+
   try {
     if (parsedOption) {
       const incomingOrder = {
@@ -1327,6 +1335,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (err: any) {
     console.error('[POST /api/orders] Order execution error:', err);
     return NextResponse.json({ error: err.message || 'Order execution failed. Please try again.' }, { status: 400 });
+  } finally {
+    // Release the lock
+    await redis.del(lockKey);
   }
 
   // Update order_type to 'SLM' in the database if it was an SLM order asynchronously
