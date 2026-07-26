@@ -13,7 +13,7 @@ import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
 import dynamic from 'next/dynamic';
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
-import TradeSheet from '@/components/TradeSheet';
+const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
 import { ErrorModal } from '@/components/ErrorModal';
 import './page.css';

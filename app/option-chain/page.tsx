@@ -11,7 +11,7 @@ import TradingSegmentsDrawer from '@/components/TradingSegmentsDrawer';
 import { calculateMarginPortion } from '@/lib/marginCalculator';
 import './option-chain.css';
 import dynamic from 'next/dynamic';
-import TradeSheet from '@/components/TradeSheet';
+const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 

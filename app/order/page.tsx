@@ -8,7 +8,8 @@ import { useMobileBack } from '@/hooks/useMobileBack';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 
-import TradeSheet, { TradeSheetItem } from '@/components/TradeSheet';
+import type { TradeSheetItem } from '@/components/TradeSheet';
+const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import './page.css';
 import dynamic from 'next/dynamic';
 
