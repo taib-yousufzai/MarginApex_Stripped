@@ -1230,7 +1230,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     showToast(`Placing quick exit order...`);
     const res = await placeOrder({
       symbol: pos.symbol,
-      kite_instrument: pos.symbol,
+      kite_instrument: pos.kite_instrument || pos.symbol,
       segment: pos.settlement || segment,
       side: exitSide,
       qty: finalQty,
