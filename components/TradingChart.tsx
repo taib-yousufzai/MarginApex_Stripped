@@ -12,8 +12,8 @@ import OptionChainTable from '@/app/option-chain/OptionChainTable';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
-import { calculateMarginPortion } from '@/lib/marginCalculator';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
+import TradeSheet, { TradeSheetItem } from '@/components/TradeSheet';
 import './trading-chart.css';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -435,6 +435,19 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar 
           }
         </div>
       </div>
+      <TradeSheet
+        item={tradeSheetItem}
+        side={tradeSheetSide}
+        onClose={() => { setTradeSheetItem(null); setModifyOrderId(null); }}
+        onSuccess={() => { setTradeSheetItem(null); setModifyOrderId(null); }}
+        exitMode={tradeSheetExitMode}
+        productType={tradeSheetProductType}
+        isFromPositions={tradeSheetIsAddMore}
+        linkedPosId={tradeSheetLinkedPosId}
+        initialExitQty={tradeSheetInitialExitQty}
+        isModify={!!modifyOrderId}
+        modifyingOrderId={modifyOrderId}
+      />
     </div>
   );
 };
@@ -595,6 +608,13 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // --- Dashboard States ---
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
+  const [tradeSheetItem, setTradeSheetItem] = useState<TradeSheetItem | null>(null);
+  const [tradeSheetSide, setTradeSheetSide] = useState<'BUY' | 'SELL' | 'BOTH'>('BUY');
+  const [tradeSheetExitMode, setTradeSheetExitMode] = useState(false);
+  const [tradeSheetProductType, setTradeSheetProductType] = useState<'INTRADAY' | 'CARRY' | undefined>(undefined);
+  const [tradeSheetIsAddMore, setTradeSheetIsAddMore] = useState(false);
+  const [tradeSheetLinkedPosId, setTradeSheetLinkedPosId] = useState<string | null>(null);
+  const [tradeSheetInitialExitQty, setTradeSheetInitialExitQty] = useState<number | undefined>(undefined);
   const [isTradeOnChartActive, setIsTradeOnChartActive] = useState<boolean>(false);
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
   const [useLots, setUseLots] = useState<boolean>(() => {
@@ -1160,7 +1180,22 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setIsAddMoreFlow(false);
     setOrderBlockTitle(`Modify · ${o.symbol}`);
     setPostOrderSegment('orders');
-    setIsOrderBlockVisible(true);
+    
+    // For modify order, we can also use TradeSheet!
+    setTradeSheetItem({
+      name: o.symbol,
+      symbol: o.symbol,
+      kiteSymbol: o.kite_instrument || o.symbol,
+      segment: o.segment || segment,
+      price: o.trigger_price || o.client_price || o.fill_price || currentPrice,
+    });
+    setTradeSheetSide(o.side);
+    setTradeSheetExitMode(false);
+    setTradeSheetProductType(o.product_type as 'INTRADAY' | 'CARRY');
+    setTradeSheetIsAddMore(false);
+    setTradeSheetLinkedPosId(null);
+    setTradeSheetInitialExitQty(o.qty);
+    setModifyOrderId(o.id);
   };
 
   // Exit position via order panel (allows choosing Market/SL)
@@ -1176,22 +1211,20 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setIsAddMoreFlow(false);
     setExitPositionId(pos.id);
 
-    // Also set the target symbol info so the order block UI shows the correct position prices
-    // instead of the chart's current instrument prices
-    setAddMoreSymbol(pos.symbol);
-    setAddMoreSegment(pos.settlement || segment);
-    setAddMoreLtp(pos.current_ltp || pos.avg_price || pos.entry_price);
-
-    setOrderSide(pos.side === 'BUY' ? 'SELL' : 'BUY');
-    setQtyValue(pos.qty_open);
-    setUseLots(false);
-    setOrderCarry(pos.product_type === 'CARRY' ? 'carry' : 'normal');
-    setOrderType('market');
-    const posPrice = pos.current_ltp || pos.avg_price || pos.entry_price || currentPrice;
-    setLimitPrice(posPrice.toFixed(2));
-    setTriggerPrice(posPrice.toFixed(2));
-    setOrderBlockTitle(`Exit · ${pos.symbol}`);
-    setPostOrderSegment('main');
+    setTradeSheetItem({
+      name: pos.symbol,
+      symbol: pos.symbol,
+      kiteSymbol: pos.kite_instrument || pos.symbol,
+      segment: pos.settlement || segment,
+      price: pos.current_ltp || pos.avg_price || pos.entry_price || currentPrice,
+      change: `${(pos.pnl_percent || 0) >= 0 ? '+' : ''}${(pos.pnl_percent || 0).toFixed(2)}%`,
+    });
+    setTradeSheetSide(pos.side === 'BUY' ? 'SELL' : 'BUY');
+    setTradeSheetExitMode(true);
+    setTradeSheetProductType(pos.product_type as 'INTRADAY' | 'CARRY');
+    setTradeSheetIsAddMore(false);
+    setTradeSheetLinkedPosId(pos.id);
+    setTradeSheetInitialExitQty(pos.qty_open);
     setIsOrderBlockVisible(true);
   };
 
@@ -1266,17 +1299,21 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setIsExitFlow(false);
     setIsAddMoreFlow(true);
     setExitPositionId(null);
-    setAddMoreSymbol(pos.symbol);
-    setAddMoreSegment(pos.settlement || segment);
-    setAddMoreLtp(pos.current_ltp || pos.avg_price || pos.entry_price);
-    setOrderSide(pos.side);
-    setQtyValue(pos.qty_open);
-    setUseLots(false);
-    setOrderCarry(pos.product_type === 'CARRY' ? 'carry' : 'normal');
-    setOrderType('market');
-    setOrderBlockTitle(`Add More · ${pos.symbol}`);
-    setPostOrderSegment('main');
-    setIsOrderBlockVisible(true);
+    
+    setTradeSheetItem({
+      name: pos.symbol,
+      symbol: pos.symbol,
+      kiteSymbol: pos.kite_instrument || pos.symbol,
+      segment: pos.settlement || segment,
+      price: pos.current_ltp || pos.avg_price || pos.entry_price || currentPrice,
+      change: `${(pos.pnl_percent || 0) >= 0 ? '+' : ''}${(pos.pnl_percent || 0).toFixed(2)}%`,
+    });
+    setTradeSheetSide(pos.side);
+    setTradeSheetExitMode(false);
+    setTradeSheetProductType(pos.product_type as 'INTRADAY' | 'CARRY');
+    setTradeSheetIsAddMore(true);
+    setTradeSheetLinkedPosId(null);
+    setTradeSheetInitialExitQty(undefined);
   };
 
   const quickEntryLock = useRef(false);
@@ -2160,13 +2197,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         } else {
                           if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
                           else setIsPanelExpanded(false);
-                          setIsExitFlow(false);
-                          setIsAddMoreFlow(false);
-                          setExitPositionId(null);
-                          setOrderBlockTitle(symbol);
-                          setPostOrderSegment('main');
-                          setIsOrderBlockVisible(true);
-                          setOrderSide('BUY');
+                          
+                          const targetSymbol = chainContract ? chainContract.name : symbol;
+                          const kiteInst = chainContract ? chainContract.kiteId : symbol; // We can let TradeSheet resolve the full Kite ID if needed
+                          
+                          setTradeSheetItem({
+                            name: targetSymbol,
+                            symbol: targetSymbol,
+                            kiteSymbol: kiteInst || targetSymbol,
+                            segment: chainContract ? 'INDEX-OPT' : segment,
+                            price: Number(liveLTP) || 0,
+                          });
+                          setTradeSheetSide('BUY');
+                          setTradeSheetExitMode(false);
+                          setTradeSheetProductType(undefined);
+                          setTradeSheetIsAddMore(false);
+                          setTradeSheetLinkedPosId(null);
+                          setTradeSheetInitialExitQty(undefined);
                         }
                       }}>
                         <span className="btn-label">BUY</span>
@@ -2180,13 +2227,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         } else {
                           if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
                           else setIsPanelExpanded(false);
-                          setIsExitFlow(false);
-                          setIsAddMoreFlow(false);
-                          setExitPositionId(null);
-                          setOrderBlockTitle(symbol);
-                          setPostOrderSegment('main');
-                          setIsOrderBlockVisible(true);
-                          setOrderSide('SELL');
+                          
+                          const targetSymbol = chainContract ? chainContract.name : symbol;
+                          const kiteInst = chainContract ? chainContract.kiteId : symbol;
+                          
+                          setTradeSheetItem({
+                            name: targetSymbol,
+                            symbol: targetSymbol,
+                            kiteSymbol: kiteInst || targetSymbol,
+                            segment: chainContract ? 'INDEX-OPT' : segment,
+                            price: Number(liveLTP) || 0,
+                          });
+                          setTradeSheetSide('SELL');
+                          setTradeSheetExitMode(false);
+                          setTradeSheetProductType(undefined);
+                          setTradeSheetIsAddMore(false);
+                          setTradeSheetLinkedPosId(null);
+                          setTradeSheetInitialExitQty(undefined);
                         }
                       }}>
                         <span className="btn-label">SELL</span>
@@ -2215,13 +2272,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     } else {
                       if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
                       else setIsPanelExpanded(false);
-                      setIsExitFlow(false);
-                      setIsAddMoreFlow(false);
-                      setExitPositionId(null);
-                      setOrderBlockTitle(symbol);
-                      setPostOrderSegment('main');
-                      setIsOrderBlockVisible(true);
-                      setOrderSide('SELL');
+                      
+                      const targetSymbol = chainContract ? chainContract.name : symbol;
+                      const kiteInst = chainContract ? chainContract.kiteId : symbol;
+                      
+                      setTradeSheetItem({
+                        name: targetSymbol,
+                        symbol: targetSymbol,
+                        kiteSymbol: kiteInst || targetSymbol,
+                        segment: chainContract ? 'INDEX-OPT' : segment,
+                        price: Number(liveLTP) || 0,
+                      });
+                      setTradeSheetSide('SELL');
+                      setTradeSheetExitMode(false);
+                      setTradeSheetProductType(undefined);
+                      setTradeSheetIsAddMore(false);
+                      setTradeSheetLinkedPosId(null);
+                      setTradeSheetInitialExitQty(undefined);
                     }
                   }}>
                     <span className="btn-label">SELL</span>
@@ -2232,13 +2299,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     } else {
                       if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
                       else setIsPanelExpanded(false);
-                      setIsExitFlow(false);
-                      setIsAddMoreFlow(false);
-                      setExitPositionId(null);
-                      setOrderBlockTitle(symbol);
-                      setPostOrderSegment('main');
-                      setIsOrderBlockVisible(true);
-                      setOrderSide('BUY');
+                      
+                      const targetSymbol = chainContract ? chainContract.name : symbol;
+                      const kiteInst = chainContract ? chainContract.kiteId : symbol;
+                      
+                      setTradeSheetItem({
+                        name: targetSymbol,
+                        symbol: targetSymbol,
+                        kiteSymbol: kiteInst || targetSymbol,
+                        segment: chainContract ? 'INDEX-OPT' : segment,
+                        price: Number(liveLTP) || 0,
+                      });
+                      setTradeSheetSide('BUY');
+                      setTradeSheetExitMode(false);
+                      setTradeSheetProductType(undefined);
+                      setTradeSheetIsAddMore(false);
+                      setTradeSheetLinkedPosId(null);
+                      setTradeSheetInitialExitQty(undefined);
                     }
                   }}>
                     <span className="btn-label">BUY</span>
