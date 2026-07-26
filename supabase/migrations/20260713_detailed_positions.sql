@@ -34,12 +34,12 @@ DECLARE
 BEGIN
   -- 1. Insert order
   INSERT INTO public.orders (
-    user_id, symbol, kite_instrument, segment, side, qty, lots,
-    client_price, fill_price, ltp_at_entry, status, order_type, product_type,
+    user_id, symbol, segment, side, qty, lots,
+    price, fill_price, ltp_at_entry, status, order_type, product_type,
     trigger_price, stop_loss, target, is_exit, buffer_fee
   )
   VALUES (
-    p_user_id, p_symbol, p_kite_inst, p_segment, p_side, p_qty, p_lots,
+    p_user_id, p_symbol, p_segment, p_side, p_qty, p_lots,
     p_ltp, p_fill_price, p_ltp, 'EXECUTED', p_order_type, p_product_type,
     p_trigger_price, p_stop_loss, p_target, p_is_exit, p_buffer_fee
   )
@@ -76,7 +76,7 @@ BEGIN
 
   SELECT lot_size INTO v_lot_size 
   FROM public.instruments 
-  WHERE tradingsymbol = v_order.kite_instrument 
+  WHERE tradingsymbol = p_kite_inst 
      OR tradingsymbol = v_order.symbol
   LIMIT 1;
 
