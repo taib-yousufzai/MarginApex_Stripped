@@ -220,12 +220,19 @@ export default function ChartContainer({
   // ── Task 8.5: Live quote forwarding ──────────────────────────────────────
 
   useEffect(() => {
-    const lastPrice = liveQuote?.lastPrice ?? liveQuote?.last_price;
-    const volume = liveQuote?.volume ?? liveQuote?.v;
+    let lastPrice = liveQuote?.lastPrice ?? liveQuote?.last_price;
+    if (lastPrice !== undefined) lastPrice = Number(lastPrice);
+    
+    let volume = liveQuote?.volume ?? liveQuote?.v;
+    if (volume !== undefined) volume = Number(volume);
+    
+    let nowMs = liveQuote?.timestamp ? new Date(liveQuote.timestamp).getTime() : Date.now();
+    if (nowMs !== undefined) nowMs = Number(nowMs);
+
     if (loading || candles.length === 0) return;
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
     
-    datafeedRef.current?.updateLive(lastPrice, Date.now(), volume);
+    datafeedRef.current?.updateLive(lastPrice, nowMs, volume);
   }, [liveQuote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Task 8.5: Theme sync via MutationObserver ─────────────────────────────
