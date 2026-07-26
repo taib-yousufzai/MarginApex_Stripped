@@ -93,7 +93,7 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
     listed_exchange: exchange,
     session,
     timezone: 'Asia/Kolkata',
-    pricescale: 100,
+    pricescale: isCrypto ? 100000 : 100,
     minmov: 1,
     has_intraday: true,
     intraday_multipliers: ['1', '2', '3', '5', '10', '15', '30', '60'],
