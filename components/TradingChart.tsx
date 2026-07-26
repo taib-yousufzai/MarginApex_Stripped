@@ -1400,10 +1400,14 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // Instrument-specific position: find open position matching the currently viewed chart symbol
   const currentInstrumentPosition = useMemo(() => {
-    const matchingPositions = positions.filter(p =>
-      (p.status === 'open' || p.status === 'active') &&
-      p.symbol === symbol
-    );
+    const matchingPositions = positions.filter(p => {
+      if (p.status !== 'open' && p.status !== 'active') return false;
+      if (p.symbol === symbol) return true;
+      if (p.kite_instrument === symbol) return true;
+      if (p.symbol + 'USDT' === symbol) return true;
+      if (symbol + 'USDT' === p.symbol) return true;
+      return false;
+    });
     if (matchingPositions.length === 0) return null;
 
     // Group them like Cumulative view
