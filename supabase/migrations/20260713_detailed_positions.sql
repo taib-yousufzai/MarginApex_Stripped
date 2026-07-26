@@ -136,7 +136,6 @@ BEGIN
     VALUES (v_order.user_id, 'BUFFER_FEE_DEBIT', v_order.buffer_fee, 'APPROVED', 'BUF_' || v_order.id::text);
   END IF;
 
-  -- Lock and fetch active position
   IF v_order.is_exit THEN
     IF p_info IS NOT NULL THEN
       SELECT * INTO v_pos
