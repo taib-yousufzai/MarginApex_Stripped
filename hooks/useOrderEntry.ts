@@ -61,6 +61,10 @@ export function useOrderEntry() {
         return { success: false, error: errorMsg };
       }
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('order_placed'));
+      }
+
       return { success: true, order: result };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -95,6 +99,11 @@ export function useOrderEntry() {
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to close position');
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('order_placed'));
+        window.dispatchEvent(new Event('position-closed')); // Backward compatibility for some components
       }
 
       return { success: true, ...result };
@@ -132,6 +141,11 @@ export function useOrderEntry() {
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to close positions');
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('order_placed'));
+        window.dispatchEvent(new Event('position-closed'));
       }
 
       return { success: true, ...result };
