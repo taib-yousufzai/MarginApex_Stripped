@@ -11,6 +11,8 @@
  * Fill price = Kite LTP ± segment_settings.entry_buffer / exit_buffer
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { requireAuth as apiRequireAuth } from '@/lib/api-middleware';
