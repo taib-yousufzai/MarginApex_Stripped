@@ -441,10 +441,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { symbol: rawSymbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit: body_is_exit, linked_position_id } = body;
     let is_exit = body_is_exit === true || body_is_exit === 'true';
 
-  // Normalize crypto symbol: positions may be stored as 'ETH' or 'ETH/USDT'
-  // but exit orders arrive as 'ETHUSDT' from the Binance feed. Strip the USDT
-  // suffix so the RPC can find the open position.
   let symbol = rawSymbol;
+  let kiteInst = kite_instrument;
 
   // 3. Basic field validation
   if (!symbol || !side || !qty || !segment) {
@@ -464,6 +462,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     dbSegment = isOptionSymbol ? 'MCX-OPT' : 'MCX-FUT';
   } else if (['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => symUp === c || symUp.startsWith(c + 'USDT'))) {
     dbSegment = 'CRYPTO';
+    // Normalize Crypto symbol to short form (e.g., 'ETH') and kiteInst to full form (e.g., 'ETHUSDT')
+    if (symbol.toUpperCase().endsWith('USDT')) {
+      symbol = symbol.substring(0, symbol.length - 4);
+    }
+    if (!kiteInst.toUpperCase().endsWith('USDT')) {
+      kiteInst = kiteInst + 'USDT';
+    }
   } else {
     dbSegment = mapSymbolToSegment(symbol);
   }
