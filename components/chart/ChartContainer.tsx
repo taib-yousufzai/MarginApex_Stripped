@@ -117,7 +117,6 @@ export default function ChartContainer({
         theme: isDark ? 'dark' : 'light',
         autosize: true,
         saved_data: savedData,
-        custom_css_url: '/charting_library/custom.css',
         client_id: 'marginapexx',
         user_id: 'public_user',
         auto_save_delay: 1,
@@ -253,10 +252,13 @@ export default function ChartContainer({
   // ── Task 8.6: Render ──────────────────────────────────────────────────────
 
   return (
-    <div style={{ position: 'relative', flex: 1, width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
 
-      {/* Widget mount target */}
-      <div ref={containerRef} style={{ flex: 1, width: '100%', height: '100%' }} />
+      {/* Widget mount target (shifted up by 38px to hide TradingView native header natively without CSS injection) */}
+      <div 
+        ref={containerRef} 
+        style={{ position: 'absolute', top: -38, left: 0, right: 0, bottom: 0, height: 'calc(100% + 38px)' }} 
+      />
 
       {/* Loading overlay */}
       {chartStatus === 'loading' && (
