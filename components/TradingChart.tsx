@@ -2105,17 +2105,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div
                       title="Scalp"
-                      onClick={() => setIsTradeOnChartActive(true)}
+                      onClick={() => setIsTradeOnChartActive(!isTradeOnChartActive)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '5px',
                         padding: '4px 14px',
                         borderRadius: '4px',
-                        background: 'var(--green-bg, #e8f5e9)',
-                        color: 'var(--green, #1db954)',
+                        background: isTradeOnChartActive ? 'var(--green-bg, #e8f5e9)' : 'var(--bg-card, #1A1A1A)',
+                        color: isTradeOnChartActive ? 'var(--green, #1db954)' : 'var(--text-muted, #888)',
                         cursor: 'pointer',
-                        border: '1px solid var(--green, #1db954)',
+                        border: isTradeOnChartActive ? '1px solid var(--green, #1db954)' : '1px solid var(--border-light, #333)',
                       }}
                     >
                       <span style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>Scalp</span>
