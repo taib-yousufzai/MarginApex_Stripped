@@ -384,7 +384,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
               <button 
                 onClick={(e) => { 
                   e.stopPropagation(); 
-                  onChart(item);
+                  onChart({ ...item, preferredView: priceView } as any);
                 }}
                 style={{ background: 'none', border: 'none', color: '#2C8E5A', cursor: 'pointer', padding: '0 4px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center' }}
                 title="Open Chart"
@@ -2253,10 +2253,10 @@ function WatchlistContent() {
         <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
           {chartItem && (
             <TradingChart
-              key={`${chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol}-${chartItem.segment}`}
-              symbol={chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol}
-              segment={chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment}
-              liveQuote={chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol]}
+              key={`${(chartItem as any).preferredView === 'comex' ? chartItem.comexSymbol : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}-${(chartItem as any).preferredView === 'comex' ? 'COMEX' : chartItem.segment}`}
+              symbol={(chartItem as any).preferredView === 'comex' ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
+              segment={(chartItem as any).preferredView === 'comex' ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
+              liveQuote={(chartItem as any).preferredView === 'comex' ? comexQuotes[chartItem.comexSymbol || ''] : (chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol])}
             />
           )}
         </div>
