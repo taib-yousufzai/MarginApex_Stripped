@@ -167,7 +167,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
           }
           const changePercent = close > 0 ? ((finalPrice - close) / close) * 100 : 0;
           mapped[key] = {
-            lastPrice: parseFloat(finalPrice.toFixed(2)),
+            lastPrice: parseFloat(Number(finalPrice).toFixed(8)),
             change: finalPrice - close,
             changePercent: parseFloat(changePercent.toFixed(2)),
             open: q.ohlc?.open || q.open || 0,
@@ -190,7 +190,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
         }
         const changePercent = close > 0 ? ((finalPrice - close) / close) * 100 : 0;
         const newQuote = {
-          lastPrice: parseFloat(finalPrice.toFixed(2)),
+          lastPrice: parseFloat(Number(finalPrice).toFixed(8)),
           change: finalPrice - close,
           changePercent: parseFloat(changePercent.toFixed(2)),
           open: q.ohlc?.open || q.open || 0,
