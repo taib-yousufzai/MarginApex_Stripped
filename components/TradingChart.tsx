@@ -2128,10 +2128,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         gap: '5px',
                         padding: '4px 14px',
                         borderRadius: '4px',
-                        background: isTradeOnChartActive ? 'var(--green-bg, #e8f5e9)' : 'var(--bg-card, #1A1A1A)',
-                        color: isTradeOnChartActive ? 'var(--green, #1db954)' : 'var(--text-muted, #888)',
+                        background: isTradeOnChartActive ? 'var(--green-bg, #e8f5e9)' : 'transparent',
+                        color: 'var(--green, #1db954)',
                         cursor: 'pointer',
-                        border: isTradeOnChartActive ? '1px solid var(--green, #1db954)' : '1px solid var(--border-light, #333)',
+                        border: '1px solid var(--green, #1db954)',
                       }}
                     >
                       <span style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>Scalp</span>
