@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import Footer from '@/components/Footer';
-import Sidebar from '@/components/Sidebar';
 
 import { getSession, getRole } from '@/lib/auth';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
@@ -435,8 +433,7 @@ export default function Page() {
 
   return (
     <div className="desktop-layout home-isolated-layout">
-      <Sidebar />
-
+      
       <main className="main-viewport home-isolated-viewport">
         <div className="app-container home-isolated-container">
           {/* Mobile Navigation Bar */}
@@ -615,8 +612,7 @@ export default function Page() {
             </div>
           </div>
 
-          <Footer activeTab="home" />
-        </div>
+                  </div>
 
         {/* Drawers */}
         <div className={`expiry-half-drawer-overlay ${isExpiryDrawerOpen ? 'active' : ''}`} onClick={(e) => { if (e.target === e.currentTarget) setIsExpiryDrawerOpen(false); }}>

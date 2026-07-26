@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
-import Footer from '@/components/Footer';
 import { supabase } from '@/lib/supabaseClient';
 import './page.css';
 
@@ -228,8 +226,7 @@ export default function HistoryPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-
+      
       <main className="main-viewport">
         <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-[#0B0E14] relative">
           <style>{`
@@ -469,8 +466,7 @@ export default function HistoryPage() {
                 </div>
               </div>
 
-              <Footer activeTab="history" />
-            </div>
+                          </div>
           </div>
         </div>
       </main>

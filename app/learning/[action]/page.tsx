@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
-import Footer from '@/components/Footer';
 import { ErrorModal } from '@/components/ErrorModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getSession } from '@/lib/auth';
@@ -199,8 +197,7 @@ export default function LearningPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-
+      
       <main className="main-viewport">
         <div className="app-container">
           <div className="main-scroll-wrapper" style={{ paddingBottom: 'calc(var(--footer-nav-height, 65px) + env(safe-area-inset-bottom, 0px) + 24px)' }}>
@@ -378,8 +375,7 @@ export default function LearningPage() {
               )}
             </div>
           </div>
-          <Footer activeTab="home" />
-        </div>
+                  </div>
       </main>
       <ErrorModal error={modalError} onClose={() => setModalError(null)} title="Notice" />
     </div>

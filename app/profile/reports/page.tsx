@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { getSession } from '@/lib/auth';
-import Sidebar from '@/components/Sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import './page.css';
 
@@ -155,8 +154,7 @@ export default function ReportsPage() {
 
     return (
         <div className="desktop-layout">
-            <Sidebar />
-            <main className="main-viewport">
+                        <main className="main-viewport">
                 <div className="rp-root">
 
             {/* ══ HEADER ══ */}

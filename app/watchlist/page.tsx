@@ -1,8 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Footer from '@/components/Footer';
-import Sidebar from '@/components/Sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { useMarketQuotes, QuoteData } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
@@ -1420,8 +1418,7 @@ function WatchlistContent() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-      <main className="main-viewport">
+            <main className="main-viewport">
         <div className="mobile-app" suppressHydrationWarning>
       <div className="app-header">
         <div className="header-top">
@@ -2263,8 +2260,7 @@ function WatchlistContent() {
       </div>
 
       <ErrorModal error={errorModalMsg} onClose={() => setErrorModalMsg(null)} title="Insufficient Funds" />
-      <Footer activeTab="watchlist" />
-        </div>
+              </div>
       </main>
     </div>
   );

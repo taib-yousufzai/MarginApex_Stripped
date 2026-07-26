@@ -2,7 +2,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { getSession, signOut } from '@/lib/auth';
-import Sidebar from '@/components/Sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { pageCache } from '@/lib/pageCache';
 import type { Session } from '@supabase/supabase-js';
@@ -170,8 +169,7 @@ export default function ProfilePage() {
 
     return (
         <div className="desktop-layout">
-            <Sidebar />
-            <main className="main-viewport">
+                        <main className="main-viewport">
                 <div className="mobile-app profile-app">
 
                     {/* Header Gradient Area */}

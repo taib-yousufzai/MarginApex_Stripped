@@ -1,16 +1,21 @@
 import type { NextConfig } from "next";
+import withSerwistInit from "@serwist/next";
+
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV === "development",
+});
 
 const nextConfig: NextConfig = {
   output: 'standalone', // enables minimal Docker image via Dockerfile.nextjs
-  experimental: {
-    scrollRestoration: false,
-  },
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
+  experimental: {
+    scrollRestoration: false,
   },
+  turbopack: {},
   images: {
     unoptimized: true,
   },
@@ -26,4 +31,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSerwist(nextConfig);

@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import Sidebar from '@/components/Sidebar';
 import './page.css';
 
 interface ReferralEarning {
@@ -87,8 +86,7 @@ export default function ReferAndEarnPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-      <main className="main-viewport">
+            <main className="main-viewport">
         <div className="mobile-app refer-root">
           <div className="refer-header">
             <Link href="/profile" className="back-btn">

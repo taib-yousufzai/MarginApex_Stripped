@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Sidebar from '@/components/Sidebar';
 import { getSession } from '@/lib/auth';
 import type { Session } from '@supabase/supabase-js';
 import './page.css';
@@ -182,8 +181,7 @@ export default function TransactionHistoryPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-      <main className="main-viewport">
+            <main className="main-viewport">
         <div className="app-container th-root">
           <div className="th-header">
             <Link href="/profile" className="th-back-btn" suppressHydrationWarning>

@@ -1,7 +1,6 @@
 'use client';
 import React, { useEffect } from 'react';
 import Link from 'next/link';
-import Sidebar from '@/components/Sidebar';
 import '../security/page.css'; // Re-use the security page styling for consistency
 
 export default function RulesPage() {
@@ -13,8 +12,7 @@ export default function RulesPage() {
 
     return (
         <div className="desktop-layout">
-            <Sidebar />
-            <main className="main-viewport">
+                        <main className="main-viewport">
                 <div className="sec-root">
                     <div className="sec-header">
                         <div className="sec-header-inner">

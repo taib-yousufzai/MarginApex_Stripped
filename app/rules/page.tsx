@@ -2,8 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
-import Footer from '@/components/Footer';
 import './page.css';
 
 export default function RulesPage() {
@@ -69,8 +67,7 @@ export default function RulesPage() {
 
   return (
     <div className={`desktop-layout ${theme}`}>
-      <Sidebar />
-      <main className="main-viewport">
+            <main className="main-viewport">
         <div className="app-container">
           <div className="compact-header">
             <div className="header-row-top">
@@ -112,8 +109,7 @@ export default function RulesPage() {
               </div>
             </div>
           </div>
-          <Footer activeTab="profile" />
-        </div>
+                  </div>
       </main>
     </div>
   );

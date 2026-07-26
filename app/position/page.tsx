@@ -9,8 +9,6 @@ import { useMyPositions, EnrichedPosition } from '@/hooks/useMyPositions';
 import { useOrderEntry } from '@/hooks/useOrderEntry';
 import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
-import Sidebar from '@/components/Sidebar';
-import Footer from '@/components/Footer';
 import type { TradeSheetItem } from '@/components/TradeSheet';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import dynamic from 'next/dynamic';
@@ -666,8 +664,7 @@ export default function PositionPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-
+      
       <main className="main-viewport">
         <div className="app-container">
           <div className="pos-root">
@@ -1111,8 +1108,7 @@ export default function PositionPage() {
                 )}
               </div>
 
-              <Footer activeTab="position" positions={positions} />
-            </div>
+                          </div>
 
             {/* Sheet */}
             <div className={`pos-sheet-overlay${isSheetOpen ? ' open' : ''}`} onClick={closeSheet} />

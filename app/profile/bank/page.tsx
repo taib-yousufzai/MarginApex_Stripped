@@ -4,7 +4,6 @@ import { ErrorModal } from '@/components/ErrorModal';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
 import { getSession } from '@/lib/auth';
 import type { Session } from '@supabase/supabase-js';
 import './page.css';
@@ -368,8 +367,7 @@ export default function BankDetailsPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-      <main className="main-viewport">
+            <main className="main-viewport">
         <div className="app-container bd-root">
           {/* Header */}
           <div className="bd-header">

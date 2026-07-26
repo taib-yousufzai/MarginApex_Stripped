@@ -101,6 +101,15 @@ function mapSegmentToDbSegment(s: string, symbol: string = ''): string {
 export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = false, productType: propProductType, initialOrder, isModify = false, modifyingOrderId, isFromPositions = false, linkedPosId = null, initialExitQty: propInitialExitQty }: TradeSheetProps) {
   const { placeOrder, loading: placingOrder } = useOrderEntry();
 
+  const [isClosing, setIsClosing] = useState(false);
+  const handleCloseAnimation = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 500); // Increased timeout to match slower animation
+  };
+
   const [orderUnit, setOrderUnit] = useState<'qty' | 'lot'>('qty');
   const [orderQty, setOrderQty] = useState(1);
   const [qtyInput, setQtyInput] = useState('1'); // string for free typing
@@ -846,7 +855,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           console.log('[DEBUG TradeSheet handlePlace] PATCH successful');
           showToast('Stop loss/target updated successfully');
           onSuccess?.();
-          onClose();
+          handleCloseAnimation();
           return;
         } catch (err) {
           console.error('[DEBUG TradeSheet handlePlace] PATCH exception:', err);
@@ -854,6 +863,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           return;
         }
       }
+
+      // Optimistic UI: instantly dispatch event and close sheet so it feels snappy
+      window.dispatchEvent(new Event('order_placed'));
+      showToast(`${placeSide} order sent for ${item.symbol}`);
+      onSuccess?.();
+      handleCloseAnimation();
 
       placeOrder({
         symbol: item.symbol,
@@ -870,16 +885,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         target: resolvedTarget,
         is_exit: exitMode || (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
       }).then(res => {
-        if (res.success) {
-          window.dispatchEvent(new Event('order_placed'));
-          showToast(res.order?.message || `${placeSide} order placed for ${item.symbol}`);
-          onSuccess?.();
-          onClose();
-        } else {
-          showToast(`Order Failed: ${res.error}`, true);
+        if (!res.success) {
+          // Revert or show error globally since sheet is closed
+          window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
         }
       }).catch(err => {
-        showToast(`Order Failed: ${err.message}`, true);
+        window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
       }).finally(() => {
         isExecutingRef.current = false;
       });
@@ -912,7 +923,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           z-index: 100000;
           opacity: 0; visibility: hidden;
           pointer-events: none;
-          transition: opacity 0.3s ease, visibility 0.3s ease;
+          transition: opacity 0.5s ease, visibility 0.5s ease;
         }
         .ts2-overlay.active {
           opacity: 1; visibility: visible;
@@ -926,7 +937,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           background: var(--bg-body, #F5F7FB);
           z-index: 100001;
           transform: translateY(100%);
-          transition: transform 0.38s cubic-bezier(0.25, 0.9, 0.35, 1.05);
+          transition: transform 0.5s cubic-bezier(0.25, 0.9, 0.35, 1.05);
           display: flex; flex-direction: column;
           overflow: hidden;
           pointer-events: none;
@@ -1177,14 +1188,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       `}</style>
 
-      <div id="tradeSheetOverlay" className={`ts2-overlay${isOpen ? ' active' : ''}`} onClick={onClose} />
+      <div id="tradeSheetOverlay" className={`ts2-overlay${(isOpen && !isClosing) ? ' active' : ''}`} onClick={handleCloseAnimation} />
 
-      <div id="tradeSheet" className={`ts2-sheet${isOpen ? ' open' : ''}${exitMode ? ' ts2-exit-mode' : ''} ts2-sheet--${activeSide.toLowerCase()}`}>
+      <div id="tradeSheet" className={`ts2-sheet${(isOpen && !isClosing) ? ' open' : ''}${exitMode ? ' ts2-exit-mode' : ''} ts2-sheet--${activeSide.toLowerCase()}`}>
         {item && (
           <>
             {/* Header */}
             <div className="ts2-header">
-              <button className="ts2-back-btn" onClick={onClose}>
+              <button className="ts2-back-btn" onClick={handleCloseAnimation}>
                 <i className="fas fa-chevron-down" />
               </button>
               <div style={{ flex: 1, minWidth: 0 }}>

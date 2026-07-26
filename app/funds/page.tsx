@@ -7,8 +7,6 @@ import { pageCache } from '@/lib/pageCache';
 import './page.css';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import Footer from '../../components/Footer';
-import Sidebar from '../../components/Sidebar';
 import QRCode from 'react-qr-code';
 import { useBalance } from '@/hooks/useBalance';
 
@@ -340,8 +338,7 @@ export default function FundsPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-      
+            
       <main className="main-viewport">
         <div className="app-container funds-shell">
           {/* ── Header (Mobile Only) ── */}
@@ -669,8 +666,7 @@ export default function FundsPage() {
           )}
 
           <div className="mobile-only" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50 }}>
-            <Footer activeTab="home" hideDrawer={true} />
-          </div>
+                      </div>
         </div>
       </main>
     </div>

@@ -2,7 +2,6 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getSession } from '@/lib/auth';
-import Sidebar from '@/components/Sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import type { Session } from '@supabase/supabase-js';
 import '../page.css';
@@ -139,8 +138,7 @@ export default function ProfileDetailsPage() {
 
     return (
         <div className="desktop-layout">
-            <Sidebar />
-            <main className="main-viewport">
+                        <main className="main-viewport">
                 <div className="pd-root">
             <div className="pd-header">
                 <div className="pd-header-inner">

@@ -6,7 +6,6 @@ import { useOrderEntry, OrderSide, OrderType, ProductType } from '@/hooks/useOrd
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import OptionChainTable from './OptionChainTable';
-import Footer from '@/components/Footer';
 import TradingSegmentsDrawer from '@/components/TradingSegmentsDrawer';
 import { calculateMarginPortion } from '@/lib/marginCalculator';
 import './option-chain.css';
@@ -485,8 +484,7 @@ function OptionChainContent() {
             )}
           </div>
 
-          <Footer activeTab="watchlist" />
-        </div>
+                  </div>
       </main>
 
       {/* Critical CSS inlined — prevents FOUC when CSS chunk loads late during client navigation */}

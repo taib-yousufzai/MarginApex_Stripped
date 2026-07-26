@@ -5,8 +5,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import { useKitePositions } from '@/hooks/useKitePositions';
 import { useMobileBack } from '@/hooks/useMobileBack';
-import Sidebar from '@/components/Sidebar';
-import Footer from '@/components/Footer';
 
 import type { TradeSheetItem } from '@/components/TradeSheet';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
@@ -153,8 +151,7 @@ export default function OrderPage() {
 
   return (
     <div className="desktop-layout">
-      <Sidebar />
-
+      
       <main className="main-viewport">
         <div className="app-container">
           <div className="ord-root">
@@ -365,8 +362,7 @@ export default function OrderPage() {
                 })}
               </div>
 
-              <Footer activeTab="order" />
-            </div>
+                          </div>
 
             {/* Sheet for Closed Orders */}
             <div className={`ord-sheet-overlay${isSheetOpen ? ' open' : ''}`} onClick={() => setIsSheetOpen(false)} />
