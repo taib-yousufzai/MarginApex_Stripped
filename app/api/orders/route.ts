@@ -496,7 +496,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const targetTable = isScalper ? 'scalper_segment_settings' : 'segment_settings';
   const parentId = profile.parent_id && profile.parent_id !== user.id ? profile.parent_id : null;
 
-  let kiteInst = kite_instrument || symbol;
+  kiteInst = kiteInst || symbol;
   
   if (!kiteInst.includes(':') && dbSegment !== 'CRYPTO') {
     let prefix = 'NSE';
