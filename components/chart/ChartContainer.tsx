@@ -120,7 +120,7 @@ export default function ChartContainer({
         client_id: 'marginapexx',
         user_id: 'public_user',
         auto_save_delay: 1,
-        disabled_features: ['timeframes_toolbar'],
+        disabled_features: ['timeframes_toolbar', 'countdown'],
         enabled_features: [],
         overrides: {
           "mainSeriesProperties.showCountdown": false
