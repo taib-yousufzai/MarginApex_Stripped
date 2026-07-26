@@ -94,7 +94,7 @@ export class RealtimeProvider {
         entry.lastBar.close = lastPrice;
         entry.lastBar.volume = volume ?? ((entry.lastBar.volume ?? 0) + 1);
       }
-      entry.callback(entry.lastBar);
+      entry.callback({ ...entry.lastBar });
     }
   }
 }
