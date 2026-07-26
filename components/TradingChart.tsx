@@ -1195,11 +1195,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setIsOrderBlockVisible(true);
   };
 
+  const quickExitLock = useRef(false);
+
   // Direct quick-exit (instant market close of selected lot size)
   const handleQuickExit = async (pos: EnrichedPosition) => {
+    if (quickExitLock.current) return;
+    quickExitLock.current = true;
+
     const qVal = Number(qtyValue) || 0;
     if (qVal <= 0) {
       showToast("Invalid quantity", true);
+      quickExitLock.current = false;
       return;
     }
     const isScalper = profile?.trading_mode === 'scalper';
@@ -1235,9 +1241,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setTimeout(() => {
         refreshPositions();
         fetchBalance();
+        quickExitLock.current = false;
       }, 1000); // Give DB time to match
     } else {
       showToast(res.error || 'Exit failed', true);
+      quickExitLock.current = false;
     }
   };
 
@@ -1261,10 +1269,16 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setIsOrderBlockVisible(true);
   };
 
+  const quickEntryLock = useRef(false);
+
   const handleQuickMarketOrder = async (side: 'BUY' | 'SELL') => {
+    if (quickEntryLock.current) return;
+    quickEntryLock.current = true;
+
     const qVal = Number(qtyValue) || 0;
     if (qVal <= 0) {
       showToast("Invalid quantity", true);
+      quickEntryLock.current = false;
       return;
     }
     const isScalper = profile?.trading_mode === 'scalper';
@@ -1312,9 +1326,15 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     } else {
       showToast(res.error || 'Failed to place quick order', true);
     }
+    
+    // Release entry lock after a short debounce to prevent mouse-bounces
+    setTimeout(() => { quickEntryLock.current = false; }, 500);
   };
 
   const handleQuickAddPosition = async (pos: EnrichedPosition) => {
+    if (quickEntryLock.current) return;
+    quickEntryLock.current = true;
+
     const addQty = pos.qty_open;
     const dbSeg = mapSegmentToDbSegment(segment);
     const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === pos.side);
@@ -1324,6 +1344,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
     if (required > balance) {
       showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+      quickEntryLock.current = false;
       return;
     }
 
@@ -1350,6 +1371,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     } else {
       showToast(res.error || 'Failed to add to position', true);
     }
+    
+    // Release entry lock after a short debounce to prevent mouse-bounces
+    setTimeout(() => { quickEntryLock.current = false; }, 500);
   };
 
   // All open/active positions (not filtered by symbol)
