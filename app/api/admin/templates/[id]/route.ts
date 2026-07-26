@@ -10,6 +10,7 @@ const TEMPLATE_FIELDS = [
   'name', 'description', 'is_default',
   'segments', 'read_only', 'demo_user',
   'intraday_sq_off', 'auto_sqoff', 'showcase_auto_sqoff', 'sqoff_method', 'trading_mode',
+  'carry_rollover_day', 'carry_rollover_time'
 ] as const;
 
 export async function GET(
@@ -26,7 +27,7 @@ export async function GET(
     const [templateRes, segRes, scalperRes] = await Promise.all([
       adminClient
         .from('account_templates')
-        .select('id, name, description, is_default, segments, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, trading_mode, created_by, created_at, updated_at')
+        .select('id, name, description, is_default, segments, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, trading_mode, carry_rollover_day, carry_rollover_time, created_by, created_at, updated_at')
         .eq('id', id)
         .single(),
       adminClient

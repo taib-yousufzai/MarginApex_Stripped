@@ -40,7 +40,7 @@ export async function POST(
     const [templateRes, segRes, scalperRes] = await Promise.all([
       adminClient
         .from('account_templates')
-        .select('id, name, segments, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, trading_mode')
+        .select('id, name, segments, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, trading_mode, carry_rollover_day, carry_rollover_time')
         .eq('id', templateId)
         .single(),
       adminClient
@@ -69,6 +69,8 @@ export async function POST(
       showcase_auto_sqoff: template.showcase_auto_sqoff,
       sqoff_method: template.sqoff_method,
       trading_mode: template.trading_mode,
+      carry_rollover_day: template.carry_rollover_day,
+      carry_rollover_time: template.carry_rollover_time,
       template_id: templateId,
     };
     if (Array.isArray(template.segments) && template.segments.length > 0) {

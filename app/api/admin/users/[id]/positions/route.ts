@@ -61,6 +61,8 @@ export async function GET(
     const url = new URL(request.url);
     const tab = url.searchParams.get('tab') ?? null;
     const search = url.searchParams.get('search') ?? null;
+    const startDate = url.searchParams.get('start_date') ?? null;
+    const endDate = url.searchParams.get('end_date') ?? null;
     const rowsParam = url.searchParams.get('rows') ?? null;
     const pageParam = url.searchParams.get('page') ?? null;
     const demoParam = url.searchParams.get('demo');
@@ -106,6 +108,14 @@ export async function GET(
     // Step 6: Apply symbol search filter
     if (search) {
       query = query.ilike('symbol', `%${search}%`);
+    }
+
+    // Apply date range filters
+    if (startDate) {
+      query = query.gte('entry_time', startDate + 'T00:00:00.000Z');
+    }
+    if (endDate) {
+      query = query.lte('entry_time', endDate + 'T23:59:59.999Z');
     }
 
     // Step 7: Apply pagination

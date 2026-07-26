@@ -34,6 +34,8 @@ export default function TemplateForm({ template, onBack, onSaved, isDemoMode, is
   const [showcaseAutoSqoff, setShowcaseAutoSqoff] = useState(String((template as any)?.showcase_auto_sqoff ?? 85));
   const [sqoffMethod, setSqoffMethod] = useState(template?.sqoff_method ?? 'Credit');
   const [tradingMode, setTradingMode] = useState(template?.trading_mode ?? 'normal');
+  const [carryRolloverDay, setCarryRolloverDay] = useState((template as any)?.carry_rollover_day ?? 'Sunday');
+  const [carryRolloverTime, setCarryRolloverTime] = useState((template as any)?.carry_rollover_time ?? '23:59');
 
   // Segment settings
   const [segSettings, setSegSettings] = useState<Record<string, SegmentSettingsType>>({});
@@ -151,6 +153,8 @@ export default function TemplateForm({ template, onBack, onSaved, isDemoMode, is
       showcase_auto_sqoff: Number(showcaseAutoSqoff),
       sqoff_method: sqoffMethod,
       trading_mode: tradingMode,
+      carry_rollover_day: carryRolloverDay,
+      carry_rollover_time: carryRolloverTime,
     };
 
     let templateId = template?.id;
@@ -246,6 +250,8 @@ export default function TemplateForm({ template, onBack, onSaved, isDemoMode, is
             showcaseAutoSqoff={showcaseAutoSqoff} setShowcaseAutoSqoff={setShowcaseAutoSqoff}
             sqoffMethod={sqoffMethod} setSqoffMethod={setSqoffMethod}
             tradingMode={tradingMode} setTradingMode={setTradingMode}
+            carryRolloverDay={carryRolloverDay} setCarryRolloverDay={setCarryRolloverDay}
+            carryRolloverTime={carryRolloverTime} setCarryRolloverTime={setCarryRolloverTime}
           />
         )}
 
@@ -317,6 +323,7 @@ function ProfileTab({
   intradaySqOff, setIntradaySqOff, autoSqoff, setAutoSqoff,
   showcaseAutoSqoff, setShowcaseAutoSqoff,
   sqoffMethod, setSqoffMethod, tradingMode, setTradingMode,
+  carryRolloverDay, setCarryRolloverDay, carryRolloverTime, setCarryRolloverTime,
 }: {
   name: string; setName: (v: string) => void;
   description: string; setDescription: (v: string) => void;
@@ -329,6 +336,8 @@ function ProfileTab({
   showcaseAutoSqoff: string; setShowcaseAutoSqoff: (v: string) => void;
   sqoffMethod: string; setSqoffMethod: (v: string) => void;
   tradingMode: string; setTradingMode: (v: string) => void;
+  carryRolloverDay: string; setCarryRolloverDay: (v: string) => void;
+  carryRolloverTime: string; setCarryRolloverTime: (v: string) => void;
 }) {
   const ALL_SEGS = ['INDEX-FUT', 'STOCK-OPT', 'NSE-EQ', 'COMEX', 'INDEX-OPT', 'MCX-FUT', 'CRYPTO', 'STOCK-FUT', 'MCX-OPT', 'FOREX'];
 
@@ -368,6 +377,23 @@ function ProfileTab({
             <option value="Credit">Credit</option>
             <option value="Debit">Debit</option>
           </select>
+        </Field>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Carry Rollover Day">
+          <select className="adm-upd-input adm-upd-select" value={carryRolloverDay} onChange={e => setCarryRolloverDay(e.target.value)}>
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </Field>
+        <Field label="Carry Rollover Time (HH:MM)">
+          <input className="adm-upd-input" type="time" value={carryRolloverTime} onChange={e => setCarryRolloverTime(e.target.value)} />
         </Field>
       </div>
 

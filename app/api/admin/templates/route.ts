@@ -27,6 +27,7 @@ const TEMPLATE_FIELDS = [
   'name', 'description', 'is_default',
   'segments', 'read_only', 'demo_user',
   'intraday_sq_off', 'auto_sqoff', 'showcase_auto_sqoff', 'sqoff_method', 'trading_mode',
+  'carry_rollover_day', 'carry_rollover_time'
 ] as const;
 
 export async function GET(request: Request): Promise<Response> {
@@ -37,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
 
     const { data, error } = await adminClient
       .from('account_templates')
-      .select('id, name, description, is_default, segments, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, trading_mode, created_by, created_at, updated_at')
+      .select('id, name, description, is_default, segments, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, trading_mode, carry_rollover_day, carry_rollover_time, created_by, created_at, updated_at')
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: true });
 

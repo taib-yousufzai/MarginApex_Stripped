@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/liquidation-check?secret=qwertyuiopasdfghjklzxcvbnm",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/rollover-carry?secret=qwertyuiopasdfghjklzxcvbnm",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

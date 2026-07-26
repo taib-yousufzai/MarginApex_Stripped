@@ -8,6 +8,8 @@ import { useComexQuotes } from '@/hooks/useComexQuotes';
 export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode }: { selectedUser: { id: string; role: string; client_id?: string }, onOpenUserPanel?: () => void, isDemoMode: boolean }) {
   const [tab, setTab] = useState<'open' | 'closed'>('open');
   const [search, setSearch] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [rows, setRows] = useState('10');
   const [page, setPage] = useState(1);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -33,7 +35,11 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
   const fetchPositions = useCallback((silent = false) => {
     const endpointId = uid || 'all';
     if (!silent) setPosLoading(true);
-    apiCall(`/api/admin/users/${endpointId}/positions?tab=${encodeURIComponent(tab)}&rows=100000&demo=${isDemoMode}`, { method: 'GET' })
+    let url = `/api/admin/users/${endpointId}/positions?tab=${encodeURIComponent(tab)}&rows=100000&demo=${isDemoMode}`;
+    if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+    if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+    
+    apiCall(url, { method: 'GET' })
       .then(({ ok, status, data }) => {
         if (status === 401) { signOut(); return; }
         if (status === 403) { setToast({ message: 'Access Denied', type: 'error' }); return; }
@@ -45,11 +51,11 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
         setToast({ message: err instanceof Error ? err.message : 'Network error', type: 'error' });
       })
       .finally(() => setPosLoading(false));
-  }, [uid, tab, isDemoMode]);
+  }, [uid, tab, isDemoMode, startDate, endDate]);
 
   useEffect(() => {
     fetchPositions();
-  }, [uid, tab, isDemoMode]);
+  }, [uid, tab, isDemoMode, startDate, endDate]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -160,6 +166,15 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
     (p.user_name || '').toLowerCase().includes(search.toLowerCase()) ||
     (p.user_id || '').toLowerCase().includes(search.toLowerCase())
   );
+  
+  const totalTrades = filtered.length;
+  const winningTrades = filtered.filter(p => (p.pnl || 0) > 0).length;
+  const losingTrades = filtered.filter(p => (p.pnl || 0) < 0).length;
+  const winRate = totalTrades > 0 ? ((winningTrades / totalTrades) * 100).toFixed(1) + '%' : '0%';
+  const lossRate = totalTrades > 0 ? ((losingTrades / totalTrades) * 100).toFixed(1) + '%' : '0%';
+  const totalPnl = filtered.reduce((s, p) => s + (p.pnl || 0), 0);
+  const totalBrokerage = filtered.reduce((s, p) => s + (p.brokerage || 0), 0);
+
   const rowsNum = Number(rows);
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsNum));
   const displayed = filtered.slice((page - 1) * rowsNum, page * rowsNum);
@@ -569,8 +584,8 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
           </div>
         </div>
         <div className="adm-pos-stat-card">
-          <div className="adm-pos-stat-label">OPEN PNL</div>
-          <div className={`adm-pos-stat-value ${openPnl >= 0 ? 'pos' : 'neg'}`}>{(openPnl ?? 0).toFixed(2)}</div>
+          <div className="adm-pos-stat-label">{tab === 'open' ? 'OPEN PNL' : 'REALIZED PNL'}</div>
+          <div className={`adm-pos-stat-value ${totalPnl >= 0 ? 'pos' : 'neg'}`}>{(totalPnl ?? 0).toFixed(2)}</div>
         </div>
         {tab === 'closed' && (
           <div className="adm-pos-stat-card">
@@ -579,8 +594,20 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
           </div>
         )}
         <div className="adm-pos-stat-card">
-          <div className="adm-pos-stat-label">WEEKLY PNL</div>
-          <div className={`adm-pos-stat-value ${weeklyPnl >= 0 ? 'pos' : 'neg'}`}>{weeklyPnl.toFixed(2)}</div>
+          <div className="adm-pos-stat-label">WIN RATE</div>
+          <div className="adm-pos-stat-value pos">{winRate}</div>
+        </div>
+        <div className="adm-pos-stat-card">
+          <div className="adm-pos-stat-label">LOSS RATE</div>
+          <div className="adm-pos-stat-value neg">{lossRate}</div>
+        </div>
+        <div className="adm-pos-stat-card">
+          <div className="adm-pos-stat-label">BROKERAGE</div>
+          <div className="adm-pos-stat-value" style={{ color: '#8b949e' }}>{(totalBrokerage ?? 0).toFixed(2)}</div>
+        </div>
+        <div className="adm-pos-stat-card">
+          <div className="adm-pos-stat-label">TRADES</div>
+          <div className="adm-pos-stat-value" style={{ color: '#c9d1d9' }}>{totalTrades}</div>
         </div>
       </div>
 
@@ -598,10 +625,37 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
         </div>
       )}
 
-      <div className="adm-ord-search-wrap">
-        <i className="fas fa-search adm-ord-search-icon" />
-        <input className="adm-ord-search" placeholder="Search by user or symbol" value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }} />
+      <div className="adm-ord-search-wrap" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+          <i className="fas fa-search adm-ord-search-icon" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+          <input className="adm-ord-search" placeholder="Search by user or symbol" value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ width: '100%', paddingLeft: '36px' }} />
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input 
+            type="date" 
+            className="adm-ord-search" 
+            value={startDate} 
+            onChange={e => { setStartDate(e.target.value); setPage(1); }}
+            title="Start Date"
+          />
+          <span style={{ color: '#8b949e' }}>to</span>
+          <input 
+            type="date" 
+            className="adm-ord-search" 
+            value={endDate} 
+            onChange={e => { setEndDate(e.target.value); setPage(1); }}
+            title="End Date"
+          />
+          {(startDate || endDate) && (
+            <button 
+              onClick={() => { setStartDate(''); setEndDate(''); setPage(1); }}
+              style={{ background: 'transparent', border: 'none', color: '#f85149', cursor: 'pointer', fontSize: '12px' }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="adm-ord-controls">
