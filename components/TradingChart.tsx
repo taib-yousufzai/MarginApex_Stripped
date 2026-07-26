@@ -787,8 +787,13 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       mode = profileRes.data?.trading_mode || 'normal';
       console.log('[TradingChart] Profile trading_mode:', mode, 'error:', profileRes.error?.message);
       setProfile({ trading_mode: mode });
-      // Initialize Scalp toggle based on user's default trading mode
-      setIsTradeOnChartActive(mode === 'scalper');
+      // Initialize Scalp toggle based on user's saved preference or default trading mode
+      const savedMode = localStorage.getItem('isTradeOnChartActive');
+      if (savedMode !== null) {
+        setIsTradeOnChartActive(savedMode === 'true');
+      } else {
+        setIsTradeOnChartActive(mode === 'scalper');
+      }
     } catch (err) {
       console.warn('Failed to fetch profile:', err);
     }
@@ -2091,7 +2096,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     <button className="trade-btn buy" onClick={() => showToast('Available soon')} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: '1.5px solid var(--green, #1db954)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                       <span className="btn-label" style={{ color: 'var(--green, #1db954)', fontSize: '11px', fontWeight: 600 }}>TP</span>
                     </button>
-                    <div className="pnl-toggle-btn" onClick={() => setIsTradeOnChartActive(false)} style={{ background: 'var(--pill-bg, #1a2432)', color: 'var(--text-primary)', cursor: 'pointer', marginLeft: '4px' }}>
+                    <div className="pnl-toggle-btn" onClick={() => { setIsTradeOnChartActive(false); localStorage.setItem('isTradeOnChartActive', 'false'); }} style={{ background: 'var(--pill-bg, #1a2432)', color: 'var(--text-primary)', cursor: 'pointer', marginLeft: '4px' }}>
                       <i className="ti ti-x"></i>
                     </div>
                   </div>
@@ -2107,7 +2112,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div
                       title="Scalp"
-                      onClick={() => setIsTradeOnChartActive(!isTradeOnChartActive)}
+                      onClick={() => {
+                        const nextState = !isTradeOnChartActive;
+                        setIsTradeOnChartActive(nextState);
+                        localStorage.setItem('isTradeOnChartActive', nextState.toString());
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -2139,7 +2148,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           >
             {/* Trade Buttons — show Exit when position exists for current symbol, else Buy/Sell */}
             {!isUnderlyingIndex && !isOrderBlockVisible && (
-              currentInstrumentPosition ? (
+              (currentInstrumentPosition && !isTradeOnChartActive) ? (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
                   {currentInstrumentPosition.side === 'BUY' ? (
                     <>
