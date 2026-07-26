@@ -2148,7 +2148,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           >
             {/* Trade Buttons — show Exit when position exists for current symbol, else Buy/Sell */}
             {!isUnderlyingIndex && !isOrderBlockVisible && (
-              (currentInstrumentPosition && !isTradeOnChartActive) ? (
+              currentInstrumentPosition ? (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
                   {currentInstrumentPosition.side === 'BUY' ? (
                     <>
