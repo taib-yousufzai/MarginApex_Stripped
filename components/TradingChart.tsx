@@ -1042,7 +1042,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       }
     }
 
-    let orderKiteInstrument = orderSymbol;
+    let orderKiteInstrument = (isAddMoreFlow || isExitFlow) && addMoreKiteInst ? addMoreKiteInst : orderSymbol;
 
     if (chainContract) {
       orderSymbol = chainContract.name;
@@ -2281,6 +2281,19 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                       style={{ marginRight: '8px', cursor: 'pointer', background: 'var(--pill-bg, #1a2432)', width: '26px', height: '26px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green, #1db954)', border: '1.2px solid var(--green, #1db954)' }}
                       onClick={() => {
                         const targetSymbol = chainContract ? chainContract.name : orderBlockTitle.replace(/Add More · |Exit · |Modify · /g, '').trim();
+                        
+                        // For exit/add-more flows on options and futures, ensure kite instrument has prefix
+                        // Use the stored addMoreKiteInst if available, else derive from orderBlockTitle/chain
+                        const baseKiteInst = (isAddMoreFlow || isExitFlow) && addMoreKiteInst 
+                          ? addMoreKiteInst 
+                          : (chainContract ? chainContract.name : ((isAddMoreFlow || isExitFlow || modifyOrderId) ? targetSymbol : symbol));
+                          
+                        let kiteInstForOrder = baseKiteInst;
+                        
+                        if (['OPTIDX', 'FUTIDX', 'OPTSTK', 'FUTSTK', 'OPTCOM', 'FUTCOM', 'OPTCUR', 'FUTCUR'].includes(dbSeg)) {
+                          kiteInstForOrder = isMcx ? `MCX:${baseKiteInst}` : `NFO:${baseKiteInst}`;
+                        }
+                        
                         setSymbol(targetSymbol);
                         // Derive the correct display segment so mapSegmentToDbSegment works
                         if (chainContract) {
