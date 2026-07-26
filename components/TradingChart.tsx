@@ -1186,7 +1186,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     // Also set the target symbol info so the order block UI shows the correct position prices
     // instead of the chart's current instrument prices
     setAddMoreSymbol(pos.symbol);
-    setAddMoreSegment(pos.settlement || segment);
+    setAddMoreSegment(pos.settlement || pos.segment || segment);
+    setAddMoreKiteInst(pos.kite_instrument || pos.symbol);
     setAddMoreLtp(pos.current_ltp || pos.avg_price || pos.entry_price);
 
     setOrderSide(pos.side === 'BUY' ? 'SELL' : 'BUY');
