@@ -855,8 +855,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       }
 
-      showToast('Calling placeOrder');
-      const res = await placeOrder({
+      // Optimistic UI
+      onSuccess?.();
+      onClose();
+
+      placeOrder({
         symbol: item.symbol,
         kite_instrument: computedKiteSymbol || item.symbol,
         segment: item.segment,
@@ -870,17 +873,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         stop_loss: resolvedStopLoss,
         target: resolvedTarget,
         is_exit: exitMode || (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
+      }).then(res => {
+        if (res.success) {
+          window.dispatchEvent(new Event('order_placed'));
+          showToast(res.order?.message || `${placeSide} order placed for ${item.symbol}`);
+        } else {
+          showToast(`Order Failed: ${res.error}`, true);
+        }
+      }).catch(err => {
+        showToast(`Order Failed: ${err.message}`, true);
+      }).finally(() => {
+        isExecutingRef.current = false;
       });
-      if (res.success) {
-        window.dispatchEvent(new Event('order_placed'));
-        showToast(res.order?.message || `${placeSide} order placed for ${item.symbol}`);
-        onSuccess?.();
-        onClose();
-      } else {
-        setErrorModalMsg(`Order Failed:\n${res.error}`);
-        showToast(`${res.error}`);
-      }
-    } finally {
+    } catch (e) {
       isExecutingRef.current = false;
     }
   };

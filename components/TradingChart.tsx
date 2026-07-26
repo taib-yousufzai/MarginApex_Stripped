@@ -1084,7 +1084,29 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       showToast('Placing order...');
     }
 
-    const res = await placeOrder({
+    // Optimistic UI: Immediately close panel and show processing state
+    if (modifyOrderId) {
+      setModifyOrderId(null);
+    }
+    setIsOrderBlockVisible(false);
+    setChainContract(null);
+    setIsExitFlow(false);
+    setIsAddMoreFlow(false);
+    setAddMoreSymbol(null);
+    setAddMoreSegment(null);
+    setAddMoreLtp(null);
+    setAddMoreKiteInst(null);
+    setExitPositionId(null);
+    setOrderBlockTitle(symbol);
+    
+    const returnTo = postOrderSegment;
+    setPostOrderSegment(null);
+    if (returnTo && returnTo !== 'main') {
+      setActiveSegment(returnTo as 'chain' | 'orders' | 'positions');
+      setIsPanelExpanded(true);
+    }
+
+    placeOrder({
       symbol: orderSymbol,
       kite_instrument: orderKiteInstrument,
       segment: orderSegment,
@@ -1098,40 +1120,19 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       stop_loss: gttSlPrice ? parseFloat(gttSlPrice) : undefined,
       target: gttTargetPrice ? parseFloat(gttTargetPrice) : undefined,
       is_exit: isExitFlow
-    });
-
-    if (res.success) {
-      if (modifyOrderId) {
-        showToast('Order Modified Successfully!');
-        setModifyOrderId(null);
+    }).then(res => {
+      if (res.success) {
+        showToast(modifyOrderId ? 'Order Modified Successfully!' : `${orderSide} Order Placed Successfully!`);
+        refreshOrders();
+        refreshPositions();
+        fetchBalance();
+        window.dispatchEvent(new CustomEvent('position-closed'));
       } else {
-        showToast(`${orderSide} Order Placed Successfully!`);
+        showToast(res.error || 'Failed to place order', true);
       }
-      setIsOrderBlockVisible(false);
-      setChainContract(null);
-      setIsExitFlow(false);
-      setIsAddMoreFlow(false);
-      setAddMoreSymbol(null);
-      setAddMoreSegment(null);
-      setAddMoreLtp(null);
-      setAddMoreKiteInst(null);
-      setExitPositionId(null);
-      setOrderBlockTitle(symbol);
-      refreshOrders();
-      refreshPositions();
-      fetchBalance();
-      window.dispatchEvent(new CustomEvent('position-closed'));
-
-      // Post-order navigation: return to originating segment
-      const returnTo = postOrderSegment;
-      setPostOrderSegment(null);
-      if (returnTo && returnTo !== 'main') {
-        setActiveSegment(returnTo as 'chain' | 'orders' | 'positions');
-        setIsPanelExpanded(true);
-      }
-    } else {
-      showToast(res.error || 'Failed to place order', true);
-    }
+    }).catch(err => {
+      showToast(err?.message || 'Failed to place order', true);
+    });
   };
 
   // Cancel actual order
