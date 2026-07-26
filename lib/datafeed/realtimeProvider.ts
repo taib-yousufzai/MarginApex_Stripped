@@ -61,8 +61,8 @@ export class RealtimeProvider {
         close: lastPrice,
       };
 
-      entry.lastBar = bar;
-      entry.callback(bar);
+      entry.lastBar = { ...bar };
+      entry.callback({ ...bar });
     }
   }
 }

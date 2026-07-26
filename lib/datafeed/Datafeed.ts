@@ -30,8 +30,12 @@ export class Datafeed implements IBasicDataFeed {
   private readonly realtimeProvider: RealtimeProvider;
   private readonly lastBarCache = new Map<string, Bar>();
 
-  constructor(private readonly segment: string) {
+  constructor(private segment: string) {
     this.realtimeProvider = new RealtimeProvider();
+  }
+
+  setSegment(segment: string) {
+    this.segment = segment;
   }
 
   // ---------------------------------------------------------------------------
@@ -49,7 +53,6 @@ export class Datafeed implements IBasicDataFeed {
     setTimeout(() => {
       callback({
         supported_resolutions: ['1', '2', '3', '5', '10', '15', '30', '60', 'D'] as ResolutionString[],
-        supports_time: true,
       } satisfies DatafeedConfiguration);
     }, 0);
   }
@@ -147,9 +150,7 @@ export class Datafeed implements IBasicDataFeed {
     // no-op: symbol search is not supported in this datafeed
   }
 
-  getServerTime(callback: (serverTime: number) => void): void {
-    callback(Math.floor(Date.now() / 1000));
-  }
+  // removed getServerTime
 
   // ---------------------------------------------------------------------------
   // Public extension (called by ChartContainer)

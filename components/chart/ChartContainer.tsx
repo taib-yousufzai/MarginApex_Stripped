@@ -202,6 +202,12 @@ export default function ChartContainer({
   }, [symbol]);
 
   useEffect(() => {
+    if (datafeedRef.current) {
+      datafeedRef.current.setSegment(segment);
+    }
+  }, [segment]);
+
+  useEffect(() => {
     if (!isReadyRef.current) { pendingRef.current.timeframe = timeframe; return; }
     tvWidgetRef.current?.chart().setResolution(toUdfResolution(timeframe) as any);
   }, [timeframe]);

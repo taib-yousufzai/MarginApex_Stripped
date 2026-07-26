@@ -594,7 +594,7 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
           </div>
         )}
         <div className="adm-pos-stat-card">
-          <div className="adm-pos-stat-label">WIN RATE</div>
+          <div className="adm-pos-stat-label">PROFIT RATE</div>
           <div className="adm-pos-stat-value pos">{winRate}</div>
         </div>
         <div className="adm-pos-stat-card">
