@@ -1447,14 +1447,11 @@ function WatchlistContent() {
                   if (typeof (window as any).__syncWatchlistSymbols === 'function') {
                     (window as any).__syncWatchlistSymbols(next.map((i: WatchlistItem) => i.symbol));
                   }
-<<<<<<< Updated upstream
                   return next;
                 });
-=======
-                }}
-                style={{ cursor: 'pointer', background: '#F3F4F6', color: '#4B5563', border: '1px solid #D1D5DB', padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexShrink: 0 }}>
-                <i className={isSelectionActive ? "fas fa-times" : "fas fa-trash-alt"}></i>
-              </div>
+              }}
+              style={{ cursor: 'pointer', background: '#F3F4F6', color: '#4B5563', border: '1px solid #D1D5DB', padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexShrink: 0 }}>
+              <i className={isSelectionActive ? "fas fa-times" : "fas fa-trash-alt"}></i>
             </div>
           </div>
           <div className="watchlist-card-list" style={{ paddingBottom: basketMode ? '120px' : '0px' }}>
