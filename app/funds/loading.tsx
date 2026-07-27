@@ -1,25 +1,22 @@
-export default function FundsLoading() {
+export default function Loading() {
   return (
-    <div className="p-4 md:p-6 w-full animate-pulse">
-      {/* Total Balance Skeleton */}
-      <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-xl mb-6 flex flex-col justify-center items-center gap-2">
-        <div className="h-4 bg-gray-300 dark:bg-gray-700 rounded w-1/4"></div>
-        <div className="h-8 bg-gray-300 dark:bg-gray-700 rounded w-1/2"></div>
-      </div>
-      
-      {/* Buttons Skeleton */}
-      <div className="flex gap-4 mb-8">
-        <div className="h-12 bg-gray-200 dark:bg-gray-800 rounded-lg flex-1"></div>
-        <div className="h-12 bg-gray-200 dark:bg-gray-800 rounded-lg flex-1"></div>
-      </div>
-
-      {/* History List Skeleton */}
-      <div className="flex flex-col gap-3">
-        <div className="h-6 bg-gray-200 dark:bg-gray-800 rounded w-1/4 mb-2"></div>
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-16 bg-gray-200 dark:bg-gray-800 rounded-lg w-full"></div>
-        ))}
-      </div>
+    <div className="desktop-layout">
+      <main className="main-viewport">
+        <div className="mobile-app">
+          <div className="app-header p-4">
+            <div className="h-8 bm-skeleton w-24"></div>
+          </div>
+          <div className="p-4 flex flex-col gap-6">
+            <div className="h-40 bm-skeleton w-full rounded-2xl"></div>
+            <div className="h-6 bm-skeleton w-32"></div>
+            <div className="flex flex-col gap-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-16 bm-skeleton w-full rounded-xl"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

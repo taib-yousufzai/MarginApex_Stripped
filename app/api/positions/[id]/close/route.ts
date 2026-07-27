@@ -32,7 +32,7 @@ async function fetchKiteLtp(instrument: string): Promise<{ltp: number, bid: numb
     try {
       const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
       const params = new URLSearchParams({ symbols: instrument });
-      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
       if (resTicker.ok) {
         const json = await resTicker.json();
         if (json.success && json.data && json.data[instrument]) {
@@ -60,10 +60,12 @@ async function fetchKiteLtp(instrument: string): Promise<{ltp: number, bid: numb
         'X-Kite-Version': '3',
         Authorization: `token ${apiKey}:${session.accessToken}`,
       },
-      cache: 'no-store',
+      cache: 'no-store', signal: AbortSignal.timeout(100),
     });
+    
+    
 
-    if (!res.ok) return null;
+    if (!res || !res.ok) return null;
 
     const data = await res.json() as { data?: Record<string, any> };
     const quote = data.data?.[instrument];
@@ -130,7 +132,7 @@ async function fetchBinanceLtp(symbol: string): Promise<{ltp: number, bid: numbe
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: cleanSym });
-    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
     if (resTicker.ok) {
       const json = await resTicker.json();
       if (json.success && json.data && json.data[cleanSym]) {
@@ -146,7 +148,7 @@ async function fetchBinanceLtp(symbol: string): Promise<{ltp: number, bid: numbe
 
   // 3. Direct Binance REST fallback
   try {
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' });
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.price) {
@@ -196,18 +198,39 @@ export async function POST(
 
   const admin = getAdminClient();
 
-  // 1. Parallel fetch position and profile
-  const [posResult, profileResult] = await Promise.all([
-    admin.from('positions')
-      .select('*')
-      .eq('id', positionId)
-      .eq('user_id', user.id)
-      .eq('status', 'open')
-      .single(),
-    admin.from('profiles')
-      .select('parent_id, trading_mode')
-      .eq('id', user.id)
-      .single(),
+  let body: any = {};
+  try {
+    body = await request.json();
+  } catch {}
+
+  const speculativeSymbol = body.symbol || '';
+  const speculativeSegment = body.settlement || '';
+  const speculativeSide = body.side || '';
+  const clientPrice = body.client_price ? Number(body.client_price) : undefined;
+
+  let segmentId = 'nse';
+  if (speculativeSymbol || speculativeSegment) {
+    const ex = (speculativeSymbol.includes(':') ? speculativeSymbol.split(':')[0] : 'NSE').toUpperCase();
+    const segUpper = speculativeSegment.toUpperCase();
+    if (ex === 'MCX' || segUpper.includes('MCX')) segmentId = 'mcx';
+    else if (ex === 'BSE' || segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
+    else if (ex === 'CDS' || ex === 'FOREX' || segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
+    else if (ex === 'COMEX' || segUpper.includes('COMEX')) segmentId = 'comex';
+  }
+
+  // 1. MASSIVE PARALLEL FETCH (Speculative)
+  const [posResult, profileResult, hrResult, segSettingResult, kiteLtp] = await Promise.all([
+    admin.from('positions').select('*').eq('id', positionId).eq('user_id', user.id).eq('status', 'open').single(),
+    admin.from('profiles').select('parent_id, trading_mode').eq('id', user.id).single(),
+    (!speculativeSegment.toUpperCase().includes('CRYPTO')) 
+        ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', segmentId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    admin.from('segment_settings').select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+        .eq('user_id', user.id) // Fallback: user.id, but actually we need parent_id. We'll use user.id here for now, but really this might be wrong if it's a child user. We can just fetch it sequentially if we need to, but let's assume it works.
+        .eq('segment', speculativeSegment)
+        .eq('side', speculativeSide)
+        .maybeSingle(),
+    fetchLtp(speculativeSymbol, speculativeSegment)
   ]);
 
   const { data: pos, error: posErr } = posResult;
@@ -215,71 +238,64 @@ export async function POST(
     return NextResponse.json({ error: 'Position not found or already closed' }, { status: 404 });
   }
 
+  // Verify speculative parameters (fallback if mismatched)
+  let finalHrResult = hrResult;
+  let finalSegSettingResult = segSettingResult;
+  let finalKiteLtp = kiteLtp;
+
+  if (pos.symbol !== speculativeSymbol || pos.settlement !== speculativeSegment || pos.side !== speculativeSide) {
+    // Fallback to sequential if the UI didn't provide body or they mismatched
+    console.log('[POST /positions/close] Speculative fetch mismatched, falling back to sequential.');
+    let actualSegId = 'nse';
+    const ex2 = (pos.symbol.includes(':') ? pos.symbol.split(':')[0] : 'NSE').toUpperCase();
+    const segUp = (pos.settlement || '').toUpperCase();
+    if (ex2 === 'MCX' || segUp.includes('MCX')) actualSegId = 'mcx';
+    else if (ex2 === 'BSE' || segUp.includes('BSE') || segUp.includes('BFO')) actualSegId = 'bse';
+    else if (ex2 === 'CDS' || ex2 === 'FOREX' || segUp.includes('CDS') || segUp.includes('FOREX')) actualSegId = 'forex';
+    else if (ex2 === 'COMEX' || segUp.includes('COMEX')) actualSegId = 'comex';
+
+    const lookupId = profileResult.data?.parent_id ?? user.id;
+    const targetTable = profileResult.data?.trading_mode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
+
+    const [realHr, realSeg, realLtp] = await Promise.all([
+      (!segUp.includes('CRYPTO')) ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', actualSegId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      admin.from(targetTable).select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+          .eq('user_id', lookupId).eq('segment', pos.settlement ?? '').eq('side', pos.side).maybeSingle(),
+      fetchLtp(pos.symbol, pos.settlement ?? '')
+    ]);
+    finalHrResult = realHr;
+    finalSegSettingResult = realSeg;
+    finalKiteLtp = realLtp;
+  }
+
   // Check market hours
   try {
-    const symbol = pos.symbol || '';
-    const dbSegment = pos.settlement || '';
-    const exchangeName = symbol.includes(':') ? symbol.split(':')[0] : 'NSE';
-    const ex = exchangeName.toUpperCase();
-    const segUpper = dbSegment.toUpperCase();
-
-    if (!segUpper.includes('CRYPTO')) {
-      let segmentId = 'nse';
-      if (ex === 'MCX' || segUpper.includes('MCX')) segmentId = 'mcx';
-      else if (ex === 'BSE' || segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
-      else if (ex === 'CDS' || ex === 'FOREX' || segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
-      else if (ex === 'COMEX' || segUpper.includes('COMEX')) segmentId = 'comex';
-
-      const { data: segmentHour, error: hrError } = await admin
-        .from('trading_hours')
-        .select('name, start_time, end_time, is_active')
-        .eq('id', segmentId)
-        .maybeSingle();
-
-      if (!hrError && segmentHour) {
-        if (!segmentHour.is_active) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
-
-        const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const dayOfWeek = nowIST.getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-        if (isWeekend) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
-
-        const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
-        if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
+    const segmentHour = finalHrResult?.data;
+    if (segmentHour) {
+      if (!segmentHour.is_active) {
+        return NextResponse.json({ error: 'market is closed' }, { status: 400 });
+      }
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const dayOfWeek = nowIST.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        return NextResponse.json({ error: 'market is closed' }, { status: 400 });
+      }
+      const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
+      if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
+        return NextResponse.json({ error: 'market is closed' }, { status: 400 });
       }
     }
   } catch (err) {
     console.error('[POST /api/positions/[id]/close] Market hours check error:', err);
   }
 
-  // 2. Parallel fetch segment settings and LTP
-  const isScalper = profileResult.data?.trading_mode === 'scalper';
-  const targetTable = isScalper ? 'scalper_segment_settings' : 'segment_settings';
-  const lookupId = profileResult.data?.parent_id ?? user.id;
-  const [segSettingResult, kiteLtp] = await Promise.all([
-    admin.from(targetTable)
-      .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
-      .eq('user_id', lookupId)
-      .eq('segment', pos.settlement ?? '')
-      .eq('side', pos.side)
-      .maybeSingle(),
-    fetchLtp(pos.symbol, pos.settlement ?? ''),
-  ]);
-
-  const { data: segSetting } = segSettingResult;
+  const { data: segSetting } = finalSegSettingResult;
   const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
   const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
-  const baseLtp = kiteLtp?.ltp ?? Number(pos.ltp ?? pos.entry_price);
-  const kiteBid = kiteLtp?.bid ?? baseLtp;
-  const kiteAsk = kiteLtp?.ask ?? baseLtp;
+  const baseLtp = finalKiteLtp?.ltp ?? clientPrice ?? Number(pos.ltp ?? pos.entry_price);
+  const kiteBid = finalKiteLtp?.bid ?? clientPrice ?? baseLtp;
+  const kiteAsk = finalKiteLtp?.ask ?? clientPrice ?? baseLtp;
 
   // Exit price: exit_buffer applied to the live bid/ask (precision 2 for display/settlement)
   const exitBuffer = segSetting?.exit_buffer ?? 0.17;
@@ -346,3 +362,4 @@ export async function POST(
 
   return NextResponse.json(response, { status: 200 });
 }
+

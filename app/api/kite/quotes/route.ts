@@ -145,9 +145,13 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
     const remainingKiteIds = directKiteIds.filter(id => !foundKiteIds.has(id));
     if (remainingKiteIds.length > 0) {
       try {
-        const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
+        const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : null);
         const params = new URLSearchParams({ symbols: remainingKiteIds.join(',') });
-        const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+        if (!tickerUrl) throw new Error('No tickerUrl');
+      if (!tickerUrl) throw new Error('No tickerUrl');
+      if (!tickerUrl) throw new Error('No tickerUrl');
+      if (!tickerUrl) throw new Error('No tickerUrl');
+      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(50) });
         if (resTicker.ok) {
           const json = await resTicker.json();
           if (json.success && json.data) {

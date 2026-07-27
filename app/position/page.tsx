@@ -36,7 +36,12 @@ export default function PositionPage() {
       }
     });
   }, []);
-  const { positions, loading: posLoading, error: posError, refresh, updatePositionLocally, startConversion, endConversion } = useMyPositions(15000);
+  const { positions, loading: posLoading, error: posError, refresh, updatePositionLocally,
+    removePositionLocally,
+    restorePositionLocally,
+    startConversion,
+    endConversion
+  } = useMyPositions(5000);
   const { closePosition, closePositionsBatch, loading: closingPos } = useOrderEntry();
 
   // Listen for position-closed events fired by TradingChart so we immediately
@@ -164,6 +169,9 @@ export default function PositionPage() {
   // Exit All Modal
   const [isExitAllModalOpen, setIsExitAllModalOpen] = useState(false);
   const [isExitingAll, setIsExitingAll] = useState(false);
+
+  // Group Exit Modal
+  const [groupExitModalGroup, setGroupExitModalGroup] = useState<GroupedPosition | null>(null);
 
   // Add More trade sheet
   const [tradeSheetItem, setTradeSheetItem] = useState<TradeSheetItem | null>(null);
@@ -420,16 +428,33 @@ export default function PositionPage() {
     if (exitingPosIds.current.has(posId)) return; // already in flight
     exitingPosIds.current.add(posId);
     setExitingSet(new Set(exitingPosIds.current));
+
+    const posToClose = positions.find(p => p.id === posId);
+    if (removePositionLocally) {
+      removePositionLocally(posId);
+    }
+
+    // Close sheet immediately for instant feedback
+    closeSheet();
+    showToast('Closing position...');
+
     try {
-      const res = await closePosition(posId);
+      const res = await closePosition(posId, posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined);
       if (res.success) {
         showToast('Position closed successfully');
-        closeSheet();
         refresh();
         window.dispatchEvent(new CustomEvent('position-closed'));
       } else {
         showToast(`Error: ${res.error}`);
+        if (posToClose && restorePositionLocally) {
+          restorePositionLocally(posId);
+        } else if (posToClose) refresh();
       }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`);
+      if (posToClose && restorePositionLocally) {
+        restorePositionLocally(posId);
+      } else if (posToClose) refresh();
     } finally {
       exitingPosIds.current.delete(posId);
       setExitingSet(new Set(exitingPosIds.current));
@@ -460,6 +485,7 @@ export default function PositionPage() {
     hold_lock_active: boolean;
     ids: string[];              // all underlying position IDs
     representativePos: EnrichedPosition; // first position for actions
+    is_closing?: boolean;
   }
 
   const groupedOpenPositions: GroupedPosition[] = useMemo(() => {
@@ -482,6 +508,7 @@ export default function PositionPage() {
           hold_lock_active: pos.hold_lock_active,
           ids: [pos.id],
           representativePos: pos,
+          is_closing: pos.is_closing,
         });
       } else {
         const newQty = existing.qty_open + pos.qty_open;
@@ -496,6 +523,7 @@ export default function PositionPage() {
         existing.total_pnl = newPnl;
         existing.pnl_percent = investment > 0 ? parseFloat(((newPnl / investment) * 100).toFixed(2)) : 0;
         existing.hold_lock_active = existing.hold_lock_active || pos.hold_lock_active;
+        existing.is_closing = existing.is_closing || pos.is_closing;
         existing.ids.push(pos.id);
       }
     }
@@ -605,6 +633,7 @@ export default function PositionPage() {
   const handleExitAllConfirm = async () => {
     if (!hasOpenPositions) return;
     setIsExitingAll(true);
+    setIsExitAllModalOpen(false); // Close modal immediately for instant UX
 
     let successCount = 0;
     let failCount = 0;
@@ -615,11 +644,15 @@ export default function PositionPage() {
     if (exitablePositions.length === 0) {
       showToast('All open positions are currently locked due to holding rules.');
       setIsExitingAll(false);
-      setIsExitAllModalOpen(false);
       return;
     }
 
-    const result = await closePositionsBatch(exitablePositions.map(p => p.id));
+    const posIds = exitablePositions.map(p => p.id);
+    if (removePositionLocally) {
+      posIds.forEach(id => removePositionLocally(id));
+    }
+
+    const result = await closePositionsBatch(posIds);
 
     if (result.success && result.results) {
       let firstError = '';
@@ -649,6 +682,28 @@ export default function PositionPage() {
     refresh();
   };
 
+  const handleGroupExitConfirm = async () => {
+    if (!groupExitModalGroup) return;
+    const group = groupExitModalGroup;
+    setGroupExitModalGroup(null);
+    setIsExitingAll(true); // use the same central spinner
+
+    const posIds = group.ids;
+    if (removePositionLocally) {
+      posIds.forEach(id => removePositionLocally(id));
+    }
+
+    const result = await closePositionsBatch(posIds);
+
+    if (result.success) {
+      showToast(`Successfully closed ${group.symbol} position(s).`);
+    } else {
+      showToast(`Error closing ${group.symbol}: ${result.error || 'Unknown'}`);
+    }
+    setIsExitingAll(false);
+    refresh();
+  };
+
   const totalPnl = useMemo(() => positions.reduce((acc, p) => acc + (p.total_pnl || 0), 0), [positions]);
   const realized = useMemo(() => closedPositions.reduce((acc, p) => acc + (p.pnl || 0), 0), [closedPositions]);
   const unrealized = useMemo(() => openPositions.reduce((acc, p) => acc + (p.total_pnl || 0), 0), [openPositions]);
@@ -669,6 +724,15 @@ export default function PositionPage() {
         <div className="app-container">
           <div className="pos-root">
             <div className="pos-shell">
+              {(isExitingAll || exitingSet.size > 0) && (
+                <div className="bm-overlay">
+                  <div className="bm-loader">
+                    <div className="bm-loader-bar"></div>
+                    <div className="bm-loader-bar"></div>
+                    <div className="bm-loader-bar"></div>
+                  </div>
+                </div>
+              )}
 
               {/* ── Header (Mobile Only) ── */}
               <div className="pos-header mobile-only">
@@ -782,13 +846,25 @@ export default function PositionPage() {
               <div className="pos-content">
 
                 {posLoading && (
-                  <div className="pos-empty">
-                    <i className="fas fa-circle-notch fa-spin" />
-                    <p>Loading positions…</p>
+                  <div className="w-full flex flex-col gap-3">
+                    {[1, 2, 3, 4].map(i => (
+                      <div key={i} className="pos-card animate-pulse" style={{ opacity: 1 - (i * 0.15) }}>
+                        <div className="pos-card-main flex justify-between w-full">
+                          <div className="flex flex-col gap-2">
+                            <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-24"></div>
+                            <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-32"></div>
+                          </div>
+                          <div className="flex flex-col gap-2 items-end">
+                            <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-16"></div>
+                            <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded-lg w-20 mt-1"></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {!posLoading && !posError && (
+                {!posLoading && (
                   currentMain === 'cumulative' ? (
                     currentSub === 'open' ? (
                       groupedOpenPositions.length === 0 ? (
@@ -797,8 +873,8 @@ export default function PositionPage() {
                           <p>No open positions</p>
                         </div>
                       ) : groupedOpenPositions.map(group => (
-                        <div key={group.key} className={`pos-card${expandedPosId === group.key ? ' pos-card--expanded' : ''}${group.hold_lock_active ? ' pos-card--locked' : ''}`} onClick={() => toggleExpand(group.key)}>
-                          <div className="pos-card-main">
+                        <div key={group.key} className={`pos-card relative overflow-hidden transition-all duration-300${expandedPosId === group.key ? ' pos-card--expanded' : ''}${group.hold_lock_active ? ' pos-card--locked' : ''}`} onClick={() => toggleExpand(group.key)}>
+                          <div className="pos-card-main relative z-0">
                             <div className="pos-card-left">
                               <div className="pos-card-symbol">
                                 <span className="pos-symbol-text">{group.symbol}</span>
@@ -853,7 +929,7 @@ export default function PositionPage() {
                                     setLockModalPos(group.representativePos);
                                     return;
                                   }
-                                  openExitSheet(group.representativePos, group.qty_open, true);
+                                  setGroupExitModalGroup(group);
                                 }}
                               >
                                 <i className="fas fa-times-circle" /> Exit All
@@ -1031,7 +1107,7 @@ export default function PositionPage() {
                                     if (pos.hold_lock_active) {
                                       setLockModalPos(actualPos);
                                     } else {
-                                      openExitSheet(actualPos, actualPos.qty_open, false);
+                                      handleRowClick(actualPos);
                                     }
                                   }}
                                 >
@@ -1546,6 +1622,29 @@ export default function PositionPage() {
           </div>
         </div>
       </main>
+
+      {/* ── Group Exit Confirmation Modal ── */}
+      {groupExitModalGroup && (
+        <div className="confirm-backdrop" onClick={() => setGroupExitModalGroup(null)}>
+          <div className="confirm-card" onClick={e => e.stopPropagation()}>
+            <div className="confirm-icon">
+              <i className="fas fa-exclamation-triangle" />
+            </div>
+            <h3 className="confirm-title">Exit {groupExitModalGroup.symbol}?</h3>
+            <p className="confirm-message">
+              Are you sure you want to close {groupExitModalGroup.ids.length > 1 ? `all ${groupExitModalGroup.ids.length}` : 'this'} position(s) for this symbol?
+            </p>
+            <div className="confirm-actions">
+              <button className="confirm-btn confirm-btn-cancel" onClick={() => setGroupExitModalGroup(null)}>
+                Cancel
+              </button>
+              <button className="confirm-btn confirm-btn-exit" onClick={handleGroupExitConfirm}>
+                Yes, Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add More — full watchlist-style trade sheet */}
       <TradeSheet

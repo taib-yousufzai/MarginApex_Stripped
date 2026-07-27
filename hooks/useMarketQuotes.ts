@@ -37,5 +37,7 @@ export function useMarketQuotes(symbols: string[]) {
     return res;
   }, [quotes, symbolsKey]);
 
-  return { quotes: localQuotes };
+  const isLoading = symbols.length > 0 && Object.keys(localQuotes).length === 0;
+
+  return { quotes: localQuotes, isLoading };
 }

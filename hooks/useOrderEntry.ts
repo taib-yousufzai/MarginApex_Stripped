@@ -76,7 +76,7 @@ export function useOrderEntry() {
     }
   }, []);
 
-  const closePosition = useCallback(async (positionId: string) => {
+  const closePosition = useCallback(async (positionId: string, clientPrice?: number, symbol?: string, settlement?: string, side?: string) => {
     setLoading(true);
     setError(null);
 
@@ -91,8 +91,15 @@ export function useOrderEntry() {
       const response = await fetch(`/api/positions/${positionId}/close`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client_price: clientPrice,
+          symbol,
+          settlement,
+          side
+        })
       });
 
       const result = await response.json();

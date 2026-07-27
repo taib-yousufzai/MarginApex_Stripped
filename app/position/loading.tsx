@@ -1,20 +1,22 @@
-export default function PositionLoading() {
+export default function Loading() {
   return (
-    <div className="p-4 md:p-6 w-full animate-pulse">
-      <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded w-1/3 mb-6"></div>
-      
-      {/* Summary boxes skeleton */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded-lg"></div>
-        <div className="h-20 bg-gray-200 dark:bg-gray-800 rounded-lg"></div>
-      </div>
-
-      {/* Position list skeleton */}
-      <div className="flex flex-col gap-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-lg w-full"></div>
-        ))}
-      </div>
+    <div className="desktop-layout">
+      <main className="main-viewport">
+        <div className="mobile-app">
+          <div className="app-header p-4">
+            <div className="h-8 bm-skeleton w-32"></div>
+          </div>
+          <div className="p-4 flex flex-col gap-4">
+            <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">
+              <div className="h-10 bm-skeleton w-24"></div>
+              <div className="h-10 bm-skeleton w-24"></div>
+            </div>
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-32 bm-skeleton w-full rounded-xl"></div>
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

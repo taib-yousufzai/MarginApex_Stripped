@@ -59,7 +59,7 @@ async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, bid: num
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: cleanSym });
-    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
     if (resTicker.ok) {
       const json = await resTicker.json();
       if (json.success && json.data && json.data[cleanSym]) {
@@ -75,7 +75,7 @@ async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, bid: num
 
   // 3. Direct Binance REST fallback
   try {
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' });
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.price) {
@@ -131,7 +131,7 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, nu
       try {
         const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
         const params = new URLSearchParams({ symbols: remainingKiteIds.join(',') });
-        const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+        const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
         if (resTicker.ok) {
           const json = await resTicker.json();
           if (json.success && json.data) {
@@ -167,10 +167,12 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, nu
           'X-Kite-Version': '3',
           Authorization: `token ${apiKey}:${session.accessToken}`,
         },
-        cache: 'no-store',
+        cache: 'no-store', signal: AbortSignal.timeout(100),
       });
+      
+      
 
-      if (!res.ok) return result;
+      if (!res || !res.ok) return result;
 
       const data = await res.json() as { data?: Record<string, { last_price: number; instrument_token?: number; ohlc?: { close?: number } }> };
       const instrumentUpserts: any[] = [];
@@ -441,7 +443,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const { symbol: rawSymbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit: body_is_exit, linked_position_id } = body;
-    let is_exit = body_is_exit === true || body_is_exit === 'true';
+    let is_exit = body_is_exit === true || (body_is_exit as any) === 'true';
 
   let symbol = rawSymbol;
   let kiteInst = kite_instrument;
@@ -1368,3 +1370,4 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Internal server error', details: globalError.message, stack: globalError.stack }, { status: 500 });
   }
 }
+

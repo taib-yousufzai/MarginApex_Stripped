@@ -720,7 +720,7 @@ function WatchlistContent() {
     return list;
   }, [watchlistItems, selectedItem?.kiteSymbol]);
 
-  const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
+  const { quotes: marketQuotes, isLoading: isQuotesLoading } = useMarketQuotes(marketSymbols);
 
   const comexSymbols = watchlistItems
     .map(i => i.comexSymbol)
@@ -1447,8 +1447,120 @@ function WatchlistContent() {
                   if (typeof (window as any).__syncWatchlistSymbols === 'function') {
                     (window as any).__syncWatchlistSymbols(next.map((i: WatchlistItem) => i.symbol));
                   }
+<<<<<<< Updated upstream
                   return next;
                 });
+=======
+                }}
+                style={{ cursor: 'pointer', background: '#F3F4F6', color: '#4B5563', border: '1px solid #D1D5DB', padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexShrink: 0 }}>
+                <i className={isSelectionActive ? "fas fa-times" : "fas fa-trash-alt"}></i>
+              </div>
+            </div>
+          </div>
+          <div className="watchlist-card-list" style={{ paddingBottom: basketMode ? '120px' : '0px' }}>
+            {(allowedSegments === null || isQuotesLoading) ? (
+              <div className="w-full flex flex-col gap-3 p-3">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                  <div key={i} className="watchlist-card flex justify-between items-center" style={{ padding: '16px', opacity: 1 - (i * 0.08) }}>
+                    <div className="flex flex-col gap-2">
+                      <div className="h-4 bm-skeleton w-28"></div>
+                      <div className="h-3 bm-skeleton w-16"></div>
+                    </div>
+                    <div className="flex flex-col gap-2 items-end">
+                      <div className="h-4 bm-skeleton w-20"></div>
+                      <div className="h-3 bm-skeleton w-12"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredItems.length === 0 ? <EmptyState /> : filteredItems.map((item, index) => (
+              <InstrumentRow
+                key={`${item.symbol}_${index}`}
+                item={item}
+                quote={marketQuotes[item.kiteSymbol]}
+                binanceQuote={item.binanceSymbol ? marketQuotes[item.binanceSymbol] : undefined}
+                comexQuote={item.comexSymbol ? comexQuotes[item.comexSymbol] : undefined}
+                onTrade={(it: WatchlistItem, type?: 'BUY' | 'SELL' | 'BOTH') => {
+                  if (!isMarketOpen(it)) { showToast('Market is closed', true); return; }
+                  openTradeSheet(it, type);
+                }}
+                onDetail={openDetailSheet}
+                basketMode={basketMode}
+                onBasketBuy={(it) => {
+                  if (isSpotIndex(it)) { showToast('Indices cannot be traded directly.', true); return; }
+                  if (!isMarketOpen(it)) { showToast('Market is closed', true); return; }
+                  setBasketLegs(prev => {
+                    // If BUY leg already exists for this symbol, remove it (toggle off)
+                    const exists = prev.find(l => l.item.symbol === it.symbol && l.side === 'BUY');
+                    if (exists) {
+                      showToast(`${it.name} BUY removed`, false);
+                      return prev.filter(l => !(l.item.symbol === it.symbol && l.side === 'BUY'));
+                    }
+                    showToast(`${it.name} BUY added to basket ✓`, false);
+                    return [...prev, { item: it, side: 'BUY', qty: 1, unit: 'qty', productType: 'INTRADAY' }];
+                  });
+                }}
+                onBasketSell={(it) => {
+                  if (isSpotIndex(it)) { showToast('Indices cannot be traded directly.', true); return; }
+                  if (!isMarketOpen(it)) { showToast('Market is closed', true); return; }
+                  setBasketLegs(prev => {
+                    // If SELL leg already exists for this symbol, remove it (toggle off)
+                    const exists = prev.find(l => l.item.symbol === it.symbol && l.side === 'SELL');
+                    if (exists) {
+                      showToast(`${it.name} SELL removed`, false);
+                      return prev.filter(l => !(l.item.symbol === it.symbol && l.side === 'SELL'));
+                    }
+                    showToast(`${it.name} SELL added to basket ✓`, false);
+                    return [...prev, { item: it, side: 'SELL', qty: 1, unit: 'qty', productType: 'INTRADAY' }];
+                  });
+                }}
+                onChart={(item) => {
+                  setChartItem(item);
+                  setIsBenchmarkChart(false);
+                  const detailSheet = document.getElementById('detailSheet');
+                  const detailOverlay = document.getElementById('detailSheetOverlay');
+                  if (detailSheet) detailSheet.classList.remove('open');
+                  if (detailOverlay) detailOverlay.classList.remove('active');
+                  const chartSheet = document.getElementById('chartSheet');
+                  const chartOverlay = document.getElementById('chartSheetOverlay');
+                  if (chartSheet) chartSheet.classList.add('open');
+                  if (chartOverlay) chartOverlay.classList.add('active');
+                }}
+              />
+            ))}
+            <div id="watchlistMobileContainer"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Basket bottom bar */}
+      {basketMode && (
+        <div style={{
+          position: 'fixed', bottom: '92px', left: '50%', transform: 'translateX(-50%)',
+          width: 'calc(100% - 24px)', maxWidth: '476px',
+          background: 'var(--container-bg, #FFFFFF)',
+          borderTop: '1px solid var(--border-light, #E8ECF0)', padding: '10px 16px',
+          boxShadow: '0 -4px 16px rgba(0,0,0,0.15)', zIndex: 44,
+          boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '8px',
+          borderRadius: '16px'
+        }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-primary, #1A1E2B)' }}>
+            {basketLegs.length} in basket
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => { setBasketMode(false); setBasketLegs([]); }}
+              style={{ flex: 1, background: 'var(--icon-bg, #F3F4F6)', color: 'var(--text-secondary, #4B5563)', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+            >
+              <i className="fas fa-times"></i> Cancel
+            </button>
+            <button
+              onClick={() => {
+                const sheet = document.getElementById('basketSheet');
+                const overlay = document.getElementById('basketSheetOverlay');
+                if (sheet) sheet.classList.add('open');
+                if (overlay) overlay.classList.add('active');
+
               }}
               onRemove={(item) => {
                 setWatchlistItems(prev => {

@@ -22,6 +22,7 @@ export interface EnrichedPosition extends MyPosition {
   hold_lock_active: boolean;
   remaining_hold_seconds: number;
   required_hold_seconds: number;
+  is_closing?: boolean;
 }
 
 interface UseMyPositionsResult {
@@ -30,6 +31,8 @@ interface UseMyPositionsResult {
   error: string | null;
   refresh: () => Promise<void>;
   updatePositionLocally?: (posId: string, updatedFields: Partial<MyPosition>) => void;
+  removePositionLocally?: (posId: string) => void;
+  restorePositionLocally?: (posId: string) => void;
   startConversion?: (posId: string, newType: string) => void;
   endConversion?: (posId: string) => void;
 }
@@ -61,6 +64,8 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
   // Per-instance cache for change detection — avoids cross-instance cache poisoning
   // when multiple hook consumers (position page + chart) fetch at different times.
   const localCacheRef = useRef<MyPosition[]>(globalPositionsCache.slice());
+  // Track optimistically removed positions to prevent polling from bringing them back
+  const optimisticallyRemovedIds = useRef<Set<string>>(new Set());
   // Track whether segment settings have been fetched at least once.
   // We defer hold-lock computation until settings are known to avoid
   // showing the hardcoded 120s fallback before the real value arrives.
@@ -96,6 +101,16 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     );
   }, []);
 
+  const removePositionLocally = useCallback((posId: string) => {
+    optimisticallyRemovedIds.current.add(posId);
+    setRawPositions(prev => prev.filter(p => p.id !== posId));
+  }, []);
+
+  const restorePositionLocally = useCallback((posId: string) => {
+    optimisticallyRemovedIds.current.delete(posId);
+    fetchPositions(); // trigger a re-fetch to get the position back from the server
+  }, []);
+
   const startConversion = useCallback((posId: string, newType: string) => {
     setInFlightConversions(prev => ({ ...prev, [posId]: newType }));
   }, []);
@@ -122,7 +137,10 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
 
       if (!res.ok) throw new Error('Failed to fetch positions');
       const data = await res.json();
-      const newPositions: MyPosition[] = data.positions || [];
+      let newPositions: MyPosition[] = data.positions || [];
+
+      // Filter out positions we have optimistically removed
+      newPositions = newPositions.filter(p => !optimisticallyRemovedIds.current.has(p.id));
 
       // Only update state if something actually changed — avoids unnecessary
       // re-renders (and the visible layout shift) when data is identical.
@@ -338,7 +356,17 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
         required_hold_seconds: profitHoldSec
       } as EnrichedPosition;
     });
-  }, [rawPositions, marketQuotes, comexQuotes, inFlightConversions, segmentSettings, segmentSettingsLoaded]);
+
+    return enriched;
+  }, [
+    rawPositions,
+    marketQuotes,
+    comexQuotes,
+    segmentSettingsLoaded,
+    segmentSettings,
+    inFlightConversions,
+    resolveKitePrefix
+  ]);
 
   return {
     positions: enrichedPositions,
@@ -346,6 +374,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     error,
     refresh: fetchPositions,
     updatePositionLocally,
+    removePositionLocally,
     startConversion,
     endConversion
   };

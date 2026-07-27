@@ -42,7 +42,7 @@ async function fetchLtpBatch(
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: Array.from(missing).join(',') });
-    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
     if (resTicker.ok) {
       const json = await resTicker.json();
       if (json.success && json.data) {
@@ -71,9 +71,11 @@ async function fetchLtpBatch(
         missingKite.forEach(i => params.append('i', i));
         const res = await fetch(`https://api.kite.trade/quote?${params}`, {
           headers: { 'X-Kite-Version': '3', Authorization: `token ${apiKey}:${session.accessToken}` },
-          cache: 'no-store',
+          cache: 'no-store', signal: AbortSignal.timeout(100),
         });
-        if (res.ok) {
+        
+        
+        if (res && res.ok) {
           const data = await res.json() as { data?: Record<string, { last_price: number }> };
           for (const inst of missingKite) {
             const quote = data.data?.[inst];
@@ -91,7 +93,7 @@ async function fetchLtpBatch(
   if (missingCrypto.length > 0) {
     await Promise.all(missingCrypto.map(async (sym) => {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { cache: 'no-store' });
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
         if (res.ok) {
           const data = await res.json();
           if (data.price) { quotesMap[sym] = parseFloat(data.price); missing.delete(sym); }
@@ -202,9 +204,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       Array.from(cryptoSymbolsToFetch)
     );
 
-    // 4. Process closing for each position sequentially to avoid DB deadlocks
-    const results = [];
-    for (const { pos, lookupKey } of posSymbols) {
+    // 4. Process closing in small chunks to maximize speed while avoiding massive DB deadlock storms
+    const results: any[] = [];
+    const chunkSize = 10;
+    
+    for (let i = 0; i < posSymbols.length; i += chunkSize) {
+      const chunk = posSymbols.slice(i, i + chunkSize);
+      
+      const chunkPromises = chunk.map(async ({ pos, lookupKey }) => {
         try {
           // Check market hours
           const symbol = pos.symbol || '';
@@ -224,7 +231,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             if (segmentHour) {
               if (!segmentHour.is_active) {
                 results.push({ positionId: pos.id, success: false, error: 'market is closed' });
-                continue;
+                return;
               }
 
               const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -233,13 +240,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
               if (isWeekend) {
                 results.push({ positionId: pos.id, success: false, error: 'market is closed' });
-                continue;
+                return;
               }
 
               const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
               if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
                 results.push({ positionId: pos.id, success: false, error: 'market is closed' });
-                continue;
+                return;
               }
             }
           }
@@ -275,7 +282,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               success: false,
               error: `Anti-Scalping: Minimum hold time of ${requiredHold}s required. Elapsed: ${durationSec}s.`
             });
-            continue;
+            return;
           }
 
           // --- CARRY BROKERAGE (deferred from entry to exit) ---
@@ -325,13 +332,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           if (rpcErr) {
             console.error(`[POST /api/positions/close] RPC error for position ${pos.id}:`, rpcErr);
             results.push({ positionId: pos.id, success: false, error: `RPC Error: ${rpcErr.message || JSON.stringify(rpcErr)}` });
-            continue;
+            return;
           }
 
           results.push({ positionId: pos.id, success: true, pnl: Number(pnl), exit_price: exitPrice });
         } catch (innerErr: any) {
           results.push({ positionId: pos.id, success: false, error: innerErr.message || 'Unknown error' });
         }
+      });
+
+      await Promise.all(chunkPromises);
     }
 
     return NextResponse.json({ success: true, results }, { status: 200 });
@@ -340,3 +350,4 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
   }
 }
+

@@ -222,9 +222,26 @@ export default function OrderPage() {
 
                 {/* Loading */}
                 {ordersLoading && (
-                  <div className="ord-empty">
-                    <i className="fas fa-circle-notch fa-spin" />
-                    <p>Loading platform orders…</p>
+                  <div className="w-full flex flex-col gap-3">
+                    {[1, 2, 3, 4].map(i => (
+                      <div key={i} className="ord-card animate-pulse" style={{ opacity: 1 - (i * 0.15) }}>
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded w-32"></div>
+                          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-16"></div>
+                        </div>
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-20"></div>
+                          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-24"></div>
+                        </div>
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-24"></div>
+                          <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-28"></div>
+                        </div>
+                        <div className="flex justify-between items-center pt-3 border-t border-gray-100 dark:border-gray-800">
+                          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded-full w-24"></div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 

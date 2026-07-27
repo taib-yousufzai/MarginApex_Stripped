@@ -105,6 +105,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const handleCloseAnimation = () => {
     if (exitMode) {
       onClose();
+<<<<<<< Updated upstream
     } else {
       setIsClosing(true);
       setTimeout(() => {
@@ -112,6 +113,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         onClose();
       }, 380); // match CSS transition time
     }
+=======
+    }, 150); // Reduced timeout for snappy animation
+
   };
 
   const [orderUnit, setOrderUnit] = useState<'qty' | 'lot'>('qty');
@@ -1533,7 +1537,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                     onClick={() => handlePlace('SELL')}
                   >
-                    {placingOrder ? 'PLACING...' : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
+                    {placingOrder ? <><i className="fas fa-spinner fa-spin" style={{marginRight: '8px'}}/> PLACING...</> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
                   </button>
                 )}
                 {(side === 'BUY' || side === 'BOTH') && (
@@ -1543,7 +1547,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                     onClick={() => handlePlace('BUY')}
                   >
-                    {placingOrder ? 'PLACING...' : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
+                    {placingOrder ? <><i className="fas fa-spinner fa-spin" style={{marginRight: '8px'}}/> PLACING...</> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
                   </button>
                 )}
               </div>
