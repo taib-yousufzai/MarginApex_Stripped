@@ -169,7 +169,7 @@ export default function ProfilePage() {
 
     return (
         <div className="desktop-layout">
-                        <main className="main-viewport">
+            <main className="main-viewport">
                 <div className="mobile-app profile-app">
 
                     {/* Header Gradient Area */}

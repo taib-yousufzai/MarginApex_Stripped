@@ -103,11 +103,15 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const [isClosing, setIsClosing] = useState(false);
   const handleCloseAnimation = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      setIsClosing(false);
+    if (exitMode) {
       onClose();
-    }, 500); // Increased timeout to match slower animation
+    } else {
+      setIsClosing(true);
+      setTimeout(() => {
+        setIsClosing(false);
+        onClose();
+      }, 380); // match CSS transition time
+    }
   };
 
   const [orderUnit, setOrderUnit] = useState<'qty' | 'lot'>('qty');
@@ -923,7 +927,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           z-index: 100000;
           opacity: 0; visibility: hidden;
           pointer-events: none;
-          transition: opacity 0.5s ease, visibility 0.5s ease;
+          transition: opacity 0.3s ease, visibility 0.3s ease;
         }
         .ts2-overlay.active {
           opacity: 1; visibility: visible;
@@ -937,7 +941,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           background: var(--bg-body, #F5F7FB);
           z-index: 100001;
           transform: translateY(100%);
-          transition: transform 0.5s cubic-bezier(0.25, 0.9, 0.35, 1.05);
+          transition: transform 0.38s cubic-bezier(0.25, 0.9, 0.35, 1.05);
           display: flex; flex-direction: column;
           overflow: hidden;
           pointer-events: none;

@@ -3,7 +3,8 @@
 .mobile-app.profile-app {
     display: flex;
     flex-direction: column;
-    height: 100dvh !important;
+    height: 100% !important;
+    flex: 1;
     width: 100%;
     background: #F4F7FB;
     position: relative;
@@ -100,7 +101,7 @@
     width: 100%;
     box-sizing: border-box;
     margin-top: -3.125rem; /* This pulls the content up to overlap the header */
-    padding-bottom: 1.5rem;
+    padding-bottom: calc(var(--footer-nav-height, 4.0625rem) + env(safe-area-inset-bottom, 0px) + 2rem);
     z-index: 2;
 }
 
