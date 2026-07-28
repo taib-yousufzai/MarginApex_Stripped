@@ -1340,6 +1340,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } finally {
     // Release the lock
     await redis.del(lockKey);
+    try {
+      await redis.del(`pos:${user.id}:default`, `pos:${user.id}:open`, `pos:${user.id}:active`);
+    } catch {}
   }
 
   // Update order_type to 'SLM' in the database if it was an SLM order asynchronously
