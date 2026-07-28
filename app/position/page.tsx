@@ -52,6 +52,18 @@ export default function PositionPage() {
     return () => window.removeEventListener('position-closed', handler);
   }, [refresh]);
 
+  // Listen for exit overlay events from TradeSheet (single position exits)
+  useEffect(() => {
+    const onStart = () => setIsExitingAll(true);
+    const onEnd = () => setIsExitingAll(false);
+    window.addEventListener('exit-overlay-start', onStart);
+    window.addEventListener('exit-overlay-end', onEnd);
+    return () => {
+      window.removeEventListener('exit-overlay-start', onStart);
+      window.removeEventListener('exit-overlay-end', onEnd);
+    };
+  }, []);
+
   // Closed positions are fetched separately (the main hook only returns open/active)
   const [closedPositions, setClosedPositions] = useState<EnrichedPosition[]>([]);
   const [closedLoading, setClosedLoading] = useState(false);

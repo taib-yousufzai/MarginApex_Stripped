@@ -865,7 +865,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       }
 
       if (exitMode) {
-        // Exit mode: await the order so the spinner stays visible
+        // Exit mode: show the full-screen overlay and await the order
+        window.dispatchEvent(new Event('exit-overlay-start'));
+        handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
         try {
           const [res] = await Promise.all([
             placeOrder({
@@ -883,14 +885,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
               target: resolvedTarget,
               is_exit: true,
             }),
-            new Promise(r => setTimeout(r, 800)) // Ensure spinner shows for at least 800ms
+            new Promise(r => setTimeout(r, 800)) // Ensure overlay shows for at least 800ms
           ]);
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new Event('position-closed'));
           if (res.success) {
             showToast(`${placeSide} order sent for ${item.symbol}`);
             onSuccess?.();
-            handleCloseAnimation();
             // Delayed re-fetch to catch Supabase propagation delay
             setTimeout(() => {
               window.dispatchEvent(new Event('order_placed'));
@@ -903,6 +904,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           showToast(`Order Failed: ${err.message}`);
         } finally {
           isExecutingRef.current = false;
+          window.dispatchEvent(new Event('exit-overlay-end'));
         }
       } else {
         // Non-exit: optimistic fire-and-forget for snappy UX
