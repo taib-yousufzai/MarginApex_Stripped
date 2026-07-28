@@ -107,8 +107,14 @@ export default function PositionPage() {
 
   useEffect(() => {
     fetchClosed();
-    const iv = setInterval(fetchClosed, 5000);
-    return () => clearInterval(iv);
+    // Closed positions don't need rapid polling — refresh on events + slow fallback
+    const iv = setInterval(fetchClosed, 30000);
+    const onOrderPlaced = () => fetchClosed();
+    window.addEventListener('order_placed', onOrderPlaced);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('order_placed', onOrderPlaced);
+    };
   }, []);
 
   const { balance: balanceFromHook, settlementAmount } = useBalance();
@@ -132,9 +138,12 @@ export default function PositionPage() {
       });
     };
     fetchOrders();
-    const orderTimer = setInterval(fetchOrders, 5000);
+    // Orders don't need rapid polling — refresh on events + slow fallback
+    const orderTimer = setInterval(fetchOrders, 30000);
+    const onOrderPlaced = () => fetchOrders();
+    window.addEventListener('order_placed', onOrderPlaced);
 
-    return () => { cancelled = true; clearInterval(orderTimer); };
+    return () => { cancelled = true; clearInterval(orderTimer); window.removeEventListener('order_placed', onOrderPlaced); };
   }, []);
 
   const formatBalance = (val: number | null) => {
