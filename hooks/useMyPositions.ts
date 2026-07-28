@@ -47,9 +47,54 @@ if (typeof window !== 'undefined') {
     }
   } catch (e) {}
 
-  window.addEventListener('order_placed', () => {
-    // Keep cached positions available so page renders immediately while fresh fetch runs
-  });
+  const handleGlobalOrderPlaced = (e: Event) => {
+    const customEvt = e as CustomEvent;
+    if (customEvt.detail?.symbol && customEvt.detail?.side) {
+      const d = customEvt.detail;
+      const fillPrice = d.result?.fill_price || d.client_price || 0;
+      const newPos: MyPosition = {
+        id: `temp-${Date.now()}`,
+        user_id: '',
+        symbol: d.symbol,
+        kite_instrument: d.kite_instrument || d.symbol,
+        side: d.side,
+        status: 'open',
+        qty_open: d.qty || 1,
+        qty_total: d.qty || 1,
+        entry_price: fillPrice,
+        avg_price: fillPrice,
+        exit_price: null,
+        ltp: fillPrice,
+        pnl: 0,
+        total_pnl: 0,
+        settlement: d.segment || '',
+        product_type: d.product_type || 'INTRADAY',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        entry_time: new Date().toISOString(),
+      } as any;
+
+      const exists = globalPositionsCache.some(p => p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY'));
+      if (exists) {
+        globalPositionsCache = globalPositionsCache.map(p => {
+          if (p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY')) {
+            const totalQty = p.qty_open + (d.qty || 1);
+            const avgPrice = ((p.avg_price * p.qty_open) + (fillPrice * (d.qty || 1))) / totalQty;
+            return { ...p, qty_open: totalQty, qty_total: totalQty, avg_price: avgPrice, entry_price: avgPrice };
+          }
+          return p;
+        });
+      } else {
+        globalPositionsCache = [newPos, ...globalPositionsCache];
+      }
+
+      try {
+        localStorage.setItem('cached_open_positions', JSON.stringify(globalPositionsCache));
+      } catch (e) {}
+    }
+  };
+
+  window.addEventListener('order_placed_with_data', handleGlobalOrderPlaced);
 }
 
 const mapSegmentToDbSegment = (s: string): string => {
