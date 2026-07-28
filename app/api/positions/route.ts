@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 
+// Columns the frontend actually uses — avoids transferring unnecessary data
+const POSITION_COLUMNS = 'id,user_id,symbol,kite_instrument,side,status,qty_open,qty_total,entry_price,avg_price,exit_price,ltp,pnl,settlement,product_type,carry_brokerage_paid,created_at,updated_at,entry_time,exit_time,stop_loss,target,margin_required,locked_margin,duration_seconds,closed_by';
+
 /**
  * GET /api/positions
  * 
@@ -15,12 +18,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const admin = getAdminClient();
-
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status');
 
-    let positionsQuery = admin.from('positions').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    // Try short-lived Redis cache (2s) to collapse rapid duplicate fetches
+    const cacheKey = `pos:${user.id}:${statusParam || 'default'}`;
+    try {
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return NextResponse.json(JSON.parse(cached));
+      }
+    } catch { /* Redis miss or unavailable, continue with DB fetch */ }
+
+    const admin = getAdminClient();
+
+    let positionsQuery = admin.from('positions').select(POSITION_COLUMNS).eq('user_id', user.id).order('created_at', { ascending: false });
     if (statusParam) {
       if (statusParam === 'open') {
         // 'open' shorthand — include both 'open' and 'active' statuses
@@ -56,7 +70,20 @@ export async function GET(request: NextRequest) {
       kite_instrument: p.kite_instrument || p.symbol,
     }));
 
-    return NextResponse.json({ positions });
+    const responseBody = { positions };
+
+    // Cache for 2 seconds to collapse rapid duplicate fetches
+    try {
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      if (redis.setex) {
+        await redis.setex(cacheKey, 2, JSON.stringify(responseBody));
+      } else {
+        await redis.set(cacheKey, JSON.stringify(responseBody), 'EX', 2);
+      }
+    } catch { /* Redis write failure is non-critical */ }
+
+    return NextResponse.json(responseBody);
   } catch (error: any) {
     console.error('[Positions API] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
