@@ -975,7 +975,13 @@ export default function PositionPage() {
                                     setLockModalPos(group.representativePos);
                                     return;
                                   }
-                                  openGroupTradeExit(group);
+                                  if (group.ids.length > 1) {
+                                    // Multiple positions — use batch close flow
+                                    setGroupExitModalGroup(group);
+                                  } else {
+                                    // Single position — open TradeSheet for partial exit flexibility
+                                    openGroupTradeExit(group);
+                                  }
                                 }}
                               >
                                 <i className="fas fa-times-circle" /> Exit All
