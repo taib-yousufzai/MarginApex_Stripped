@@ -907,6 +907,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           window.dispatchEvent(new Event('exit-overlay-end'));
         }
       } else {
+        // Buy/Sell flow: show the global loader overlay
+        window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
+        handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
         // Non-exit: optimistic fire-and-forget for snappy UX
         const optimisticPayload = {
           symbol: item.symbol,
@@ -950,6 +953,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
         }).finally(() => {
           isExecutingRef.current = false;
+          window.dispatchEvent(new Event('global-loader-end'));
         });
       }
     } catch (e) {

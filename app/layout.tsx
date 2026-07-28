@@ -45,7 +45,7 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet" />
       </head>
       <body suppressHydrationWarning>
-        <Script id="theme-script" strategy="beforeInteractive" dangerouslySetInnerHTML={{
+        <script id="theme-script" dangerouslySetInnerHTML={{
           __html: `
           (function(){
             try {

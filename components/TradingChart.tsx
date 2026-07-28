@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ChartContainer from '@/components/chart/ChartContainer';
+import { ErrorModal } from '@/components/ErrorModal';
+import { getDefaultWatchlistItems, getTabForItem } from '@/app/watchlist/page';
 import { Candle } from '@/components/chart/types';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import type { MyOrder } from '@/lib/types/order';
@@ -182,37 +184,6 @@ const SEGMENT_TAB_MAP: Record<string, string> = {
   'COI': 'COMEX',
 };
 
-const DEFAULT_CRYPTO_ITEMS = [
-  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 0, change: '0%', segment: 'Crypto', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
-  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 0, change: '0%', segment: 'Crypto', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
-  { name: 'Dogecoin', symbol: 'DOGE', kiteSymbol: '', binanceSymbol: 'DOGEUSDT', price: 0, change: '0%', segment: 'Crypto', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
-];
-
-const DEFAULT_FOREX_ITEMS = [
-  { name: 'USD/INR', symbol: 'USDINR_FUT', kiteSymbol: 'CDS:USDINR26JULFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Jul 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'EUR/INR', symbol: 'EURINR_FUT', kiteSymbol: 'CDS:EURINR26JULFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Jul 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'GBP/INR', symbol: 'GBPINR_FUT', kiteSymbol: 'CDS:GBPINR26JULFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Jul 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'JPY/INR', symbol: 'JPYINR_FUT', kiteSymbol: 'CDS:JPYINR26JULFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Jul 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-];
-
-const DEFAULT_COMEX_ITEMS = [
-  { name: 'Gold', symbol: 'GOLD_FUT', kiteSymbol: 'MCX:GOLD26AUGFUT', comexSymbol: 'GC=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-  { name: 'Silver', symbol: 'SILVER_FUT', kiteSymbol: 'MCX:SILVER26SEPFUT', comexSymbol: 'SI=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-  { name: 'Crude Oil', symbol: 'CRUDEOIL_FUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', comexSymbol: 'CL=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-  { name: 'Copper', symbol: 'COPPER_FUT', kiteSymbol: 'MCX:COPPER26AUGFUT', comexSymbol: 'HG=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-];
-
-function getDefaultWatchlistItems() {
-  return [
-    { name: 'NIFTY 50 INDEX', symbol: 'NIFTY_INDEX', kiteSymbol: 'NSE:NIFTY 50', price: 22456.80, change: '+0.45%', segment: 'NSE - Futures', contractDate: '28 Mar 2025', open: 22350, high: 22580, low: 22320, close: 22456.80 },
-    { name: 'BANKNIFTY INDEX', symbol: 'BANKNIFTY_INDEX', kiteSymbol: 'NSE:NIFTY BANK', price: 48210.50, change: '-0.21%', segment: 'NSE - Futures', contractDate: '28 Mar 2025', open: 48350, high: 48500, low: 48100, close: 48210.50 },
-    { name: 'SENSEX INDEX', symbol: 'SENSEX_INDEX', kiteSymbol: 'BSE:SENSEX', price: 74230.15, change: '+0.32%', segment: 'BSE - Futures', contractDate: '28 Mar 2025', open: 73950, high: 74500, low: 73800, close: 74230.15 },
-    ...DEFAULT_CRYPTO_ITEMS,
-    ...DEFAULT_FOREX_ITEMS,
-    ...DEFAULT_COMEX_ITEMS,
-  ];
-}
-
 function getStoredWatchlistItems() {
   if (typeof window !== 'undefined' && (window as any).__watchlistItems && (window as any).__watchlistItems.length > 0) {
     return (window as any).__watchlistItems;
@@ -233,25 +204,6 @@ function getStoredWatchlistItems() {
     }
   } catch (e) { }
   return getDefaultWatchlistItems();
-}
-
-function getTabForItem(item: any): string {
-  if (item.category) {
-    const c = item.category.toUpperCase();
-    if (c.includes('INDEX - FUTURE')) return 'INDEX-FUT';
-    if (c.includes('INDEX - OPTIONS')) return 'INDEX-OPT';
-    if (c.includes('STOCKS - FUTURE')) return 'STOCK-FUT';
-    if (c.includes('MCX - FUTURE')) return 'MCX-FUT';
-    if (c.includes('MCX - OPTIONS')) return 'MCX-OPT';
-    if (c.includes('CRYPTO')) return 'CRYPTO';
-    if (c.includes('FOREX')) return 'FOREX';
-    if (c.includes('COMEX')) return 'COMEX';
-  }
-
-  if (item.segment && SEGMENT_TAB_MAP[item.segment]) {
-    return SEGMENT_TAB_MAP[item.segment];
-  }
-  return 'INDEX-FUT'; // Fallback
 }
 
 const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar }: any) => {
@@ -1106,6 +1058,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setIsPanelExpanded(true);
     }
 
+    window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
+
     placeOrder({
       symbol: orderSymbol,
       kite_instrument: orderKiteInstrument,
@@ -1124,7 +1078,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       if (res.success) {
         showToast(modifyOrderId ? 'Order Modified Successfully!' : `${orderSide} Order Placed Successfully!`);
         refreshOrders();
-        refreshPositions();
         fetchBalance();
         window.dispatchEvent(new CustomEvent('position-closed'));
       } else {
@@ -1132,6 +1085,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       }
     }).catch(err => {
       showToast(err?.message || 'Failed to place order', true);
+    }).finally(() => {
+      window.dispatchEvent(new Event('global-loader-end'));
     });
   };
 
@@ -1257,7 +1212,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       showToast(`Quick exit order placed`);
       refreshOrders();
       setTimeout(() => {
-        refreshPositions();
+        fetchBalance();
         fetchBalance();
         quickExitLock.current = false;
         // Do NOT remove from exitingPosIds on success. 
@@ -1343,7 +1298,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         btn.classList.add('quick-flash');
       }
       refreshOrders();
-      refreshPositions();
+      fetchBalance();
       fetchBalance();
       window.dispatchEvent(new CustomEvent('position-closed'));
     } else {
@@ -1388,7 +1343,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     if (res.success) {
       showToast(`Successfully added ${addQty} to position!`);
       refreshOrders();
-      refreshPositions();
+      fetchBalance();
       fetchBalance();
       window.dispatchEvent(new CustomEvent('position-closed'));
     } else {

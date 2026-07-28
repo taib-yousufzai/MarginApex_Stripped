@@ -44,10 +44,10 @@ export default function PositionPage() {
   } = useMyPositions(5000);
   const { closePosition, closePositionsBatch, loading: closingPos } = useOrderEntry();
 
-  // Listen for position-closed events fired by TradingChart so we immediately
+  // Listen for position-closed events fired by TradingChart so we eventually
   // refresh without waiting for the next 5-second poll cycle
   useEffect(() => {
-    const handler = () => { refresh(); fetchClosed(); };
+    const handler = () => { setTimeout(() => { refresh(); fetchClosed(); }, 1500); };
     window.addEventListener('position-closed', handler);
     return () => window.removeEventListener('position-closed', handler);
   }, [refresh]);

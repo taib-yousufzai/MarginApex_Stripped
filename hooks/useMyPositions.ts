@@ -128,6 +128,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
   // We defer hold-lock computation until settings are known to avoid
   // showing the hardcoded 120s fallback before the real value arrives.
   const [segmentSettingsLoaded, setSegmentSettingsLoaded] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -186,7 +187,12 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const res = await fetch('/api/positions', {
         headers: { Authorization: `Bearer ${session.access_token}` },
         cache: 'no-store',
@@ -197,8 +203,55 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       const data = await res.json();
       let newPositions: MyPosition[] = data.positions || [];
 
+      // Client-side reconciliation to prevent duplicate positions flashing during exit
+      const posGroups = new Map<string, MyPosition[]>();
+      for (const p of newPositions) {
+        const key = `${p.symbol}_${p.product_type}_${p.settlement}`;
+        if (!posGroups.has(key)) posGroups.set(key, []);
+        posGroups.get(key)!.push(p);
+      }
+      
+      newPositions = [];
+      for (const group of posGroups.values()) {
+        const buys = group.filter(p => p.side === 'BUY');
+        const sells = group.filter(p => p.side === 'SELL');
+        if (buys.length > 0 && sells.length > 0) {
+          let buyQty = buys.reduce((sum, p) => sum + p.qty_open, 0);
+          let sellQty = sells.reduce((sum, p) => sum + p.qty_open, 0);
+          if (buyQty > sellQty) {
+            newPositions.push({ ...buys[0], qty_open: buyQty - sellQty });
+          } else if (sellQty > buyQty) {
+            newPositions.push({ ...sells[0], qty_open: sellQty - buyQty });
+          }
+        } else {
+          newPositions.push(...group);
+        }
+      }
+
       // Filter out positions we have optimistically removed
       newPositions = newPositions.filter(p => !optimisticallyRemovedIds.current.has(p.id));
+
+      // Preserve recent optimistic additions (within last 3 seconds) that are not yet in the DB
+      // This prevents the position from temporarily disappearing if the user navigates immediately
+      const now = Date.now();
+      const recentTempPositions = localCacheRef.current.filter(p => {
+        if (p.id && p.id.toString().startsWith('temp-')) {
+          const tsStr = p.id.toString().split('-')[1];
+          if (tsStr) {
+            const ts = parseInt(tsStr, 10);
+            return now - ts < 3000;
+          }
+        }
+        return false;
+      });
+
+      const missingTempPositions = recentTempPositions.filter(temp => 
+        !newPositions.some(dbPos => dbPos.symbol === temp.symbol && dbPos.side === temp.side)
+      );
+
+      if (missingTempPositions.length > 0) {
+        newPositions = [...missingTempPositions, ...newPositions];
+      }
 
       // Only update state if something actually changed — avoids unnecessary
       // re-renders (and the visible layout shift) when data is identical.
@@ -284,18 +337,40 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
         } as any;
 
         setRawPositions(prev => {
-          const exists = prev.some(p => p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY'));
-          if (exists) {
-            return prev.map(p => {
-              if (p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY')) {
-                const totalQty = p.qty_open + (d.qty || 1);
-                const avgPrice = ((p.avg_price * p.qty_open) + (fillPrice * (d.qty || 1))) / totalQty;
-                return { ...p, qty_open: totalQty, qty_total: totalQty, avg_price: avgPrice, entry_price: avgPrice };
+          const oppositeSide = d.side === 'BUY' ? 'SELL' : 'BUY';
+          const oppositeExists = prev.find(p => p.symbol === d.symbol && p.side === oppositeSide && p.product_type === (d.product_type || 'INTRADAY'));
+          
+          let nextState;
+          if (oppositeExists && d.qty <= oppositeExists.qty_open) {
+            // This is an exit order (or partial exit). Deduct qty or mark as closing.
+            if (d.qty === oppositeExists.qty_open) {
+              optimisticallyRemovedIds.current.add(oppositeExists.id);
+            }
+            nextState = prev.map(p => {
+              if (p.id === oppositeExists.id) {
+                const remainingQty = p.qty_open - (d.qty || 1);
+                return { ...p, qty_open: remainingQty, is_closing: true };
               }
               return p;
-            });
+            }).filter(p => p.qty_open > 0);
+          } else {
+            const exists = prev.some(p => p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY'));
+            if (exists) {
+              nextState = prev.map(p => {
+                if (p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY')) {
+                  const totalQty = p.qty_open + (d.qty || 1);
+                  const avgPrice = ((p.avg_price * p.qty_open) + (fillPrice * (d.qty || 1))) / totalQty;
+                  return { ...p, qty_open: totalQty, qty_total: totalQty, avg_price: avgPrice, entry_price: avgPrice };
+                }
+                return p;
+              });
+            } else {
+              nextState = [newPos, ...prev];
+            }
           }
-          return [newPos, ...prev];
+          
+          localCacheRef.current = nextState;
+          return nextState;
         });
       }
     };
