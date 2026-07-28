@@ -243,6 +243,26 @@ export default function PositionPage() {
     setTradeSheetIsAddMore(true);
   };
 
+  const openTradeExit = (pos: EnrichedPosition, isPartial: boolean) => {
+    closeSheet();
+    setTimeout(() => {
+      setTradeSheetItem({
+        name: pos.symbol,
+        symbol: pos.symbol,
+        kiteSymbol: pos.kite_instrument || pos.symbol,
+        segment: pos.settlement || 'INR',
+        price: pos.current_ltp,
+        change: `${pos.pnl_percent >= 0 ? '+' : ''}${pos.pnl_percent.toFixed(2)}%`,
+      });
+      setTradeSheetSide(pos.side === 'BUY' ? 'SELL' : 'BUY');
+      setTradeSheetExitMode(true);
+      setTradeSheetProductType(pos.product_type as 'INTRADAY' | 'CARRY');
+      setTradeSheetIsAddMore(false);
+      setTradeSheetLinkedPosId(pos.id);
+      setTradeSheetInitialExitQty(isPartial ? pos.qty : undefined);
+    }, 80);
+  };
+
   const openTradeAgain = (pos: EnrichedPosition) => {
     closeSheet();
     setTimeout(() => {
@@ -1484,10 +1504,10 @@ export default function PositionPage() {
                         </div>
                         <button
                           className={`ps-btn-exit${(selectedPos.hold_lock_active || exitingSet.has(selectedPos.id)) ? ' disabled-lock' : ''}`}
-                          onClick={() => { if (!selectedPos.hold_lock_active && !exitingSet.has(selectedPos.id)) handleExit(selectedPos.id); }}
+                          onClick={() => { if (!selectedPos.hold_lock_active && !exitingSet.has(selectedPos.id)) openTradeExit(selectedPos, false); }}
                           disabled={selectedPos.hold_lock_active || exitingSet.has(selectedPos.id)}
                         >
-                          {exitingSet.has(selectedPos.id) ? <><i className="fas fa-circle-notch fa-spin" style={{ marginRight: 6 }} />Closing…</> : 'Exit All'}
+                          Exit All
                         </button>
                       </div>
 
@@ -1496,7 +1516,7 @@ export default function PositionPage() {
                         <button className="ps-btn-add" onClick={() => openAddMore(selectedPos)}>Add More</button>
                         <button
                           className={`ps-btn-partial${(selectedPos.hold_lock_active || exitingSet.has(selectedPos.id)) ? ' disabled-lock' : ''}`}
-                          onClick={() => { if (!selectedPos.hold_lock_active && !exitingSet.has(selectedPos.id)) handleExit(selectedPos.id); }}
+                          onClick={() => { if (!selectedPos.hold_lock_active && !exitingSet.has(selectedPos.id)) openTradeExit(selectedPos, true); }}
                           disabled={selectedPos.hold_lock_active || exitingSet.has(selectedPos.id)}
                         >
                           Partial Exit
