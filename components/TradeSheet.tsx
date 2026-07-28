@@ -103,15 +103,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const [isClosing, setIsClosing] = useState(false);
   const handleCloseAnimation = () => {
-    if (exitMode) {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
       onClose();
-    } else {
-      setIsClosing(true);
-      setTimeout(() => {
-        setIsClosing(false);
-        onClose();
-      }, 150); // match CSS transition time
-    }
+    }, 150); // match CSS transition time
   };
 
   const [orderUnit, setOrderUnit] = useState<'qty' | 'lot'>('qty');
