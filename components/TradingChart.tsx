@@ -546,6 +546,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const { placeOrder, closePosition } = useOrderEntry();
 
   // --- Dashboard States ---
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
   const [isTradeOnChartActive, setIsTradeOnChartActive] = useState<boolean>(false);
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
@@ -931,6 +932,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     });
   };
 
+  const handlePlaceOrder = async () => {
+    if (isSubmitting) return;
+    handleSubmitOrder();
+  };
+
   // Place actual order
   const handleSubmitOrder = async () => {
     const qVal = Number(qtyValue) || 0;
@@ -1037,6 +1043,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }
 
     // Optimistic UI: Immediately close panel and show processing state
+    setIsSubmitting(true);
     if (modifyOrderId) {
       setModifyOrderId(null);
     }
@@ -1086,6 +1093,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }).catch(err => {
       showToast(err?.message || 'Failed to place order', true);
     }).finally(() => {
+      setIsSubmitting(false);
       window.dispatchEvent(new Event('global-loader-end'));
     });
   };
@@ -1250,13 +1258,16 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const quickEntryLock = useRef(false);
 
   const handleQuickMarketOrder = async (side: 'BUY' | 'SELL') => {
-    if (quickEntryLock.current) return;
+    if (quickEntryLock.current || isSubmitting) return;
     quickEntryLock.current = true;
+    setIsSubmitting(true);
+    setOrderSide(side);
 
     const qVal = Number(qtyValue) || 0;
     if (qVal <= 0) {
       showToast("Invalid quantity", true);
       quickEntryLock.current = false;
+      setIsSubmitting(false);
       return;
     }
     const isScalper = profile?.trading_mode === 'scalper';
@@ -1271,6 +1282,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
     if (required > balance) {
       showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+      quickEntryLock.current = false;
+      setIsSubmitting(false);
       return;
     }
 
@@ -1306,7 +1319,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }
     
     // Release entry lock after a short debounce to prevent mouse-bounces
-    setTimeout(() => { quickEntryLock.current = false; }, 500);
+    setTimeout(() => { 
+        quickEntryLock.current = false; 
+        setIsSubmitting(false);
+    }, 500);
   };
 
   const handleQuickAddPosition = async (pos: EnrichedPosition) => {
@@ -2130,7 +2146,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           {exitingPosIds.current.has(currentInstrumentPosition.id) ? 'EXITING...' : 'EXIT LONG'}
                         </span>
                       </button>
-                      <button id="buyButton" className="trade-btn buy" onClick={() => {
+                      <button id="buyButton" className="trade-btn buy" disabled={isSubmitting} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('BUY');
                         } else {
@@ -2145,12 +2161,15 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           setOrderSide('BUY');
                         }
                       }}>
-                        <span className="btn-label">BUY</span>
+                        <span className="btn-label">
+                          {isSubmitting && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                          BUY
+                        </span>
                       </button>
                     </>
                   ) : (
                     <>
-                      <button id="sellButton" className="trade-btn sell" onClick={() => {
+                      <button id="sellButton" className="trade-btn sell" disabled={isSubmitting} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('SELL');
                         } else {
@@ -2165,7 +2184,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           setOrderSide('SELL');
                         }
                       }}>
-                        <span className="btn-label">SELL</span>
+                        <span className="btn-label">
+                          {isSubmitting && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                          SELL
+                        </span>
                       </button>
                       <button 
                         className="trade-btn exit-position-chart-btn" 
@@ -2185,7 +2207,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 </div>
               ) : (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
-                  <button id="sellButton" className="trade-btn sell" onClick={() => {
+                  <button id="sellButton" className="trade-btn sell" disabled={isSubmitting} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('SELL');
                     } else {
@@ -2200,9 +2222,12 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                       setOrderSide('SELL');
                     }
                   }}>
-                    <span className="btn-label">SELL</span>
+                    <span className="btn-label">
+                      {isSubmitting && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                      SELL
+                    </span>
                   </button>
-                  <button id="buyButton" className="trade-btn buy" onClick={() => {
+                  <button id="buyButton" className="trade-btn buy" disabled={isSubmitting} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('BUY');
                     } else {
@@ -2217,7 +2242,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                       setOrderSide('BUY');
                     }
                   }}>
-                    <span className="btn-label">BUY</span>
+                    <span className="btn-label">
+                      {isSubmitting && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                      BUY
+                    </span>
                   </button>
                 </div>
               )
@@ -2266,6 +2294,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           
                         let kiteInstForOrder = baseKiteInst;
                         
+                        // Helper to detect if it's MCX
+                        const isMcx = ['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => (chainContract?.name || targetSymbol).includes(c));
+                        
                         if (['OPTIDX', 'FUTIDX', 'OPTSTK', 'FUTSTK', 'OPTCOM', 'FUTCOM', 'OPTCUR', 'FUTCUR'].includes(dbSeg)) {
                           kiteInstForOrder = isMcx ? `MCX:${baseKiteInst}` : `NFO:${baseKiteInst}`;
                         }
@@ -2275,7 +2306,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         if (chainContract) {
                           const n = chainContract.name.toUpperCase();
                           const isBse = n.includes('SENSEX') || n.includes('BANKEX');
-                          const isMcx = ['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => n.includes(c));
                           if (isMcx) {
                             setSegment('MCX - Options');
                           } else if (isBse) {
@@ -2496,11 +2526,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     </div>
                   </div>
 
-                  <button
-                    className={`submit-btn ${orderSide === 'BUY' ? 'submit-buy' : 'submit-sell'}`}
-                    onClick={handleSubmitOrder}
-                  >
-                    {modifyOrderId ? 'Update Order' : `${orderSide} ${useLots ? `${qtyValue} Lot` : `${qtyValue} Qty`}`}
+                  <button className={`submit-order-btn ${orderSide.toLowerCase()}`} disabled={isSubmitting} onClick={handlePlaceOrder}>
+                      {isSubmitting ? <i className="ti ti-loader spin"></i> : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue}`)}
                   </button>
                 </div>
               </div>

@@ -585,27 +585,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })(),
 
     // Script settings for lot size lookup (admin overrides)
-    admin.from('script_settings').select('symbol, lot_size').in('symbol', [symbol, kiteInst, underlyingId]),
+    (async () => {
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      const keys = [symbol, kiteInst, underlyingId].filter(Boolean);
+      const cacheKey = `cache:script_settings:${keys.join(',')}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return { data: JSON.parse(cached), error: null };
+      const { data, error } = await admin.from('script_settings').select('symbol, lot_size').in('symbol', keys);
+      if (data) await redis.set(cacheKey, JSON.stringify(data), 'EX', 300);
+      return { data, error };
+    })(),
 
     // Template scripts enforcement
-    profile.template_id 
-      ? admin.from('template_scripts').select('symbol').eq('template_id', profile.template_id)
-      : Promise.resolve({ data: null, error: null }),
+    (async () => {
+      if (!profile.template_id) return { data: null, error: null };
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      const cacheKey = `cache:template_scripts:${profile.template_id}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return { data: JSON.parse(cached), error: null };
+      const { data, error } = await admin.from('template_scripts').select('symbol').eq('template_id', profile.template_id);
+      if (data) await redis.set(cacheKey, JSON.stringify(data), 'EX', 60);
+      return { data, error };
+    })(),
 
     // Blocked scripts for this user
-    admin.from('user_blocked_scripts')
-      .select('symbol')
-      .eq('user_id', user.id)
-      .eq('symbol', symbol)
-      .maybeSingle(),
+    (async () => {
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      const cacheKey = `cache:user_blocked:${user.id}:${symbol}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return { data: JSON.parse(cached), error: null };
+      const { data, error } = await admin.from('user_blocked_scripts').select('symbol').eq('user_id', user.id).eq('symbol', symbol).maybeSingle();
+      if (!error) await redis.set(cacheKey, JSON.stringify(data || {}), 'EX', 60);
+      return { data: Object.keys(data || {}).length ? data : null, error };
+    })(),
 
     // Market hours — non-crypto only; resolve immediately for crypto
-    segUpper.includes('CRYPTO')
-      ? Promise.resolve({ data: null, error: null })
-      : admin.from('trading_hours')
-          .select('name, start_time, end_time, is_active')
-          .eq('id', segmentId)
-          .maybeSingle(),
+    (async () => {
+      if (segUpper.includes('CRYPTO')) return { data: null, error: null };
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      const cacheKey = `cache:trading_hours:${segmentId}`;
+      const cached = await redis.get(cacheKey);
+      if (cached) return { data: JSON.parse(cached), error: null };
+      const { data, error } = await admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', segmentId).maybeSingle();
+      if (data) await redis.set(cacheKey, JSON.stringify(data), 'EX', 60);
+      return { data, error };
+    })(),
           
     // Pending orders for lot-limit checks
     admin.from('orders')
