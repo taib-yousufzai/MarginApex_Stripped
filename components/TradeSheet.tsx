@@ -928,7 +928,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           target: resolvedTarget,
           is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
         }).then(res => {
-          if (!res.success) {
+          if (res.success) {
+            window.dispatchEvent(new Event('order_placed'));
+            setTimeout(() => {
+              window.dispatchEvent(new Event('order_placed'));
+            }, 1500);
+          } else {
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
           }
         }).catch(err => {
