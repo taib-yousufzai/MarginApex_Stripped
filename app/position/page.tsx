@@ -476,7 +476,10 @@ export default function PositionPage() {
     showToast('Closing position...');
 
     try {
-      const res = await closePosition(posId, posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined);
+      const [res] = await Promise.all([
+        closePosition(posId, posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined),
+        new Promise(r => setTimeout(r, 800))
+      ]);
       if (res.success) {
         showToast('Position closed successfully');
         refresh();
@@ -689,7 +692,10 @@ export default function PositionPage() {
       posIds.forEach(id => removePositionLocally(id));
     }
 
-    const result = await closePositionsBatch(posIds);
+    const [result] = await Promise.all([
+      closePositionsBatch(posIds),
+      new Promise(r => setTimeout(r, 800))
+    ]);
 
     if (result.success && result.results) {
       let firstError = '';
@@ -730,7 +736,10 @@ export default function PositionPage() {
       posIds.forEach(id => removePositionLocally(id));
     }
 
-    const result = await closePositionsBatch(posIds);
+    const [result] = await Promise.all([
+      closePositionsBatch(posIds),
+      new Promise(r => setTimeout(r, 800))
+    ]);
 
     if (result.success) {
       showToast(`Successfully closed ${group.symbol} position(s).`);
