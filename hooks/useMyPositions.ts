@@ -40,9 +40,17 @@ interface UseMyPositionsResult {
 let globalPositionsCache: MyPosition[] = [];
 
 if (typeof window !== 'undefined') {
+  try {
+    const saved = localStorage.getItem('cached_open_positions');
+    if (saved) {
+      globalPositionsCache = JSON.parse(saved);
+    }
+  } catch (e) {}
+
   window.addEventListener('order_placed', () => {
-    // Clear global cache so next mount doesn't show stale data
+    // Clear global cache on order placement so next mount doesn't show stale data
     globalPositionsCache = [];
+    try { localStorage.removeItem('cached_open_positions'); } catch (e) {}
   });
 }
 
@@ -173,6 +181,9 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       if (didChange) {
         localCacheRef.current = newPositions;
         globalPositionsCache = newPositions; // keep global in sync for initial state on new mounts
+        try {
+          localStorage.setItem('cached_open_positions', JSON.stringify(newPositions));
+        } catch (e) {}
         setRawPositions(newPositions);
       }
     } catch (err) {
