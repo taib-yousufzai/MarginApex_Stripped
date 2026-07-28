@@ -39,6 +39,13 @@ interface UseMyPositionsResult {
 
 let globalPositionsCache: MyPosition[] = [];
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('order_placed', () => {
+    // Clear global cache so next mount doesn't show stale data
+    globalPositionsCache = [];
+  });
+}
+
 const mapSegmentToDbSegment = (s: string): string => {
   if (!s) return '';
   const trimmed = s.trim();
