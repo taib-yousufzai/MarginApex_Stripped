@@ -48,9 +48,7 @@ if (typeof window !== 'undefined') {
   } catch (e) {}
 
   window.addEventListener('order_placed', () => {
-    // Clear global cache on order placement so next mount doesn't show stale data
-    globalPositionsCache = [];
-    try { localStorage.removeItem('cached_open_positions'); } catch (e) {}
+    // Keep cached positions available so page renders immediately while fresh fetch runs
   });
 }
 
@@ -178,7 +176,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
           );
         });
 
-      if (didChange) {
+      if (didChange || localCache.length === 0) {
         localCacheRef.current = newPositions;
         globalPositionsCache = newPositions; // keep global in sync for initial state on new mounts
         try {
