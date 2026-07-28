@@ -908,7 +908,17 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       } else {
         // Non-exit: optimistic fire-and-forget for snappy UX
+        const optimisticPayload = {
+          symbol: item.symbol,
+          kite_instrument: computedKiteSymbol || item.symbol,
+          segment: item.segment,
+          side: placeSide,
+          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+          client_price: resolvedClientPrice,
+          product_type: productType,
+        };
         window.dispatchEvent(new Event('order_placed'));
+        window.dispatchEvent(new CustomEvent('order_placed_with_data', { detail: optimisticPayload }));
         showToast(`${placeSide} order sent for ${item.symbol}`);
         onSuccess?.();
         handleCloseAnimation();
