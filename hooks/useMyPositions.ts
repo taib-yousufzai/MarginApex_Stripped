@@ -47,54 +47,7 @@ if (typeof window !== 'undefined') {
     }
   } catch (e) {}
 
-  const handleGlobalOrderPlaced = (e: Event) => {
-    const customEvt = e as CustomEvent;
-    if (customEvt.detail?.symbol && customEvt.detail?.side) {
-      const d = customEvt.detail;
-      const fillPrice = d.result?.fill_price || d.client_price || 0;
-      const newPos: MyPosition = {
-        id: `temp-${Date.now()}`,
-        user_id: '',
-        symbol: d.symbol,
-        kite_instrument: d.kite_instrument || d.symbol,
-        side: d.side,
-        status: 'open',
-        qty_open: d.qty || 1,
-        qty_total: d.qty || 1,
-        entry_price: fillPrice,
-        avg_price: fillPrice,
-        exit_price: null,
-        ltp: fillPrice,
-        pnl: 0,
-        total_pnl: 0,
-        settlement: d.segment || '',
-        product_type: d.product_type || 'INTRADAY',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        entry_time: new Date().toISOString(),
-      } as any;
 
-      const exists = globalPositionsCache.some(p => p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY'));
-      if (exists) {
-        globalPositionsCache = globalPositionsCache.map(p => {
-          if (p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY')) {
-            const totalQty = p.qty_open + (d.qty || 1);
-            const avgPrice = ((p.avg_price * p.qty_open) + (fillPrice * (d.qty || 1))) / totalQty;
-            return { ...p, qty_open: totalQty, qty_total: totalQty, avg_price: avgPrice, entry_price: avgPrice };
-          }
-          return p;
-        });
-      } else {
-        globalPositionsCache = [newPos, ...globalPositionsCache];
-      }
-
-      try {
-        localStorage.setItem('cached_open_positions', JSON.stringify(globalPositionsCache));
-      } catch (e) {}
-    }
-  };
-
-  window.addEventListener('order_placed_with_data', handleGlobalOrderPlaced);
 }
 
 const mapSegmentToDbSegment = (s: string): string => {
@@ -129,6 +82,8 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
   // showing the hardcoded 120s fallback before the real value arrives.
   const [segmentSettingsLoaded, setSegmentSettingsLoaded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const processedOptimisticKeys = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -269,7 +224,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
             p.avg_price !== cached.avg_price ||
             p.status !== cached.status ||
             p.product_type !== cached.product_type ||
-            p.carry_brokerage_paid !== cached.carry_brokerage_paid ||
+            (p as any).carry_brokerage_paid !== (cached as any).carry_brokerage_paid ||
             p.ltp !== cached.ltp
           );
         });
@@ -295,13 +250,20 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     let isSubscribed = false;
     const channelName = `my-positions-realtime-${Math.random().toString(36).slice(2)}`;
 
+    const debouncedFetch = () => {
+      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
+      fetchDebounceRef.current = setTimeout(() => {
+        fetchPositions();
+      }, 1500);
+    };
+
     const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'positions' },
         () => {
-          fetchPositions();
+          debouncedFetch();
         }
       );
 
@@ -313,6 +275,13 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       const customEvt = e as CustomEvent;
       if (customEvt.detail?.symbol && customEvt.detail?.side) {
         const d = customEvt.detail;
+        
+        // Deduplication guard to ensure same event isn't processed twice
+        const eventId = d.eventId || `${d.symbol}_${d.side}_${d.qty}_${Date.now()}`;
+        if (processedOptimisticKeys.current.has(eventId)) return;
+        processedOptimisticKeys.current.add(eventId);
+        setTimeout(() => processedOptimisticKeys.current.delete(eventId), 5000);
+
         const fillPrice = d.result?.fill_price || d.client_price || 0;
         const newPos: MyPosition = {
           id: `temp-${Date.now()}`,
@@ -375,10 +344,8 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       }
     };
 
-    // Listen to manual forced re-fetches (e.g., when an order is placed)
-    // Delay fetching by 1.5s to let Supabase propagate and to prevent overwriting optimistic UI
     const handleOrderPlaced = () => {
-      setTimeout(() => fetchPositions(), 1500);
+      debouncedFetch();
     };
     
     window.addEventListener('order_placed', handleOrderPlaced);
@@ -544,7 +511,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       } as EnrichedPosition;
     });
 
-    return enriched;
+
   }, [
     rawPositions,
     marketQuotes,
