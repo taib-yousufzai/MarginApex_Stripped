@@ -26,7 +26,7 @@ const formatHoldTime = (sec: number) => {
 export default function PositionPage() {
   const router = useRouter();
   useAuth();
-  
+
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     getSession().then((session) => {
@@ -261,6 +261,23 @@ export default function PositionPage() {
       setTradeSheetLinkedPosId(pos.id);
       setTradeSheetInitialExitQty(isPartial ? pos.qty : undefined);
     }, 80);
+  };
+
+  const openGroupTradeExit = (group: GroupedPosition) => {
+    setTradeSheetItem({
+      name: group.symbol,
+      symbol: group.symbol,
+      kiteSymbol: group.representativePos.kite_instrument || group.symbol,
+      segment: group.settlement || 'INR',
+      price: group.current_ltp,
+      change: `${group.pnl_percent >= 0 ? '+' : ''}${group.pnl_percent.toFixed(2)}%`,
+    });
+    setTradeSheetSide(group.side === 'BUY' ? 'SELL' : 'BUY');
+    setTradeSheetExitMode(true);
+    setTradeSheetProductType(group.product_type as 'INTRADAY' | 'CARRY');
+    setTradeSheetIsAddMore(false);
+    setTradeSheetLinkedPosId(group.ids.length === 1 ? group.ids[0] : null);
+    setTradeSheetInitialExitQty(group.qty_total);
   };
 
   const openTradeAgain = (pos: EnrichedPosition) => {
@@ -739,7 +756,7 @@ export default function PositionPage() {
 
   return (
     <div className="desktop-layout">
-      
+
       <main className="main-viewport">
         <div className="app-container">
           <div className="pos-root">
@@ -949,7 +966,7 @@ export default function PositionPage() {
                                     setLockModalPos(group.representativePos);
                                     return;
                                   }
-                                  setGroupExitModalGroup(group);
+                                  openGroupTradeExit(group);
                                 }}
                               >
                                 <i className="fas fa-times-circle" /> Exit All
@@ -987,53 +1004,53 @@ export default function PositionPage() {
                         // Find the first underlying closed position to use as the detail sheet target
                         const representativePos = closedPositions.find(p => group.ids.includes(p.id));
                         return (
-                        <div key={group.key} className="pos-card" style={{ cursor: 'pointer' }} onClick={() => {
-                          if (representativePos) {
-                            // Build a synthetic enriched position with the grouped averages for the sheet
-                            handleRowClick({
-                              ...representativePos,
-                              avg_price: group.avg_price,
-                              entry_price: group.avg_price,
-                              exit_price: group.exit_price,
-                              qty_total: group.qty_total,
-                              qty_open: group.qty_total,
-                              pnl: group.pnl,
-                              total_pnl: group.pnl,
-                              pnl_percent: group.pnl_percent,
-                            });
-                          }
-                        }}>
-                          <div className="pos-card-left">
-                            <div className="pos-card-symbol">
-                              <span className="pos-symbol-text">{group.symbol}</span>
+                          <div key={group.key} className="pos-card" style={{ cursor: 'pointer' }} onClick={() => {
+                            if (representativePos) {
+                              // Build a synthetic enriched position with the grouped averages for the sheet
+                              handleRowClick({
+                                ...representativePos,
+                                avg_price: group.avg_price,
+                                entry_price: group.avg_price,
+                                exit_price: group.exit_price,
+                                qty_total: group.qty_total,
+                                qty_open: group.qty_total,
+                                pnl: group.pnl,
+                                total_pnl: group.pnl,
+                                pnl_percent: group.pnl_percent,
+                              });
+                            }
+                          }}>
+                            <div className="pos-card-left">
+                              <div className="pos-card-symbol">
+                                <span className="pos-symbol-text">{group.symbol}</span>
+                              </div>
+                              <div className="pos-card-details">
+                                <span>Avg Entry: <strong>{fmtPrice(group.avg_price, group.settlement)}</strong></span>
+                                <span>Qty: <strong>{group.qty_total}</strong></span>
+                              </div>
+                              <div style={{ marginTop: '5px', display: 'flex', gap: '8px' }}>
+                                {group.product_type && (
+                                  <span className={`pos-product-badge ${group.product_type === 'CARRY' ? 'carry' : ''}`}>
+                                    {group.product_type}
+                                  </span>
+                                )}
+                                {group.ids.length > 1 && (
+                                  <span style={{ fontSize: '0.65rem', fontWeight: 700, background: 'var(--card-alt-bg, #F1F5F9)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '20px' }}>
+                                    {group.ids.length} trades
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="pos-card-details">
-                              <span>Avg Entry: <strong>{fmtPrice(group.avg_price, group.settlement)}</strong></span>
-                              <span>Qty: <strong>{group.qty_total}</strong></span>
-                            </div>
-                            <div style={{ marginTop: '5px', display: 'flex', gap: '8px' }}>
-                              {group.product_type && (
-                                <span className={`pos-product-badge ${group.product_type === 'CARRY' ? 'carry' : ''}`}>
-                                  {group.product_type}
-                                </span>
-                              )}
-                              {group.ids.length > 1 && (
-                                <span style={{ fontSize: '0.65rem', fontWeight: 700, background: 'var(--card-alt-bg, #F1F5F9)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: '20px' }}>
-                                  {group.ids.length} trades
-                                </span>
-                              )}
+                            <div className="pos-card-right">
+                              <span className={`pos-badge${group.side === 'BUY' ? ' long' : ' short'}`}>
+                                {group.side}
+                              </span>
+                              <div className={`pos-card-pnl${group.pnl >= 0 ? ' green' : ' red'}`}>
+                                {fmtUSD(group.pnl, group.settlement)}
+                              </div>
+                              <div className="pos-card-ltp">Avg Exit: <strong>{fmtPrice(group.exit_price, group.settlement)}</strong></div>
                             </div>
                           </div>
-                          <div className="pos-card-right">
-                            <span className={`pos-badge${group.side === 'BUY' ? ' long' : ' short'}`}>
-                              {group.side}
-                            </span>
-                            <div className={`pos-card-pnl${group.pnl >= 0 ? ' green' : ' red'}`}>
-                              {fmtUSD(group.pnl, group.settlement)}
-                            </div>
-                            <div className="pos-card-ltp">Avg Exit: <strong>{fmtPrice(group.exit_price, group.settlement)}</strong></div>
-                          </div>
-                        </div>
                         );
                       })
                     )
@@ -1204,7 +1221,7 @@ export default function PositionPage() {
                 )}
               </div>
 
-                          </div>
+            </div>
 
             {/* Sheet */}
             <div className={`pos-sheet-overlay${isSheetOpen ? ' open' : ''}`} onClick={closeSheet} />
@@ -1596,7 +1613,7 @@ export default function PositionPage() {
             {/* Convert Confirm Modal */}
             <div className={`pos-modal-overlay${convertConfirmPos ? ' open' : ''}`} onClick={() => setConvertConfirmPos(null)}>
               <div className="pos-modal-card" onClick={e => e.stopPropagation()}>
-                
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '12px 16px', background: 'var(--card-alt-bg)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Brokerage</span>
                   {isFetchingPreview ? (
