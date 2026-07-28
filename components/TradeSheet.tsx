@@ -103,15 +103,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const [isClosing, setIsClosing] = useState(false);
   const handleCloseAnimation = () => {
-    if (exitMode) {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
       onClose();
-    } else {
-      setIsClosing(true);
-      setTimeout(() => {
-        setIsClosing(false);
-        onClose();
-      }, 150); // match CSS transition time
-    }
+    }, 150); // match CSS transition time
   };
 
   const [orderUnit, setOrderUnit] = useState<'qty' | 'lot'>('qty');
@@ -868,36 +864,71 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       }
 
-      // Optimistic UI: instantly dispatch event and close sheet so it feels snappy
-      window.dispatchEvent(new Event('order_placed'));
-      showToast(`${placeSide} order sent for ${item.symbol}`);
-      onSuccess?.();
-      handleCloseAnimation();
-
-      placeOrder({
-        symbol: item.symbol,
-        kite_instrument: computedKiteSymbol || item.symbol,
-        segment: item.segment,
-        side: placeSide,
-        qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-        lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
-        order_type: resolvedOrderType as any,
-        product_type: exitMode ? (propProductType || 'INTRADAY') : productType,
-        client_price: resolvedClientPrice,
-        trigger_price: resolvedTriggerPrice,
-        stop_loss: resolvedStopLoss,
-        target: resolvedTarget,
-        is_exit: exitMode || (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
-      }).then(res => {
-        if (!res.success) {
-          // Revert or show error globally since sheet is closed
-          window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
+      if (exitMode) {
+        // Exit mode: await the order so the spinner stays visible
+        try {
+          const [res] = await Promise.all([
+            placeOrder({
+              symbol: item.symbol,
+              kite_instrument: computedKiteSymbol || item.symbol,
+              segment: item.segment,
+              side: placeSide,
+              qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+              lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+              order_type: resolvedOrderType as any,
+              product_type: propProductType || 'INTRADAY',
+              client_price: resolvedClientPrice,
+              trigger_price: resolvedTriggerPrice,
+              stop_loss: resolvedStopLoss,
+              target: resolvedTarget,
+              is_exit: true,
+            }),
+            new Promise(r => setTimeout(r, 800)) // Ensure spinner shows for at least 800ms
+          ]);
+          window.dispatchEvent(new Event('order_placed'));
+          if (res.success) {
+            showToast(`${placeSide} order sent for ${item.symbol}`);
+            onSuccess?.();
+            handleCloseAnimation();
+          } else {
+            showToast(`Order Failed: ${res.error}`);
+          }
+        } catch (err: any) {
+          showToast(`Order Failed: ${err.message}`);
+        } finally {
+          isExecutingRef.current = false;
         }
-      }).catch(err => {
-        window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
-      }).finally(() => {
-        isExecutingRef.current = false;
-      });
+      } else {
+        // Non-exit: optimistic fire-and-forget for snappy UX
+        window.dispatchEvent(new Event('order_placed'));
+        showToast(`${placeSide} order sent for ${item.symbol}`);
+        onSuccess?.();
+        handleCloseAnimation();
+
+        placeOrder({
+          symbol: item.symbol,
+          kite_instrument: computedKiteSymbol || item.symbol,
+          segment: item.segment,
+          side: placeSide,
+          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+          lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+          order_type: resolvedOrderType as any,
+          product_type: productType,
+          client_price: resolvedClientPrice,
+          trigger_price: resolvedTriggerPrice,
+          stop_loss: resolvedStopLoss,
+          target: resolvedTarget,
+          is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
+        }).then(res => {
+          if (!res.success) {
+            window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
+          }
+        }).catch(err => {
+          window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
+        }).finally(() => {
+          isExecutingRef.current = false;
+        });
+      }
     } catch (e) {
       isExecutingRef.current = false;
     }
@@ -1533,7 +1564,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                     onClick={() => handlePlace('SELL')}
                   >
-                    {placingOrder ? 'PLACING...' : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
+                    {placingOrder ? <><i className="fas fa-spinner fa-spin" style={{marginRight: '8px'}}/> PLACING...</> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
                   </button>
                 )}
                 {(side === 'BUY' || side === 'BOTH') && (
@@ -1543,7 +1574,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                     onClick={() => handlePlace('BUY')}
                   >
-                    {placingOrder ? 'PLACING...' : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
+                    {placingOrder ? <><i className="fas fa-spinner fa-spin" style={{marginRight: '8px'}}/> PLACING...</> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
                   </button>
                 )}
               </div>
