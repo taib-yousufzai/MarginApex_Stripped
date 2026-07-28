@@ -723,6 +723,11 @@ export default function PositionPage() {
       showToast(`Closed ${successCount}, failed ${failCount}. Error: ${result.error || 'Unknown'}`);
     }
     refresh();
+    // Delayed re-fetch to catch Supabase propagation delay
+    setTimeout(() => {
+      refresh();
+      window.dispatchEvent(new Event('position-closed'));
+    }, 1500);
   };
 
   const handleGroupExitConfirm = async () => {
@@ -748,6 +753,11 @@ export default function PositionPage() {
     }
     setIsExitingAll(false);
     refresh();
+    // Delayed re-fetch to catch Supabase propagation delay
+    setTimeout(() => {
+      refresh();
+      window.dispatchEvent(new Event('position-closed'));
+    }, 1500);
   };
 
   const totalPnl = useMemo(() => positions.reduce((acc, p) => acc + (p.total_pnl || 0), 0), [positions]);

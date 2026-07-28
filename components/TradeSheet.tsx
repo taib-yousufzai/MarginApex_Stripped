@@ -886,10 +886,16 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             new Promise(r => setTimeout(r, 800)) // Ensure spinner shows for at least 800ms
           ]);
           window.dispatchEvent(new Event('order_placed'));
+          window.dispatchEvent(new Event('position-closed'));
           if (res.success) {
             showToast(`${placeSide} order sent for ${item.symbol}`);
             onSuccess?.();
             handleCloseAnimation();
+            // Delayed re-fetch to catch Supabase propagation delay
+            setTimeout(() => {
+              window.dispatchEvent(new Event('order_placed'));
+              window.dispatchEvent(new Event('position-closed'));
+            }, 1500);
           } else {
             showToast(`Order Failed: ${res.error}`);
           }
