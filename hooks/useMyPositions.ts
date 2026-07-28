@@ -211,8 +211,54 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       isSubscribed = status === 'SUBSCRIBED';
     });
 
+    const handleOrderPlacedWithData = (e: Event) => {
+      fetchPositions();
+      const customEvt = e as CustomEvent;
+      if (customEvt.detail?.symbol && customEvt.detail?.side) {
+        const d = customEvt.detail;
+        const fillPrice = d.result?.fill_price || d.client_price || 0;
+        const newPos: MyPosition = {
+          id: `temp-${Date.now()}`,
+          user_id: '',
+          symbol: d.symbol,
+          kite_instrument: d.kite_instrument || d.symbol,
+          side: d.side,
+          status: 'open',
+          qty_open: d.qty || 1,
+          qty_total: d.qty || 1,
+          entry_price: fillPrice,
+          avg_price: fillPrice,
+          exit_price: null,
+          ltp: fillPrice,
+          pnl: 0,
+          total_pnl: 0,
+          settlement: d.segment || '',
+          product_type: d.product_type || 'INTRADAY',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          entry_time: new Date().toISOString(),
+        } as any;
+
+        setRawPositions(prev => {
+          const exists = prev.some(p => p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY'));
+          if (exists) {
+            return prev.map(p => {
+              if (p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY')) {
+                const totalQty = p.qty_open + (d.qty || 1);
+                const avgPrice = ((p.avg_price * p.qty_open) + (fillPrice * (d.qty || 1))) / totalQty;
+                return { ...p, qty_open: totalQty, qty_total: totalQty, avg_price: avgPrice, entry_price: avgPrice };
+              }
+              return p;
+            });
+          }
+          return [newPos, ...prev];
+        });
+      }
+    };
+
     // Listen to manual forced re-fetches (e.g., when an order is placed)
     window.addEventListener('order_placed', fetchPositions);
+    window.addEventListener('order_placed_with_data', handleOrderPlacedWithData);
 
     const timer = setInterval(() => {
       if (!isSubscribed) fetchPositions();
@@ -222,6 +268,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
       clearInterval(timer);
       supabase.removeChannel(channel);
       window.removeEventListener('order_placed', fetchPositions);
+      window.removeEventListener('order_placed_with_data', handleOrderPlacedWithData);
     };
   }, [fetchPositions]);
 

@@ -63,6 +63,7 @@ export function useOrderEntry() {
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('order_placed'));
+        window.dispatchEvent(new CustomEvent('order_placed_with_data', { detail: { ...state, result } }));
       }
 
       return { success: true, order: result };
