@@ -230,7 +230,7 @@ export async function POST(
         .eq('segment', speculativeSegment)
         .eq('side', speculativeSide)
         .maybeSingle(),
-    fetchLtp(speculativeSymbol, speculativeSegment)
+    (clientPrice ? Promise.resolve(null) : fetchLtp(speculativeSymbol, speculativeSegment))
   ]);
 
   const { data: pos, error: posErr } = posResult;
@@ -261,7 +261,7 @@ export async function POST(
       (!segUp.includes('CRYPTO')) ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', actualSegId).maybeSingle() : Promise.resolve({ data: null, error: null }),
       admin.from(targetTable).select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
           .eq('user_id', lookupId).eq('segment', pos.settlement ?? '').eq('side', pos.side).maybeSingle(),
-      fetchLtp(pos.symbol, pos.settlement ?? '')
+      (clientPrice ? Promise.resolve(null) : fetchLtp(pos.symbol, pos.settlement ?? ''))
     ]);
     finalHrResult = realHr;
     finalSegSettingResult = realSeg;
