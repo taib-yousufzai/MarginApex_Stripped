@@ -109,7 +109,7 @@ export default function PositionPage() {
     fetchClosed();
     // Closed positions don't need rapid polling — refresh on events + slow fallback
     const iv = setInterval(fetchClosed, 30000);
-    const onOrderPlaced = () => fetchClosed();
+    const onOrderPlaced = () => setTimeout(() => fetchClosed(), 1500);
     window.addEventListener('order_placed', onOrderPlaced);
     return () => {
       clearInterval(iv);
@@ -140,7 +140,7 @@ export default function PositionPage() {
     fetchOrders();
     // Orders don't need rapid polling — refresh on events + slow fallback
     const orderTimer = setInterval(fetchOrders, 30000);
-    const onOrderPlaced = () => fetchOrders();
+    const onOrderPlaced = () => setTimeout(() => fetchOrders(), 1500);
     window.addEventListener('order_placed', onOrderPlaced);
 
     return () => { cancelled = true; clearInterval(orderTimer); window.removeEventListener('order_placed', onOrderPlaced); };

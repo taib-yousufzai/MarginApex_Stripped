@@ -257,7 +257,6 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     });
 
     const handleOrderPlacedWithData = (e: Event) => {
-      fetchPositions();
       const customEvt = e as CustomEvent;
       if (customEvt.detail?.symbol && customEvt.detail?.side) {
         const d = customEvt.detail;
@@ -302,7 +301,12 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     };
 
     // Listen to manual forced re-fetches (e.g., when an order is placed)
-    window.addEventListener('order_placed', fetchPositions);
+    // Delay fetching by 1.5s to let Supabase propagate and to prevent overwriting optimistic UI
+    const handleOrderPlaced = () => {
+      setTimeout(() => fetchPositions(), 1500);
+    };
+    
+    window.addEventListener('order_placed', handleOrderPlaced);
     window.addEventListener('order_placed_with_data', handleOrderPlacedWithData);
 
     const timer = setInterval(() => {
