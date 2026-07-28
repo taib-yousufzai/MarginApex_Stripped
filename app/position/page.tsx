@@ -720,13 +720,19 @@ export default function PositionPage() {
 
     if (result.success && result.results) {
       let firstError = '';
-      result.results.forEach((res: any) => {
-        if (res.success) {
-          successCount++;
-        } else {
+      const successfulIds = new Set(result.results.filter((r: any) => r.success).map((r: any) => r.positionId));
+      
+      posIds.forEach(id => {
+        if (!successfulIds.has(id)) {
           failCount++;
-          if (!firstError && res.error) firstError = res.error;
+          if (restorePositionLocally) restorePositionLocally(id);
+        } else {
+          successCount++;
         }
+      });
+
+      result.results.forEach((res: any) => {
+        if (!res.success && !firstError && res.error) firstError = res.error;
       });
 
       setIsExitingAll(false);
@@ -739,6 +745,9 @@ export default function PositionPage() {
       }
     } else {
       failCount = exitablePositions.length;
+      if (restorePositionLocally) {
+        posIds.forEach(id => restorePositionLocally(id));
+      }
       setIsExitingAll(false);
       setIsExitAllModalOpen(false);
       showToast(`Closed ${successCount}, failed ${failCount}. Error: ${result.error || 'Unknown'}`);
@@ -768,8 +777,32 @@ export default function PositionPage() {
     ]);
 
     if (result.success) {
-      showToast(`Successfully closed ${group.symbol} position(s).`);
+      const successfulIds = new Set((result.results || []).filter((r: any) => r.success).map((r: any) => r.positionId));
+      let hadFailures = false;
+      let firstError = '';
+      
+      posIds.forEach(id => {
+        if (!successfulIds.has(id)) {
+          hadFailures = true;
+          if (restorePositionLocally) restorePositionLocally(id);
+        }
+      });
+
+      if (result.results) {
+        result.results.forEach((res: any) => {
+          if (!res.success && !firstError && res.error) firstError = res.error;
+        });
+      }
+
+      if (hadFailures) {
+        showToast(`Closed some, but failed for others. Error: ${firstError || 'Unknown'}`);
+      } else {
+        showToast(`Successfully closed ${group.symbol} position(s).`);
+      }
     } else {
+      if (restorePositionLocally) {
+        posIds.forEach(id => restorePositionLocally(id));
+      }
       showToast(`Error closing ${group.symbol}: ${result.error || 'Unknown'}`);
     }
     setIsExitingAll(false);
