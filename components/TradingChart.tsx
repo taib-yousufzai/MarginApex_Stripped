@@ -1269,12 +1269,13 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     
     // Direct Execution for Scalping Mode (directly placing order, showing bm-loader)
     if (isTradeOnChartActive) {
-      const qVal = pos.qty_open;
+      const posLotSize = getLotSize(pos.symbol, scriptSettings);
+      const qVal = posLotSize;
       const dbSeg = mapSegmentToDbSegment(segment);
       const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === pos.side);
       const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
       const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
-      const required = Math.round(levType === '%' ? (currentPrice * qVal) * (leverage / 100) : (levType === 'Fixed' ? (qVal / lotSize) * leverage : (currentPrice * qVal) / leverage));
+      const required = Math.round(levType === '%' ? (currentPrice * qVal) * (leverage / 100) : (levType === 'Fixed' ? (qVal / posLotSize) * leverage : (currentPrice * qVal) / leverage));
 
       if (required > balance) {
         showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
@@ -1292,7 +1293,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         segment: pos.settlement || segment,
         side: pos.side,
         qty: qVal,
-        lots: 0,
+        lots: 1,
         order_type: 'MARKET',
         product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
         client_price: 0,
