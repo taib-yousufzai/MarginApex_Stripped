@@ -547,6 +547,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // --- Dashboard States ---
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const positionSnapshotRef = useRef<string | null>(null); // snapshot of position state at order time
+  const submittingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
   const [isTradeOnChartActive, setIsTradeOnChartActive] = useState<boolean>(false);
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
@@ -1044,6 +1046,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
     // Optimistic UI: Immediately close panel and show processing state
     setIsSubmitting(true);
+    positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
     if (modifyOrderId) {
       setModifyOrderId(null);
     }
@@ -1087,13 +1090,19 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         refreshOrders();
         fetchBalance();
         window.dispatchEvent(new CustomEvent('position-closed'));
+        // isSubmitting stays true — cleared by useEffect when positions refresh
+        // Safety fallback in case positions never update
+        submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 8000);
       } else {
         showToast(res.error || 'Failed to place order', true);
+        setIsSubmitting(false);
+        positionSnapshotRef.current = null;
       }
     }).catch(err => {
       showToast(err?.message || 'Failed to place order', true);
-    }).finally(() => {
       setIsSubmitting(false);
+      positionSnapshotRef.current = null;
+    }).finally(() => {
       window.dispatchEvent(new Event('global-loader-end'));
     });
   };
@@ -1264,6 +1273,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     if (quickEntryLock.current || isSubmitting) return;
     quickEntryLock.current = true;
     setIsSubmitting(true);
+    positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
     setOrderSide(side);
 
     const qVal = Number(qtyValue) || 0;
@@ -1319,13 +1329,18 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       window.dispatchEvent(new CustomEvent('position-closed'));
     } else {
       showToast(res.error || 'Failed to place quick order', true);
+      // On failure, release immediately
+      setIsSubmitting(false);
+      positionSnapshotRef.current = null;
     }
     
-    // Release entry lock after a short debounce to prevent mouse-bounces
-    setTimeout(() => { 
-        quickEntryLock.current = false; 
-        setIsSubmitting(false);
-    }, 500);
+    // Release click lock after debounce
+    setTimeout(() => { quickEntryLock.current = false; }, 500);
+    // isSubmitting stays true on success — cleared by useEffect when positions refresh
+    // Safety fallback in case positions never update
+    if (res.success) {
+      submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 8000);
+    }
   };
 
   const handleQuickAddPosition = async (pos: EnrichedPosition) => {
@@ -1395,6 +1410,24 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     const repPos = matchingPositions[0]; // just take first for other metadata
     return { ...repPos, qty_open: totalQty };
   }, [positions, symbol]);
+
+  // ── Watch for position changes while submitting ──
+  // Keep buttons in loading state until positions actually refresh and the UI changes
+  useEffect(() => {
+    if (!isSubmitting || positionSnapshotRef.current === null) return;
+    const currentKey = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
+    if (currentKey !== positionSnapshotRef.current) {
+      // Position state has changed — give the UI a moment to render, then release
+      setTimeout(() => {
+        setIsSubmitting(false);
+        positionSnapshotRef.current = null;
+        if (submittingTimeoutRef.current) {
+          clearTimeout(submittingTimeoutRef.current);
+          submittingTimeoutRef.current = null;
+        }
+      }, 300);
+    }
+  }, [currentInstrumentPosition, isSubmitting]);
 
   // Calculated Required Margin for current order block state
   // Determine if the current chart symbol is itself an option/futures contract

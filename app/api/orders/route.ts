@@ -616,10 +616,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const redis = getRedisClient();
       const cacheKey = `cache:user_blocked:${user.id}:${symbol}`;
       const cached = await redis.get(cacheKey);
-      if (cached) return { data: JSON.parse(cached), error: null };
+      if (cached !== null) {
+        // cached === '__not_blocked__' means user is NOT blocked for this symbol
+        return { data: cached === '__not_blocked__' ? null : JSON.parse(cached), error: null };
+      }
       const { data, error } = await admin.from('user_blocked_scripts').select('symbol').eq('user_id', user.id).eq('symbol', symbol).maybeSingle();
-      if (!error) await redis.set(cacheKey, JSON.stringify(data || {}), 'EX', 60);
-      return { data: Object.keys(data || {}).length ? data : null, error };
+      if (!error) await redis.set(cacheKey, data ? JSON.stringify(data) : '__not_blocked__', 'EX', 60);
+      return { data, error };
     })(),
 
     // Market hours — non-crypto only; resolve immediately for crypto
