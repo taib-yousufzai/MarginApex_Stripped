@@ -1950,12 +1950,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
             setIsSearchActive(true);
             setTimeout(() => searchInputRef.current?.focus(), 100);
           }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', opacity: 0.7 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <span className="tc-symbol-name">{formatShortName(symbol.replace(/NSE:|BSE:|NFO:|BFO:|MCX:/g, ''))}</span>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{ opacity: 0.5 }}><path d="M2 3l3 4 3-4z" /></svg>
           </div>
         )}
 
