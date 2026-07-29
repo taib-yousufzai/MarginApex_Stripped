@@ -1876,14 +1876,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 </div>
               </div>
               <div className="position-actions">
-                <button className="position-action-btn add-position-btn" onClick={() => handleAddMorePosition(pos)} disabled={isSubmitting}>
-                  + Add More
+                <button 
+                  className={`position-action-btn add-position-btn${isSubmitting && addingPosId !== pos.id ? ' submitting-inactive' : ''}`} 
+                  onClick={() => handleAddMorePosition(pos)} 
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting && addingPosId === pos.id && <i className="ti ti-loader spin" style={{ marginRight: '4px' }}></i>}
+                  {isSubmitting && addingPosId === pos.id ? 'Adding...' : '+ Add More'}
                 </button>
                 <button
-                  className="position-action-btn exit-position-btn"
+                  className={`position-action-btn exit-position-btn${isSubmitting ? ' submitting-inactive' : ''}`}
                   onClick={() => handleExitPosition(pos)}
                   disabled={isSubmitting || isExiting}
-                  style={{ opacity: (isSubmitting || isExiting) ? 0.5 : 1, cursor: (isSubmitting || isExiting) ? 'not-allowed' : 'pointer' }}
+                  style={{ 
+                    opacity: (isSubmitting || isExiting) ? 0.5 : 1, 
+                    cursor: (isSubmitting || isExiting) ? 'not-allowed' : 'pointer',
+                    pointerEvents: isSubmitting ? 'none' : 'auto'
+                  }}
                 >
                   {isExiting ? 'Exiting...' : 'Exit'}
                 </button>
