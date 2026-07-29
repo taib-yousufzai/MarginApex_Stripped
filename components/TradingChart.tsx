@@ -569,6 +569,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const [isPanelExpanded, setIsPanelExpanded] = useState<boolean>(false);
   const [isInfoPanelCollapsed, setIsInfoPanelCollapsed] = useState<boolean>(true);
   const [isBottomSectionVisible, setIsBottomSectionVisible] = useState<boolean>(true);
+  const [positionViewMode, setPositionViewMode] = useState<'cumulative' | 'detailed'>('cumulative');
   const [balance, setBalance] = useState<number>(50000);
   const [toast, setToast] = useState<{ visible: boolean; msg: string; isError?: boolean }>({ visible: false, msg: '' });
   const [segmentSettings, setSegmentSettings] = useState<any[]>([]);
@@ -1736,84 +1737,150 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       );
     }
 
-    // Positions — Rich Layout matching CHARTINH.html exactly
+    // Positions — Cumulative / Detailed view
     if (currentSymbolPositions.length === 0) {
       return <div className="empty-state">No active positions.</div>;
     }
 
-    // Group positions by symbol, side, and product_type to show cumulative totals
-    const groupedPositionsMap = new Map();
+    // ── Cumulative grouping ──
+    const groupedPositionsMap = new Map<string, any>();
     for (const pos of currentSymbolPositions) {
       const key = `${pos.symbol}|${pos.side}|${pos.product_type}`;
       if (!groupedPositionsMap.has(key)) {
-        groupedPositionsMap.set(key, { ...pos });
+        groupedPositionsMap.set(key, { ...pos, _ids: [pos.id], _count: 1 });
       } else {
         const existing = groupedPositionsMap.get(key);
         const entryA = existing.avg_price || existing.entry_price || 0;
         const entryB = pos.avg_price || pos.entry_price || 0;
-        const totalValue = (existing.qty_open * entryA) + (pos.qty_open * entryB);
-        existing.qty_open += pos.qty_open;
-        existing.entry_price = totalValue / existing.qty_open;
-        existing.avg_price = totalValue / existing.qty_open;
+        const totalQty = existing.qty_open + pos.qty_open;
+        existing.qty_open = totalQty;
+        existing.avg_price = totalQty > 0 ? (entryA * existing._ids.length + entryB) / (existing._ids.length + 1) : entryA;
+        existing.entry_price = existing.avg_price;
         existing.unrealised_pnl = (existing.unrealised_pnl || 0) + (pos.unrealised_pnl || 0);
-        // Do NOT aggregate 'id' to a string, just keep the first representative pos ID for handleExitPosition
+        existing._ids.push(pos.id);
+        existing._count += 1;
       }
     }
     const groupedPositions = Array.from(groupedPositionsMap.values());
 
-    return groupedPositions.map((pos) => {
-      const entryPrice = pos.avg_price || pos.entry_price;
-      const pnl = pos.unrealised_pnl ?? 0;
-      const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-      const sideBg = pos.side === 'BUY' ? 'var(--green-bg)' : 'var(--red-bg)';
-      const sideClr = pos.side === 'BUY' ? 'var(--green-text)' : 'var(--red-text)';
-      return (
-        <div key={pos.id} className="position-row">
-          <div className="position-info-row">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>{pos.symbol}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ fontWeight: 700, color: sideClr, fontSize: '10px', background: sideBg, padding: '1px 6px', borderRadius: '4px' }}>
-                  {pos.side}
-                </span>
-                <span style={{ color: 'var(--pill-text)', fontSize: '11px' }}>{pos.qty_open} qty</span>
+    // Detailed = individual positions sorted newest first
+    const detailedPositions = [...currentSymbolPositions].sort(
+      (a, b) => new Date(b.entry_time || 0).getTime() - new Date(a.entry_time || 0).getTime()
+    );
+
+    const fmtPnl = (pnl: number) => `${pnl >= 0 ? '+' : '-'}₹${Math.abs(pnl).toFixed(2)}`;
+    const fmtPrice = (v: number) => `₹${v.toFixed(2)}`;
+
+    const positionsToRender = positionViewMode === 'cumulative' ? groupedPositions : detailedPositions;
+
+    return (
+      <>
+        {/* Cumulative / Detailed Toggle */}
+        <div style={{
+          display: 'flex', gap: '4px',
+          padding: '6px 8px 4px',
+          borderBottom: '1px solid var(--border-light, #E8ECF0)',
+          background: 'var(--container-bg, #fff)',
+          flexShrink: 0,
+        }}>
+          <button
+            onClick={() => setPositionViewMode('cumulative')}
+            style={{
+              flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: 700,
+              border: 'none', borderRadius: '8px', cursor: 'pointer',
+              background: positionViewMode === 'cumulative' ? 'var(--green, #1db954)' : 'var(--pill-bg, #F3F4F6)',
+              color: positionViewMode === 'cumulative' ? '#fff' : 'var(--text-secondary)',
+              transition: 'all 0.15s',
+            }}
+          >
+            Cumulative
+          </button>
+          <button
+            onClick={() => setPositionViewMode('detailed')}
+            style={{
+              flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: 700,
+              border: 'none', borderRadius: '8px', cursor: 'pointer',
+              background: positionViewMode === 'detailed' ? 'var(--green, #1db954)' : 'var(--pill-bg, #F3F4F6)',
+              color: positionViewMode === 'detailed' ? '#fff' : 'var(--text-secondary)',
+              transition: 'all 0.15s',
+            }}
+          >
+            Detailed
+          </button>
+        </div>
+
+        {/* Position Rows */}
+        {positionsToRender.map((pos, idx) => {
+          const entryPrice = pos.avg_price || pos.entry_price || 0;
+          const ltp = pos.current_ltp ?? pos.ltp ?? entryPrice;
+          const pnl = pos.unrealised_pnl ?? pos.total_pnl ?? 0;
+          const pnlColor = pnl >= 0 ? 'var(--green, #1db954)' : 'var(--red, #e53935)';
+          const sideBg = pos.side === 'BUY' ? 'var(--green-bg)' : 'var(--red-bg)';
+          const sideClr = pos.side === 'BUY' ? 'var(--green-text)' : 'var(--red-text)';
+          const isExiting = exitingPosIds.current.has(pos.id);
+          // entry time for detailed view
+          const timeStr = pos.entry_time
+            ? new Date(pos.entry_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '';
+          const tradeCount = pos._count || 1;
+
+          return (
+            <div key={positionViewMode === 'cumulative' ? `${pos.symbol}|${pos.side}|${pos.product_type}` : pos.id} className="position-row">
+              <div className="position-info-row">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '130px' }}>{pos.symbol}</span>
+                    {positionViewMode === 'detailed' && timeStr && (
+                      <span style={{ fontSize: '9px', color: 'var(--text-muted)', flexShrink: 0 }}>{timeStr}</span>
+                    )}
+                    {positionViewMode === 'cumulative' && tradeCount > 1 && (
+                      <span style={{ fontSize: '9px', background: 'var(--pill-bg, #F1F5F9)', color: 'var(--text-secondary)', padding: '1px 5px', borderRadius: '10px', flexShrink: 0 }}>
+                        {tradeCount} trades
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontWeight: 700, color: sideClr, fontSize: '10px', background: sideBg, padding: '1px 6px', borderRadius: '4px' }}>
+                      {pos.side}
+                    </span>
+                    <span style={{ color: 'var(--pill-text)', fontSize: '11px' }}>{pos.qty_open} qty</span>
+                    {pos.product_type && (
+                      <span style={{ fontSize: '9px', fontWeight: 600, color: pos.product_type === 'CARRY' ? '#7C3AED' : 'var(--text-muted)', background: pos.product_type === 'CARRY' ? '#EDE9FE' : 'transparent', padding: pos.product_type === 'CARRY' ? '1px 5px' : '0', borderRadius: '4px' }}>
+                        {pos.product_type}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', flexShrink: 0 }}>
+                  <div style={{ color: pnlColor, fontWeight: 700, fontSize: '13px' }}>
+                    {fmtPnl(pnl)}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', rowGap: '1px', columnGap: '5px', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '10px', textAlign: 'right' }}>Avg</span>
+                    <span style={{ color: 'var(--text-primary)', fontSize: '10px', fontWeight: 500 }}>{fmtPrice(entryPrice)}</span>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '10px', textAlign: 'right' }}>LTP</span>
+                    <span style={{ color: 'var(--text-primary)', fontSize: '10px', fontWeight: 500 }}>{fmtPrice(ltp)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="position-actions">
+                <button className="position-action-btn add-position-btn" onClick={() => handleAddMorePosition(pos)} disabled={isSubmitting}>
+                  + Add More
+                </button>
+                <button
+                  className="position-action-btn exit-position-btn"
+                  onClick={() => handleExitPosition(pos)}
+                  disabled={isSubmitting || isExiting}
+                  style={{ opacity: (isSubmitting || isExiting) ? 0.5 : 1, cursor: (isSubmitting || isExiting) ? 'not-allowed' : 'pointer' }}
+                >
+                  {isExiting ? 'Exiting...' : 'Exit'}
+                </button>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', rowGap: '2px', columnGap: '6px', alignItems: 'center' }}>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Entry</span>
-              <span style={{ color: 'var(--text-primary)', fontSize: '11px', fontWeight: 500 }}>₹{entryPrice.toFixed(2)}</span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>LTP</span>
-              <span style={{ color: 'var(--text-primary)', fontSize: '11px', fontWeight: 500 }}>₹{(pos.current_ltp ?? pos.ltp ?? pos.avg_price ?? pos.entry_price ?? 0).toFixed(2)}</span>
-            </div>
-            <div style={{ color: pnlColor, fontWeight: 700 }}>
-              {pnl >= 0 ? '+' : '-'}₹{Math.abs(pnl).toFixed(2)}
-            </div>
-          </div>
-          <div className="position-actions">
-            <button 
-              className={`position-action-btn add-position-btn${isSubmitting && addingPosId !== pos.id ? ' submitting-inactive' : ''}`} 
-              onClick={() => handleAddMorePosition(pos)}
-              disabled={isSubmitting}
-            >
-              {isSubmitting && addingPosId === pos.id && <i className="ti ti-loader spin" style={{ marginRight: '4px' }}></i>}
-              {isSubmitting && addingPosId === pos.id ? 'Adding...' : '+ Add More'}
-            </button>
-            <button 
-              className={`position-action-btn exit-position-btn${isSubmitting ? ' submitting-inactive' : ''}`} 
-              onClick={() => handleExitPosition(pos)}
-              disabled={isSubmitting || exitingPosIds.current.has(pos.id)}
-              style={{ 
-                opacity: (isSubmitting || exitingPosIds.current.has(pos.id)) ? 0.5 : 1, 
-                cursor: (isSubmitting || exitingPosIds.current.has(pos.id)) ? 'not-allowed' : 'pointer',
-                pointerEvents: isSubmitting ? 'none' : 'auto'
-              }}
-            >
-              {exitingPosIds.current.has(pos.id) ? 'Exiting...' : 'Exit'}
-            </button>
-          </div>
-        </div>
-      );
-    });
+          );
+        })}
+      </>
+    );
   };
 
   return (
