@@ -1288,7 +1288,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setAddingPosId(pos.id);
       submitStartTimeRef.current = Date.now();
       positionSnapshotRef.current = `${pos.id}:${pos.qty_open}`;
-      window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Adding to Position...' }));
 
       placeOrder({
         symbol: pos.symbol,
