@@ -547,6 +547,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // --- Dashboard States ---
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [addingPosId, setAddingPosId] = useState<string | null>(null);
   const positionSnapshotRef = useRef<string | null>(null); // snapshot of position state at order time
   const submittingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
@@ -1248,8 +1249,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // Add more to a position (may be a different symbol from the current chart)
   const handleAddMorePosition = (pos: EnrichedPosition) => {
-    if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
-    else setIsPanelExpanded(false);
+    if (isSubmitting) return;
+    if (!isTradeOnChartActive) {
+      if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
+      else setIsPanelExpanded(false);
+    }
     setIsExitFlow(false);
     setIsAddMoreFlow(true);
     setExitPositionId(null);
@@ -1262,6 +1266,69 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setUseLots(false);
     setOrderCarry(pos.product_type === 'CARRY' ? 'carry' : 'normal');
     setOrderType('market');
+    
+    // Direct Execution for Scalping Mode (directly placing order, showing bm-loader)
+    if (isTradeOnChartActive) {
+      const qVal = pos.qty_open;
+      const dbSeg = mapSegmentToDbSegment(segment);
+      const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === pos.side);
+      const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
+      const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
+      const required = Math.round(levType === '%' ? (currentPrice * qVal) * (leverage / 100) : (levType === 'Fixed' ? (qVal / lotSize) * leverage : (currentPrice * qVal) / leverage));
+
+      if (required > balance) {
+        showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+        return;
+      }
+
+      setIsSubmitting(true);
+      setAddingPosId(pos.id);
+      positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
+      window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Adding to Position...' }));
+
+      placeOrder({
+        symbol: pos.symbol,
+        kite_instrument: pos.kite_instrument || pos.symbol,
+        segment: pos.settlement || segment,
+        side: pos.side,
+        qty: qVal,
+        lots: 0,
+        order_type: 'MARKET',
+        product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
+        client_price: 0,
+        is_exit: false
+      }).then(res => {
+        if (res.success) {
+          showToast(`Successfully added ${qVal} to position!`);
+          refreshOrders();
+          fetchBalance();
+          fetchBalance();
+          window.dispatchEvent(new CustomEvent('position-closed'));
+          
+          // Safety timeout to clear isSubmitting / loader
+          submittingTimeoutRef.current = setTimeout(() => {
+            setIsSubmitting(false);
+            setAddingPosId(null);
+            positionSnapshotRef.current = null;
+            window.dispatchEvent(new Event('global-loader-end'));
+          }, 8000);
+        } else {
+          showToast(res.error || 'Failed to add to position', true);
+          setIsSubmitting(false);
+          setAddingPosId(null);
+          positionSnapshotRef.current = null;
+          window.dispatchEvent(new Event('global-loader-end'));
+        }
+      }).catch(err => {
+        showToast(err?.message || 'Failed to add to position', true);
+        setIsSubmitting(false);
+        setAddingPosId(null);
+        positionSnapshotRef.current = null;
+        window.dispatchEvent(new Event('global-loader-end'));
+      });
+      return;
+    }
+
     setOrderBlockTitle(`Add More · ${pos.symbol}`);
     setPostOrderSegment('main');
     setIsOrderBlockVisible(true);
@@ -1420,7 +1487,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       // Position state has changed — give the UI a moment to render, then release
       setTimeout(() => {
         setIsSubmitting(false);
+        setAddingPosId(null);
         positionSnapshotRef.current = null;
+        window.dispatchEvent(new Event('global-loader-end'));
         if (submittingTimeoutRef.current) {
           clearTimeout(submittingTimeoutRef.current);
           submittingTimeoutRef.current = null;
@@ -1721,12 +1790,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
             </div>
           </div>
           <div className="position-actions">
-            <button className="position-action-btn add-position-btn" onClick={() => handleAddMorePosition(pos)}>+ Add More</button>
             <button 
-              className="position-action-btn exit-position-btn" 
+              className={`position-action-btn add-position-btn${isSubmitting && addingPosId !== pos.id ? ' submitting-inactive' : ''}`} 
+              onClick={() => handleAddMorePosition(pos)}
+              disabled={isSubmitting}
+            >
+              {isSubmitting && addingPosId === pos.id && <i className="ti ti-loader spin" style={{ marginRight: '4px' }}></i>}
+              {isSubmitting && addingPosId === pos.id ? 'Adding...' : '+ Add More'}
+            </button>
+            <button 
+              className={`position-action-btn exit-position-btn${isSubmitting ? ' submitting-inactive' : ''}`} 
               onClick={() => handleExitPosition(pos)}
-              disabled={exitingPosIds.current.has(pos.id)}
-              style={{ opacity: exitingPosIds.current.has(pos.id) ? 0.5 : 1, cursor: exitingPosIds.current.has(pos.id) ? 'not-allowed' : 'pointer' }}
+              disabled={isSubmitting || exitingPosIds.current.has(pos.id)}
+              style={{ 
+                opacity: (isSubmitting || exitingPosIds.current.has(pos.id)) ? 0.5 : 1, 
+                cursor: (isSubmitting || exitingPosIds.current.has(pos.id)) ? 'not-allowed' : 'pointer',
+                pointerEvents: isSubmitting ? 'none' : 'auto'
+              }}
             >
               {exitingPosIds.current.has(pos.id) ? 'Exiting...' : 'Exit'}
             </button>

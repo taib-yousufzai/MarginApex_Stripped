@@ -633,7 +633,8 @@
 }
 
 /* The opposite button while the other side is loading — fully grayed out */
-.tc-wrapper .trade-btn.submitting-inactive {
+.tc-wrapper .trade-btn.submitting-inactive,
+.tc-wrapper .position-action-btn.submitting-inactive {
   background: #3a3f47 !important;
   opacity: 0.45;
   transform: scale(.97);
