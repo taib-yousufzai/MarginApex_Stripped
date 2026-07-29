@@ -1248,8 +1248,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // Add more to a position (may be a different symbol from the current chart)
   const handleAddMorePosition = (pos: EnrichedPosition) => {
-    if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
-    else setIsPanelExpanded(false);
+    if (!isTradeOnChartActive) {
+      if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
+      else setIsPanelExpanded(false);
+    }
     setIsExitFlow(false);
     setIsAddMoreFlow(true);
     setExitPositionId(null);
