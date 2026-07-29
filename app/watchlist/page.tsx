@@ -32,7 +32,29 @@ export interface WatchlistItem {
   close: number;
   category?: string;
   lotSize?: number;
-  comexName?: string;
+}
+
+function getLotSize(name: string, scriptSettings?: { symbol: string; lot_size: number }[]): number {
+  const n = name.toUpperCase();
+  if (scriptSettings && scriptSettings.length > 0) {
+    const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
+    const match = sortedSettings.find(s => n.includes(s.symbol.toUpperCase()));
+    if (match) return Number(match.lot_size);
+  }
+  if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 30;
+  if (n.includes('FINNIFTY')) return 60;
+  if (n.includes('MIDCP') || n.includes('MIDCAP')) return 120;
+  if (n.includes('SENSEX')) return 20;
+  if (n.includes('NIFTY')) return 65;
+  if (n.includes('GOLDM')) return 10;
+  if (n.includes('GOLD')) return 100;
+  if (n.includes('SILVERM')) return 5;
+  if (n.includes('SILVER')) return 30;
+  if (n.includes('CRUDEOILM')) return 10;
+  if (n.includes('CRUDEOIL')) return 100;
+  if (n.includes('NATGASMINI')) return 250;
+  if (n.includes('NATURALGAS')) return 1250;
+  return 1;
 }
 
 declare global {
@@ -1884,7 +1906,7 @@ function WatchlistContent() {
                       const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
                       const lev = Number(isIntra ? (setting?.intraday_leverage ?? 10) : (setting?.normal_leverage ?? 10));
                       const levType = (isIntra ? setting?.intraday_type : setting?.normal_type) ?? 'Multiplier';
-                      const lotSz = scriptSettings.find(s => s.symbol === leg.item.symbol)?.lot_size ?? 1;
+                      const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
                       const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                       const exposure = qty * price;
                       let portion = 0;
@@ -1900,7 +1922,7 @@ function WatchlistContent() {
                         const price = getLegPrice(leg.item);
                         const seg = mapSegmentToDbSegment(leg.item.segment);
                         const setting = segmentSettings.find(s => s.segment === seg && s.side === leg.side);
-                        const lotSz = scriptSettings.find(s => s.symbol === leg.item.symbol)?.lot_size ?? 1;
+                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
                         const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                         const exposure = qty * price;
 
@@ -2004,7 +2026,7 @@ function WatchlistContent() {
                         const price = getLegPrice(leg.item);
                         const seg = mapSegmentToDbSegment(leg.item.segment);
                         const setting = segmentSettings.find(s => s.segment === seg && s.side === leg.side);
-                        const lotSz = scriptSettings.find(s => s.symbol === leg.item.symbol)?.lot_size ?? 1;
+                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
                         const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                         const exposure = qty * price;
 
@@ -2051,7 +2073,7 @@ function WatchlistContent() {
                       try {
                         for (const leg of basketLegs) {
                           const ltp = getLegPrice(leg.item);
-                          const lotSz = scriptSettings.find(s => s.symbol === leg.item.symbol)?.lot_size ?? 1;
+                          const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
                           const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                           await placeOrder({
                             symbol: leg.item.symbol,
