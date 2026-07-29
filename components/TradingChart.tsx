@@ -1192,26 +1192,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     exitingPosIds.current.add(pos.id);
     setForceRender(prev => prev + 1);
 
-    const qVal = Number(qtyValue) || 0;
-    if (qVal <= 0) {
-      showToast("Invalid quantity", true);
+    const finalQty = pos.qty_open;
+    if (finalQty <= 0) {
       quickExitLock.current = false;
       exitingPosIds.current.delete(pos.id);
       setForceRender(prev => prev + 1);
       return;
     }
-    const isScalper = profile?.trading_mode === 'scalper';
-    const effectiveUseLots = isScalper ? true : useLots;
+
     const posLotSize = getLotSize(pos.symbol, scriptSettings);
-    const requestedQty = effectiveUseLots ? (isCrypto ? qVal * posLotSize : Math.round(qVal * posLotSize)) : (isCrypto ? qVal : Math.round(qVal));
-    
-    // Cap at the open position quantity to prevent flipping the position accidentally
-    const finalQty = Math.min(requestedQty, pos.qty_open);
-
-    if (finalQty <= 0) return;
-
     const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
-    const effectiveLots = effectiveUseLots ? (finalQty / posLotSize) : (finalQty / posLotSize);
+    const effectiveLots = finalQty / posLotSize;
 
     showToast(`Placing quick exit order...`);
     const res = await placeOrder({
