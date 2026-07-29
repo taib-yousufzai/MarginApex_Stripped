@@ -1867,21 +1867,21 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
               </div>
               <div className="position-actions">
                 <button 
-                  className={`position-action-btn add-position-btn${isSubmitting && addingPosId !== pos.id ? ' submitting-inactive' : ''}`} 
+                  className={`position-action-btn add-position-btn${(isSubmitting && addingPosId !== pos.id) || exitingPosIds.current.size > 0 ? ' submitting-inactive' : ''}`} 
                   onClick={() => handleAddMorePosition(pos)} 
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || exitingPosIds.current.size > 0}
                 >
                   {isSubmitting && addingPosId === pos.id && <i className="ti ti-loader spin" style={{ marginRight: '4px' }}></i>}
                   {isSubmitting && addingPosId === pos.id ? 'Adding...' : '+ Add More'}
                 </button>
                 <button
-                  className={`position-action-btn exit-position-btn${isSubmitting ? ' submitting-inactive' : ''}`}
+                  className={`position-action-btn exit-position-btn${isSubmitting || (exitingPosIds.current.size > 0 && !isExiting) ? ' submitting-inactive' : ''}`}
                   onClick={() => handleExitPosition(pos)}
-                  disabled={isSubmitting || isExiting}
+                  disabled={isSubmitting || isExiting || (exitingPosIds.current.size > 0 && !isExiting)}
                   style={{ 
-                    opacity: (isSubmitting || isExiting) ? 0.5 : 1, 
-                    cursor: (isSubmitting || isExiting) ? 'not-allowed' : 'pointer',
-                    pointerEvents: isSubmitting ? 'none' : 'auto'
+                    opacity: (isSubmitting || isExiting || (exitingPosIds.current.size > 0 && !isExiting)) ? 0.5 : 1, 
+                    cursor: (isSubmitting || isExiting || (exitingPosIds.current.size > 0 && !isExiting)) ? 'not-allowed' : 'pointer',
+                    pointerEvents: (isSubmitting || exitingPosIds.current.size > 0) ? 'none' : 'auto'
                   }}
                 >
                   {isExiting ? 'Exiting...' : 'Exit'}
