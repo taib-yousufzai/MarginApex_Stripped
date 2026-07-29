@@ -2309,7 +2309,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   {currentInstrumentPosition.side === 'BUY' ? (
                     <>
                       <button 
-                        className={`trade-btn exit-position-chart-btn${isSubmitting && addingPosId ? ' submitting-inactive' : ''}`} 
+                        className={`trade-btn exit-position-chart-btn${isSubmitting && (addingPosId || orderSide !== 'SELL') ? ' submitting-inactive' : ''}`} 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
                         disabled={isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)}
                         style={{ opacity: (isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
@@ -2365,7 +2365,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         </span>
                       </button>
                       <button 
-                        className={`trade-btn exit-position-chart-btn${isSubmitting && addingPosId ? ' submitting-inactive' : ''}`} 
+                        className={`trade-btn exit-position-chart-btn${isSubmitting && (addingPosId || orderSide !== 'BUY') ? ' submitting-inactive' : ''}`} 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
                         disabled={isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)}
                         style={{ opacity: (isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
