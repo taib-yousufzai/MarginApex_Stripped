@@ -1485,9 +1485,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     
     const currentKey = targetPos ? `${targetPos.id}:${targetPos.qty_open}` : '__none__';
     if (currentKey !== positionSnapshotRef.current) {
-      // Enforce a minimum display time of 800ms for the loading/gray-out animation
+      // Enforce a minimum display time of 100ms for the loading/gray-out animation
       const elapsed = Date.now() - submitStartTimeRef.current;
-      const delay = Math.max(0, 800 - elapsed);
+      const delay = Math.max(0, 100 - elapsed);
       setTimeout(() => {
         setIsSubmitting(false);
         setAddingPosId(null);

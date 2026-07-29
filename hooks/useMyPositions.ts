@@ -250,11 +250,11 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     let isSubscribed = false;
     const channelName = `my-positions-realtime-${Math.random().toString(36).slice(2)}`;
 
-    const debouncedFetch = () => {
+    const debouncedFetch = (delay = 1500) => {
       if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
       fetchDebounceRef.current = setTimeout(() => {
         fetchPositions();
-      }, 1500);
+      }, delay);
     };
 
     const channel = supabase
@@ -263,7 +263,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'positions' },
         () => {
-          debouncedFetch();
+          debouncedFetch(500);
         }
       );
 
@@ -345,7 +345,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     };
 
     const handleOrderPlaced = () => {
-      debouncedFetch();
+      debouncedFetch(100);
     };
     
     window.addEventListener('order_placed', handleOrderPlaced);
@@ -358,7 +358,7 @@ export function useMyPositions(refreshInterval = 5000): UseMyPositionsResult {
     return () => {
       clearInterval(timer);
       supabase.removeChannel(channel);
-      window.removeEventListener('order_placed', fetchPositions);
+      window.removeEventListener('order_placed', handleOrderPlaced);
       window.removeEventListener('order_placed_with_data', handleOrderPlacedWithData);
     };
   }, [fetchPositions]);
