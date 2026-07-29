@@ -1262,6 +1262,65 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setUseLots(false);
     setOrderCarry(pos.product_type === 'CARRY' ? 'carry' : 'normal');
     setOrderType('market');
+    
+    // Direct Execution for Scalping Mode (directly placing order, showing bm-loader)
+    if (isTradeOnChartActive) {
+      const qVal = pos.qty_open;
+      const dbSeg = mapSegmentToDbSegment(segment);
+      const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === pos.side);
+      const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
+      const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
+      const required = Math.round(levType === '%' ? (currentPrice * qVal) * (leverage / 100) : (levType === 'Fixed' ? (qVal / lotSize) * leverage : (currentPrice * qVal) / leverage));
+
+      if (required > balance) {
+        showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+        return;
+      }
+
+      setIsSubmitting(true);
+      positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
+      window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Adding to Position...' }));
+
+      placeOrder({
+        symbol: pos.symbol,
+        kite_instrument: pos.kite_instrument || pos.symbol,
+        segment: pos.settlement || segment,
+        side: pos.side,
+        qty: qVal,
+        lots: 0,
+        order_type: 'MARKET',
+        product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
+        client_price: 0,
+        is_exit: false
+      }).then(res => {
+        if (res.success) {
+          showToast(`Successfully added ${qVal} to position!`);
+          refreshOrders();
+          fetchBalance();
+          fetchBalance();
+          window.dispatchEvent(new CustomEvent('position-closed'));
+          
+          // Safety timeout to clear isSubmitting / loader
+          submittingTimeoutRef.current = setTimeout(() => {
+            setIsSubmitting(false);
+            positionSnapshotRef.current = null;
+            window.dispatchEvent(new Event('global-loader-end'));
+          }, 8000);
+        } else {
+          showToast(res.error || 'Failed to add to position', true);
+          setIsSubmitting(false);
+          positionSnapshotRef.current = null;
+          window.dispatchEvent(new Event('global-loader-end'));
+        }
+      }).catch(err => {
+        showToast(err?.message || 'Failed to add to position', true);
+        setIsSubmitting(false);
+        positionSnapshotRef.current = null;
+        window.dispatchEvent(new Event('global-loader-end'));
+      });
+      return;
+    }
+
     setOrderBlockTitle(`Add More · ${pos.symbol}`);
     setPostOrderSegment('main');
     setIsOrderBlockVisible(true);
@@ -1421,6 +1480,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setTimeout(() => {
         setIsSubmitting(false);
         positionSnapshotRef.current = null;
+        window.dispatchEvent(new Event('global-loader-end'));
         if (submittingTimeoutRef.current) {
           clearTimeout(submittingTimeoutRef.current);
           submittingTimeoutRef.current = null;
