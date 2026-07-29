@@ -1223,9 +1223,12 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         fetchBalance();
         fetchBalance();
         quickExitLock.current = false;
-        // Do NOT remove from exitingPosIds on success. 
-        // It should stay permanently locked until the position disappears from the UI.
       }, 1000); // Give DB time to match
+      // Safety: unlock the exit button after 5s in case the position didn't actually close
+      setTimeout(() => {
+        exitingPosIds.current.delete(pos.id);
+        setForceRender(prev => prev + 1);
+      }, 5000);
     } else {
       showToast(res.error || 'Exit failed', true);
       quickExitLock.current = false;
@@ -2137,7 +2140,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         className="trade-btn exit-position-chart-btn" 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
                         disabled={exitingPosIds.current.has(currentInstrumentPosition.id)}
-                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1 }}
+                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1, pointerEvents: 'auto' }}
                       >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
@@ -2146,7 +2149,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           {exitingPosIds.current.has(currentInstrumentPosition.id) ? 'EXITING...' : 'EXIT LONG'}
                         </span>
                       </button>
-                      <button id="buyButton" className="trade-btn buy" disabled={isSubmitting} onClick={() => {
+                      <button id="buyButton" className={`trade-btn buy${isSubmitting && orderSide !== 'BUY' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('BUY');
                         } else {
@@ -2169,7 +2172,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     </>
                   ) : (
                     <>
-                      <button id="sellButton" className="trade-btn sell" disabled={isSubmitting} onClick={() => {
+                      <button id="sellButton" className={`trade-btn sell${isSubmitting && orderSide !== 'SELL' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('SELL');
                         } else {
@@ -2193,7 +2196,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         className="trade-btn exit-position-chart-btn" 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
                         disabled={exitingPosIds.current.has(currentInstrumentPosition.id)}
-                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1 }}
+                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1, pointerEvents: 'auto' }}
                       >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
@@ -2207,7 +2210,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 </div>
               ) : (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
-                  <button id="sellButton" className="trade-btn sell" disabled={isSubmitting} onClick={() => {
+                  <button id="sellButton" className={`trade-btn sell${isSubmitting && orderSide !== 'SELL' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('SELL');
                     } else {
@@ -2227,7 +2230,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                       SELL
                     </span>
                   </button>
-                  <button id="buyButton" className="trade-btn buy" disabled={isSubmitting} onClick={() => {
+                  <button id="buyButton" className={`trade-btn buy${isSubmitting && orderSide !== 'BUY' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('BUY');
                     } else {
@@ -2526,8 +2529,12 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     </div>
                   </div>
 
-                  <button className={`submit-order-btn ${orderSide.toLowerCase()}`} disabled={isSubmitting} onClick={handlePlaceOrder}>
-                      {isSubmitting ? <i className="ti ti-loader spin"></i> : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue}`)}
+                  <button 
+                    className={`submit-btn ${orderSide === 'BUY' ? 'submit-buy' : 'submit-sell'}`} 
+                    disabled={isSubmitting} 
+                    onClick={handlePlaceOrder}
+                  >
+                      {isSubmitting ? <i className="ti ti-loader spin"></i> : (modifyOrderId ? 'Update Order' : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue}`))}
                   </button>
                 </div>
               </div>

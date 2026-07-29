@@ -616,10 +616,30 @@
   box-shadow: var(--shadow-sm);
 }
 
-.tc-wrapper .trade-btn:active {
+.tc-wrapper .trade-btn:active,
+.tc-wrapper .trade-btn:disabled {
   transform: scale(.97);
-  filter: brightness(.92);
   box-shadow: none;
+}
+
+.tc-wrapper .trade-btn:disabled {
+  filter: brightness(1.2); /* Make it lighter */
+  opacity: 0.9;
+  cursor: not-allowed;
+}
+
+.tc-wrapper .trade-btn:active:not(:disabled) {
+  filter: brightness(.92);
+}
+
+/* The opposite button while the other side is loading — fully grayed out */
+.tc-wrapper .trade-btn.submitting-inactive {
+  background: #3a3f47 !important;
+  opacity: 0.45;
+  transform: scale(.97);
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: none;
 }
 
 .tc-wrapper .buy {
@@ -1065,6 +1085,13 @@
 .tc-wrapper .submit-btn:active {
   transform: scale(.98);
   filter: brightness(.92);
+  box-shadow: none;
+}
+
+.tc-wrapper .submit-btn:disabled {
+  filter: brightness(1.2);
+  opacity: 0.9;
+  cursor: not-allowed;
   box-shadow: none;
 }
 
