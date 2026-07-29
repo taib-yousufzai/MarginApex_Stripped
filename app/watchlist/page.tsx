@@ -1480,6 +1480,15 @@ function WatchlistContent() {
                 <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   <span className="add-hint">Add scripts to watchlist from Scripts Library</span>
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    {isSelectionActive && (
+                      <div className="folder-btn select-all-btn"
+                        onClick={() => {
+                          if (typeof (window as any).__reactSelectAll === 'function') (window as any).__reactSelectAll();
+                        }}
+                        style={{ cursor: 'pointer', background: '#F3F4F6', color: '#4B5563', border: '1px solid #D1D5DB', padding: '6px 14px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '30px', fontWeight: '700', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        <span>All</span>
+                      </div>
+                    )}
                     <div className="folder-btn basket-btn" id="basketModeBtn"
                       onClick={() => {
                         if (isSelectionActive) {
@@ -2895,6 +2904,22 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           overlay.classList.remove('active');
         };
       }
+
+      window.__reactSelectAll = function() {
+        var allCheckboxes = document.querySelectorAll('.wc-checkbox');
+        if (allCheckboxes.length === 0) return;
+        
+        var allChecked = true;
+        allCheckboxes.forEach(function(cb) {
+          if (!cb.checked) allChecked = false;
+        });
+        
+        allCheckboxes.forEach(function(cb) {
+          cb.checked = !allChecked;
+        });
+        
+        if (typeof window.__updateSelectionUI === 'function') window.__updateSelectionUI();
+      };
 
       window.__reactDeleteSelected = function() {
         var checkedBoxes = document.querySelectorAll('.wc-checkbox:checked');
