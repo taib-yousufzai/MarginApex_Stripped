@@ -51,7 +51,7 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   return (
     <div className="desktop-layout">
       {isGlobalLoading && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(255,255,255,0.4)', zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', height: '36px' }}>
               <div style={{ width: '6px', height: '100%', borderRadius: '4px', background: '#4285f4', animation: 'bm-pulse 1s ease-in-out infinite', animationDelay: '-0.3s' }} />
