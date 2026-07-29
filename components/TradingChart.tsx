@@ -547,6 +547,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // --- Dashboard States ---
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [addingPosId, setAddingPosId] = useState<string | null>(null);
   const positionSnapshotRef = useRef<string | null>(null); // snapshot of position state at order time
   const submittingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
@@ -1248,6 +1249,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
   // Add more to a position (may be a different symbol from the current chart)
   const handleAddMorePosition = (pos: EnrichedPosition) => {
+    if (isSubmitting) return;
     if (!isTradeOnChartActive) {
       if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
       else setIsPanelExpanded(false);
@@ -1280,6 +1282,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       }
 
       setIsSubmitting(true);
+      setAddingPosId(pos.id);
       positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
       window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Adding to Position...' }));
 
@@ -1305,18 +1308,21 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           // Safety timeout to clear isSubmitting / loader
           submittingTimeoutRef.current = setTimeout(() => {
             setIsSubmitting(false);
+            setAddingPosId(null);
             positionSnapshotRef.current = null;
             window.dispatchEvent(new Event('global-loader-end'));
           }, 8000);
         } else {
           showToast(res.error || 'Failed to add to position', true);
           setIsSubmitting(false);
+          setAddingPosId(null);
           positionSnapshotRef.current = null;
           window.dispatchEvent(new Event('global-loader-end'));
         }
       }).catch(err => {
         showToast(err?.message || 'Failed to add to position', true);
         setIsSubmitting(false);
+        setAddingPosId(null);
         positionSnapshotRef.current = null;
         window.dispatchEvent(new Event('global-loader-end'));
       });
@@ -1481,6 +1487,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       // Position state has changed — give the UI a moment to render, then release
       setTimeout(() => {
         setIsSubmitting(false);
+        setAddingPosId(null);
         positionSnapshotRef.current = null;
         window.dispatchEvent(new Event('global-loader-end'));
         if (submittingTimeoutRef.current) {
@@ -1783,12 +1790,23 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
             </div>
           </div>
           <div className="position-actions">
-            <button className="position-action-btn add-position-btn" onClick={() => handleAddMorePosition(pos)}>+ Add More</button>
             <button 
-              className="position-action-btn exit-position-btn" 
+              className={`position-action-btn add-position-btn${isSubmitting && addingPosId !== pos.id ? ' submitting-inactive' : ''}`} 
+              onClick={() => handleAddMorePosition(pos)}
+              disabled={isSubmitting}
+            >
+              {isSubmitting && addingPosId === pos.id && <i className="ti ti-loader spin" style={{ marginRight: '4px' }}></i>}
+              {isSubmitting && addingPosId === pos.id ? 'Adding...' : '+ Add More'}
+            </button>
+            <button 
+              className={`position-action-btn exit-position-btn${isSubmitting ? ' submitting-inactive' : ''}`} 
               onClick={() => handleExitPosition(pos)}
-              disabled={exitingPosIds.current.has(pos.id)}
-              style={{ opacity: exitingPosIds.current.has(pos.id) ? 0.5 : 1, cursor: exitingPosIds.current.has(pos.id) ? 'not-allowed' : 'pointer' }}
+              disabled={isSubmitting || exitingPosIds.current.has(pos.id)}
+              style={{ 
+                opacity: (isSubmitting || exitingPosIds.current.has(pos.id)) ? 0.5 : 1, 
+                cursor: (isSubmitting || exitingPosIds.current.has(pos.id)) ? 'not-allowed' : 'pointer',
+                pointerEvents: isSubmitting ? 'none' : 'auto'
+              }}
             >
               {exitingPosIds.current.has(pos.id) ? 'Exiting...' : 'Exit'}
             </button>
