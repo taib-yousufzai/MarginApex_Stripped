@@ -925,29 +925,42 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         showToast(`${placeSide} order sent for ${item.symbol}`);
         onSuccess?.();
 
-        placeOrder({
-          symbol: item.symbol,
-          kite_instrument: computedKiteSymbol || item.symbol,
-          segment: item.segment,
-          side: placeSide,
-          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-          lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
-          order_type: resolvedOrderType as any,
-          product_type: productType,
-          client_price: resolvedClientPrice,
-          trigger_price: resolvedTriggerPrice,
-          stop_loss: resolvedStopLoss,
-          target: resolvedTarget,
-          is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
-        }).then(res => {
+        Promise.all([
+          placeOrder({
+            symbol: item.symbol,
+            kite_instrument: computedKiteSymbol || item.symbol,
+            segment: item.segment,
+            side: placeSide,
+            qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+            lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+            order_type: resolvedOrderType as any,
+            product_type: productType,
+            client_price: resolvedClientPrice,
+            trigger_price: resolvedTriggerPrice,
+            stop_loss: resolvedStopLoss,
+            target: resolvedTarget,
+            is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
+          }),
+          new Promise(r => setTimeout(r, 1500))
+        ]).then(async ([res]) => {
           if (!res.success) {
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
+          } else {
+            if (onSuccess) {
+              try {
+                await onSuccess();
+              } catch (e) {
+                console.error('onSuccess refresh failed', e);
+              }
+            }
           }
         }).catch(err => {
           window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
         }).finally(() => {
-          isExecutingRef.current = false;
-          window.dispatchEvent(new Event('global-loader-end'));
+          setTimeout(() => {
+            isExecutingRef.current = false;
+            window.dispatchEvent(new Event('global-loader-end'));
+          }, 150);
         });
       }
     } catch (e) {
