@@ -1285,7 +1285,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
       setIsSubmitting(true);
       setAddingPosId(pos.id);
-      positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
+      positionSnapshotRef.current = `${pos.id}:${pos.qty_open}`;
       window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Adding to Position...' }));
 
       placeOrder({
@@ -1303,8 +1303,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         if (res.success) {
           showToast(`Successfully added ${qVal} to position!`);
           refreshOrders();
+          refreshPositions();
           fetchBalance();
           fetchBalance();
+          window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new CustomEvent('position-closed'));
           
           // Safety timeout to clear isSubmitting / loader
@@ -1484,7 +1486,12 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   // Keep buttons in loading state until positions actually refresh and the UI changes
   useEffect(() => {
     if (!isSubmitting || positionSnapshotRef.current === null) return;
-    const currentKey = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
+    
+    // Find the position in the current positions list that matches our snapshot ID
+    const snapshotId = positionSnapshotRef.current.split(':')[0];
+    const targetPos = positions.find(p => p.id === snapshotId && (p.status === 'open' || p.status === 'active'));
+    
+    const currentKey = targetPos ? `${targetPos.id}:${targetPos.qty_open}` : '__none__';
     if (currentKey !== positionSnapshotRef.current) {
       // Position state has changed — give the UI a moment to render, then release
       setTimeout(() => {
@@ -1498,7 +1505,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         }
       }, 300);
     }
-  }, [currentInstrumentPosition, isSubmitting]);
+  }, [positions, isSubmitting]);
 
   // Calculated Required Margin for current order block state
   // Determine if the current chart symbol is itself an option/futures contract
