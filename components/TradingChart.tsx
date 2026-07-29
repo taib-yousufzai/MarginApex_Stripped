@@ -549,6 +549,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [addingPosId, setAddingPosId] = useState<string | null>(null);
   const positionSnapshotRef = useRef<string | null>(null); // snapshot of position state at order time
+  const submitStartTimeRef = useRef<number>(0);
   const submittingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
   const [isTradeOnChartActive, setIsTradeOnChartActive] = useState<boolean>(false);
@@ -1285,6 +1286,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
       setIsSubmitting(true);
       setAddingPosId(pos.id);
+      submitStartTimeRef.current = Date.now();
       positionSnapshotRef.current = `${pos.id}:${pos.qty_open}`;
       window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Adding to Position...' }));
 
@@ -1493,7 +1495,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     
     const currentKey = targetPos ? `${targetPos.id}:${targetPos.qty_open}` : '__none__';
     if (currentKey !== positionSnapshotRef.current) {
-      // Position state has changed — give the UI a moment to render, then release
+      // Enforce a minimum display time of 800ms for the loading/gray-out animation
+      const elapsed = Date.now() - submitStartTimeRef.current;
+      const delay = Math.max(0, 800 - elapsed);
       setTimeout(() => {
         setIsSubmitting(false);
         setAddingPosId(null);
@@ -1503,7 +1507,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           clearTimeout(submittingTimeoutRef.current);
           submittingTimeoutRef.current = null;
         }
-      }, 300);
+      }, delay);
     }
   }, [positions, isSubmitting]);
 
@@ -2306,10 +2310,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   {currentInstrumentPosition.side === 'BUY' ? (
                     <>
                       <button 
-                        className="trade-btn exit-position-chart-btn" 
+                        className={`trade-btn exit-position-chart-btn${isSubmitting && addingPosId ? ' submitting-inactive' : ''}`} 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
-                        disabled={exitingPosIds.current.has(currentInstrumentPosition.id)}
-                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1, pointerEvents: 'auto' }}
+                        disabled={isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)}
+                        style={{ opacity: (isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
                       >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
@@ -2318,7 +2322,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           {exitingPosIds.current.has(currentInstrumentPosition.id) ? 'EXITING...' : 'EXIT LONG'}
                         </span>
                       </button>
-                      <button id="buyButton" className={`trade-btn buy${isSubmitting && orderSide !== 'BUY' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
+                      <button id="buyButton" className={`trade-btn buy${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'BUY' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('BUY');
                         } else {
@@ -2334,14 +2338,14 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         }
                       }}>
                         <span className="btn-label">
-                          {isSubmitting && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                          {isSubmitting && !addingPosId && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
                           BUY
                         </span>
                       </button>
                     </>
                   ) : (
                     <>
-                      <button id="sellButton" className={`trade-btn sell${isSubmitting && orderSide !== 'SELL' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
+                      <button id="sellButton" className={`trade-btn sell${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'SELL' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('SELL');
                         } else {
@@ -2357,15 +2361,15 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         }
                       }}>
                         <span className="btn-label">
-                          {isSubmitting && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                          {isSubmitting && !addingPosId && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
                           SELL
                         </span>
                       </button>
                       <button 
-                        className="trade-btn exit-position-chart-btn" 
+                        className={`trade-btn exit-position-chart-btn${isSubmitting && addingPosId ? ' submitting-inactive' : ''}`} 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
-                        disabled={exitingPosIds.current.has(currentInstrumentPosition.id)}
-                        style={{ opacity: exitingPosIds.current.has(currentInstrumentPosition.id) ? 0.5 : 1, pointerEvents: 'auto' }}
+                        disabled={isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)}
+                        style={{ opacity: (isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
                       >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
@@ -2379,7 +2383,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 </div>
               ) : (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
-                  <button id="sellButton" className={`trade-btn sell${isSubmitting && orderSide !== 'SELL' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
+                  <button id="sellButton" className={`trade-btn sell${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'SELL' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('SELL');
                     } else {
@@ -2395,11 +2399,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     }
                   }}>
                     <span className="btn-label">
-                      {isSubmitting && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                      {isSubmitting && !addingPosId && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
                       SELL
                     </span>
                   </button>
-                  <button id="buyButton" className={`trade-btn buy${isSubmitting && orderSide !== 'BUY' ? ' submitting-inactive' : ''}`} disabled={isSubmitting} onClick={() => {
+                  <button id="buyButton" className={`trade-btn buy${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'BUY' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('BUY');
                     } else {
@@ -2415,7 +2419,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     }
                   }}>
                     <span className="btn-label">
-                      {isSubmitting && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                      {isSubmitting && !addingPosId && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
                       BUY
                     </span>
                   </button>
