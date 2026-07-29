@@ -851,7 +851,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Trading Not Allowed In This Script. Please Contact Admin.' }, { status: 403 });
   }
 
-  const symbolLotSize = lots > 0 ? (qty / lots) : getLotSize(symbol, dbScriptSettings);
+  const symbolLotSize = getLotSize(symbol, dbScriptSettings);
   const maxQty = (segSetting.max_order_lot as number) * symbolLotSize;
   console.log('[DEBUG-LOT]', { symbol, qty, lots, symbolLotSize, max_order_lot: segSetting.max_order_lot, maxQty, getLotSize: getLotSize(symbol, dbScriptSettings) });
   if (!is_exit && qty > maxQty) {
@@ -963,7 +963,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let carryCharge = 0;
   let gttCharge = 0;
 
-  const lotsUsed = lots > 0 ? lots : (qty / symbolLotSize);
+  const lotsUsed = qty / symbolLotSize;
 
   // 1. Base Commission (ALWAYS applied as intraday at entry, matching DB temp_merge.sql)
   const intradayCommType = segSetting.commission_type || 'Per Crore';
