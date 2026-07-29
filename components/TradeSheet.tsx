@@ -924,7 +924,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         window.dispatchEvent(new CustomEvent('order_placed_with_data', { detail: optimisticPayload }));
         showToast(`${placeSide} order sent for ${item.symbol}`);
         onSuccess?.();
-        handleCloseAnimation();
 
         placeOrder({
           symbol: item.symbol,

@@ -1071,8 +1071,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setIsPanelExpanded(true);
     }
 
-    window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
-
     placeOrder({
       symbol: orderSymbol,
       kite_instrument: orderKiteInstrument,
@@ -1105,8 +1103,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       showToast(err?.message || 'Failed to place order', true);
       setIsSubmitting(false);
       positionSnapshotRef.current = null;
-    }).finally(() => {
-      window.dispatchEvent(new Event('global-loader-end'));
     });
   };
 
