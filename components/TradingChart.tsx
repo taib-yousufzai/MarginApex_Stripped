@@ -1758,24 +1758,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     >
       {/* Top Toolbar */}
       <div className="tc-top-toolbar" onMouseLeave={() => setOpenTopFlyout(null)}>
-        {/* ── Back button ── */}
-        <button
-          className="tc-icon-btn"
-          style={{ marginRight: '-6px' }}
-          onClick={() => {
-            const sheet = document.getElementById('chartSheet');
-            const overlay = document.getElementById('chartSheetOverlay');
-            if (sheet) sheet.classList.remove('open');
-            if (overlay) overlay.classList.remove('active');
-            setTimeout(() => {
-              setIsCssLandscape(false);
-            }, 350);
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M10 3L5 8l5 5" />
-          </svg>
-        </button>
+        {/* ── Back button removed per user request ── */}
 
         {/* ── Symbol ── */}
         {isSearchActive ? (
