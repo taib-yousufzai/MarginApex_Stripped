@@ -82,8 +82,9 @@ export async function GET(request: Request) {
 
     for (const [groupKey, contracts] of Object.entries(groups)) {
       contracts.sort((a, b) => new Date(a.expiry).getTime() - new Date(b.expiry).getTime());
-      const frontMonth = contracts[0];
       
+      // 1. Maintain the mapped front-month future for legacy/spot references
+      const frontMonth = contracts[0];
       finalInstruments.push({
         id: groupKey, 
         instrument_token: parseInt(frontMonth.instrument_token, 10),
@@ -95,6 +96,21 @@ export async function GET(request: Request) {
         expiry: frontMonth.expiry,
         lot_size: parseInt(frontMonth.lot_size || '0', 10) || 0,
       });
+
+      // 2. Add all individual future contracts (current and far months)
+      for (const contract of contracts) {
+        finalInstruments.push({
+          id: `${contract.exchange}:${contract.tradingsymbol}`,
+          instrument_token: parseInt(contract.instrument_token, 10),
+          tradingsymbol: contract.tradingsymbol,
+          name: contract.name,
+          exchange: contract.exchange,
+          instrument_type: contract.instrument_type,
+          segment: contract.segment,
+          expiry: contract.expiry,
+          lot_size: parseInt(contract.lot_size || '0', 10) || 0,
+        });
+      }
     }
 
     // c. Add Options (NFO, BFO, MCX-OPT, CDS-OPT)

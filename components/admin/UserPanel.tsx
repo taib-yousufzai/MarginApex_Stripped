@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from '@/lib/auth';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { apiCall, Toast, ToastState, SkeletonLine } from './AdminUtils';
 
 export type UserListItem = {
@@ -85,12 +86,11 @@ export default function UserPanel({ open, onClose, onCreateUser, selectedUser, o
 
         <div className="adm-up-list">
           {usersLoading
-            ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="adm-up-row" style={{ pointerEvents: 'none' }}>
-                <SkeletonLine width="70%" height={13} />
-                <SkeletonLine width="30%" height={13} />
+            ? (
+              <div style={{ padding: '20px 0', width: '100%' }}>
+                <AnimatedLoader text="Loading..." fullScreen={false} />
               </div>
-            ))
+            )
             : paged.map((u, i) => {
               const isSelected = selectedUser?.id === u.id;
               const displayName = u.full_name || u.email;

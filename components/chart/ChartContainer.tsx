@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Datafeed } from '@/lib/datafeed/Datafeed';
 import { toUdfResolution, CHART_TYPE_MAP } from '@/lib/datafeed/resolutionUtils';
 import { Candle, Timeframe } from '@/components/chart/types';
+import AnimatedLoader from '@/components/AnimatedLoader';
 
 // ─── Supporting types ────────────────────────────────────────────────────────
 
@@ -271,12 +272,9 @@ export default function ChartContainer({
       {chartStatus === 'loading' && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: isDark ? 'rgba(7, 24, 36, 0.85)' : 'rgba(255, 255, 255, 0.85)',
         }}>
-          <div style={{ color: isDark ? '#D1D4DC' : '#131722', fontSize: '13px', fontWeight: 600 }}>
-            Loading chart data...
-          </div>
+          <AnimatedLoader text="Loading chart data..." fullScreen={false} />
         </div>
       )}
 

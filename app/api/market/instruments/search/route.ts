@@ -109,10 +109,14 @@ function formatUIExpiry(dateStr: string | null): string {
 function buildDisplayName(tradingsymbol: string, underlying: string, strike: number | null, optionType: string | null, expiry: string | null): string {
   const isRealValue = (v: any) => v !== null && v !== undefined && String(v).toLowerCase() !== 'null' && String(v).trim() !== '';
   
+  const safeUnderlying = isRealValue(underlying) ? underlying : (isRealValue(tradingsymbol) ? tradingsymbol : '');
+
   if (isRealValue(strike) && isRealValue(optionType)) {
     const expLabel = isRealValue(expiry) ? ` (${expiry})` : '';
-    const safeUnderlying = isRealValue(underlying) ? underlying : (isRealValue(tradingsymbol) ? tradingsymbol : '');
     return `${safeUnderlying} ${strike} ${optionType}${expLabel}`.trim();
+  } else if (isRealValue(expiry)) {
+    // Formatting for Futures (has expiry but no strike/optionType)
+    return `${safeUnderlying} FUT (${expiry})`.trim();
   }
   return isRealValue(tradingsymbol) ? tradingsymbol : 'Unknown';
 }

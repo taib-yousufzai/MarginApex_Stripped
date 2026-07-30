@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from '@/lib/auth';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { apiCall, Toast, ToastState, SkeletonLine, UserListItem, ConfirmDialog, downloadCSV } from './AdminUtils';
 
 type UserRow = {
@@ -215,21 +216,9 @@ export default function UsersPage({ selectedUser: _selectedUser, onSelectUser, o
 
       <div className="adm-users-list">
         {usersLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <div className="adm-users-card" key={i} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <SkeletonLine width="50%" height={14} />
-                <SkeletonLine width={50} height={20} style={{ borderRadius: 10 }} />
-              </div>
-              <SkeletonLine width="80%" height={12} />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {Array.from({ length: 8 }).map((_, j) => <SkeletonLine key={j} height={12} width="75%" />)}
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                {Array.from({ length: 4 }).map((_, j) => <SkeletonLine key={j} width={70} height={32} style={{ borderRadius: 6 }} />)}
-              </div>
-            </div>
-          ))
+          <div style={{ padding: '40px 0', width: '100%' }}>
+            <AnimatedLoader text="Loading users..." fullScreen={false} />
+          </div>
         ) : displayed.length === 0 ? (
           <div className="adm-dashed-box">No users found.</div>
         ) : displayed.map((u, i) => (

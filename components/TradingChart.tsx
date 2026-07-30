@@ -16,6 +16,7 @@ import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
 import { calculateMarginPortion } from '@/lib/marginCalculator';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import './trading-chart.css';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -1631,7 +1632,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         return <div className="empty-state">Option Chain not available for this segment.</div>;
       }
       if (chainLoading) {
-        return <div className="empty-state">Loading chain...</div>;
+        return (
+          <div style={{ padding: '40px 0' }}>
+            <AnimatedLoader text="Loading option chain..." fullScreen={false} />
+          </div>
+        );
       }
       if (!chainStrikes || chainStrikes.length === 0) {
         return <div className="empty-state">Option chain data is currently unavailable for {symbol}.</div>;
