@@ -1329,11 +1329,26 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     <div className="ts2-toggle">
                       <button
                         className={`ts2-toggle-opt${orderUnit === 'qty' ? ' active' : ''}`}
-                        onClick={() => { setOrderUnit('qty'); setOrderQty(lotSize); setQtyInput(String(lotSize)); }}
+                        onClick={() => {
+                          if (orderUnit !== 'qty') {
+                            setOrderUnit('qty');
+                            const newQty = orderQty * (lotSize > 0 ? lotSize : 1);
+                            setOrderQty(newQty);
+                            setQtyInput(String(newQty));
+                          }
+                        }}
                       >QTY</button>
                       <button
                         className={`ts2-toggle-opt${orderUnit === 'lot' ? ' active' : ''}`}
-                        onClick={() => { setOrderUnit('lot'); setOrderQty(0.1); setQtyInput('0.1'); }}
+                        onClick={() => {
+                          if (orderUnit !== 'lot') {
+                            setOrderUnit('lot');
+                            const newLots = lotSize > 0 ? (orderQty / lotSize) : orderQty;
+                            const formattedLots = parseFloat(newLots.toFixed(2));
+                            setOrderQty(formattedLots);
+                            setQtyInput(String(formattedLots));
+                          }
+                        }}
                       >LOT</button>
                     </div>
                   </div>
@@ -1601,30 +1616,36 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                 </div>
               ) : null}
               
-              {!isSpotIndex && (
-              <div className="ts2-btn-row">
-                {(side === 'SELL' || side === 'BOTH') && (
-                  <button
-                    className="ts2-btn ts2-btn-sell"
-                    disabled={placingOrder || isExpired}
-                    style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                    onClick={() => handlePlace('SELL')}
-                  >
-                    {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
-                  </button>
-                )}
-                {(side === 'BUY' || side === 'BOTH') && (
-                  <button
-                    className={`ts2-btn${(exitMode || hasSellPos) ? ' ts2-btn-buy' : ' ts2-btn-buy'}`}
-                    disabled={placingOrder || isExpired}
-                    style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                    onClick={() => handlePlace('BUY')}
-                  >
-                    {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
-                  </button>
-                )}
-              </div>
-              )}
+              {!isSpotIndex && (() => {
+                const numLots = orderUnit === 'lot' ? orderQty : (lotSize > 0 ? (orderQty / lotSize) : orderQty);
+                const formattedLots = Number.isInteger(numLots) ? numLots : numLots.toFixed(2);
+                const lotText = `${formattedLots} LOT${numLots !== 1 ? 'S' : ''}`;
+                
+                return (
+                  <div className="ts2-btn-row">
+                    {(side === 'SELL' || side === 'BOTH') && (
+                      <button
+                        className="ts2-btn ts2-btn-sell"
+                        disabled={placingOrder || isExpired}
+                        style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                        onClick={() => handlePlace('SELL')}
+                      >
+                        {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : `SELL ${lotText}`}
+                      </button>
+                    )}
+                    {(side === 'BUY' || side === 'BOTH') && (
+                      <button
+                        className={`ts2-btn${(exitMode || hasSellPos) ? ' ts2-btn-buy' : ' ts2-btn-buy'}`}
+                        disabled={placingOrder || isExpired}
+                        style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                        onClick={() => handlePlace('BUY')}
+                      >
+                        {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : `BUY ${lotText}`}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </>
         )}

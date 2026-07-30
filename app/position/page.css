@@ -2026,6 +2026,7 @@ body.dark .confirm-message {
   align-items: center;
   justify-content: center;
 }
+
 body.dark .bm-overlay {
   background: rgba(0, 0, 0, 0.4);
 }
@@ -2037,6 +2038,7 @@ body.dark .bm-overlay {
   gap: 6px;
   height: 36px;
 }
+
 .bm-loader-bar {
   width: 6px;
   height: 100%;
@@ -2044,25 +2046,30 @@ body.dark .bm-overlay {
   background: #34a853;
   animation: bm-pulse 1s ease-in-out infinite;
 }
+
 .bm-loader-bar:nth-child(1) {
   background: #4285f4;
   animation-delay: -0.3s;
 }
+
 .bm-loader-bar:nth-child(2) {
   background: #ea4335;
   animation-delay: -0.15s;
 }
+
 .bm-loader-bar:nth-child(3) {
   background: #fbbc05;
   animation-delay: 0s;
 }
 
 @keyframes bm-pulse {
+
   0%,
   100% {
     transform: scaleY(0.4);
     opacity: 0.5;
   }
+
   50% {
     transform: scaleY(1);
     opacity: 1;
@@ -2663,6 +2670,7 @@ body.black .convert-type-btn.carry {
 }
 
 @media (max-width: 500px) {
+
   html:has(.pos-root),
   body:has(.pos-root) {
     overflow: hidden;

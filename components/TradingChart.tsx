@@ -1780,19 +1780,22 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       <>
         {/* Cumulative / Detailed Toggle */}
         <div style={{
-          display: 'flex', gap: '4px',
-          padding: '6px 8px 4px',
-          borderBottom: '1px solid var(--border-light, #E8ECF0)',
+          display: 'flex',
+          padding: '0 8px',
+          borderBottom: '2px solid var(--border-light, #E8ECF0)',
           background: 'var(--container-bg, #fff)',
           flexShrink: 0,
         }}>
           <button
             onClick={() => setPositionViewMode('cumulative')}
             style={{
-              flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: 700,
-              border: 'none', borderRadius: '8px', cursor: 'pointer',
-              background: positionViewMode === 'cumulative' ? 'var(--green, #1db954)' : 'var(--pill-bg, #F3F4F6)',
-              color: positionViewMode === 'cumulative' ? '#fff' : 'var(--text-secondary)',
+              flex: 1, padding: '7px 0', fontSize: '11px',
+              fontWeight: positionViewMode === 'cumulative' ? 700 : 600,
+              border: 'none', borderRadius: 0, cursor: 'pointer',
+              background: 'transparent',
+              color: positionViewMode === 'cumulative' ? '#2d6a4f' : 'var(--text-secondary, #6b7280)',
+              borderBottom: positionViewMode === 'cumulative' ? '2.5px solid #2d6a4f' : '2.5px solid transparent',
+              marginBottom: '-2px',
               transition: 'all 0.15s',
             }}
           >
@@ -1801,10 +1804,13 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           <button
             onClick={() => setPositionViewMode('detailed')}
             style={{
-              flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: 700,
-              border: 'none', borderRadius: '8px', cursor: 'pointer',
-              background: positionViewMode === 'detailed' ? 'var(--green, #1db954)' : 'var(--pill-bg, #F3F4F6)',
-              color: positionViewMode === 'detailed' ? '#fff' : 'var(--text-secondary)',
+              flex: 1, padding: '7px 0', fontSize: '11px',
+              fontWeight: positionViewMode === 'detailed' ? 700 : 600,
+              border: 'none', borderRadius: 0, cursor: 'pointer',
+              background: 'transparent',
+              color: positionViewMode === 'detailed' ? '#2d6a4f' : 'var(--text-secondary, #6b7280)',
+              borderBottom: positionViewMode === 'detailed' ? '2.5px solid #2d6a4f' : '2.5px solid transparent',
+              marginBottom: '-2px',
               transition: 'all 0.15s',
             }}
           >

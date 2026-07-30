@@ -2,7 +2,7 @@ export default function Loading() {
   return (
     <div className="desktop-layout">
       <main className="main-viewport">
-        <div className="mobile-app">
+        <div className="mobile-app" style={{ background: '#f5f7fb' }}>
           <div className="app-header p-4">
             <div className="h-8 bm-skeleton w-32"></div>
           </div>
