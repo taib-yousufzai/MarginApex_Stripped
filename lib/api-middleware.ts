@@ -46,13 +46,14 @@ export async function requireAuth(
     return Response.json({ error: 'Server configuration error' }, { status: 500 });
   }
 
-  const { data: userData, error: userError } = await adminClient.auth.getUser(token);
-  if (userError || !userData?.user) {
-    console.error('[requireAuth] getUser failed:', userError?.message);
+  const { getUserFromRequest } = await import('./adminClient');
+  const user = await getUserFromRequest(request);
+  if (!user) {
+    console.error('[requireAuth] getUser failed or token expired');
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const role = getRole(userData.user);
+  const role = getRole(user);
 
   for (const perm of requiredPermissions) {
     if (!hasPermission(role, perm)) {
@@ -60,5 +61,5 @@ export async function requireAuth(
     }
   }
 
-  return { adminClient, callerUser: userData.user, callerRole: role };
+  return { adminClient, callerUser: user, callerRole: role };
 }
