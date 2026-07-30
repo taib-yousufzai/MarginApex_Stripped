@@ -337,17 +337,21 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
 
         setRawPositions(prev => {
           const oppositeSide = d.side === 'BUY' ? 'SELL' : 'BUY';
-          const oppositeExists = prev.find(p => p.symbol === d.symbol && p.side === oppositeSide && p.product_type === (d.product_type || 'INTRADAY'));
+          const oppositePositions = prev.filter(p => p.symbol === d.symbol && p.side === oppositeSide && p.product_type === (d.product_type || 'INTRADAY'));
+          const totalOppositeQty = oppositePositions.reduce((sum, p) => sum + p.qty_open, 0);
           
           let nextState;
-          if (oppositeExists && d.qty <= oppositeExists.qty_open) {
-            if (d.qty === oppositeExists.qty_open) {
-              optimisticallyRemovedIds.current.add(oppositeExists.id);
-            }
+          if (oppositePositions.length > 0 && d.qty <= totalOppositeQty) {
+            let qtyToDeduct = d.qty || 1;
             nextState = prev.map(p => {
-              if (p.id === oppositeExists.id) {
-                const remainingQty = p.qty_open - (d.qty || 1);
-                return { ...p, qty_open: remainingQty, is_closing: true };
+              if (p.symbol === d.symbol && p.side === oppositeSide && p.product_type === (d.product_type || 'INTRADAY')) {
+                if (qtyToDeduct <= 0) return p;
+                const closedQty = Math.min(qtyToDeduct, p.qty_open);
+                qtyToDeduct -= closedQty;
+                if (p.qty_open === closedQty) {
+                  optimisticallyRemovedIds.current.add(p.id);
+                }
+                return { ...p, qty_open: p.qty_open - closedQty, is_closing: true };
               }
               return p;
             }).filter(p => p.qty_open > 0);
