@@ -121,7 +121,7 @@ export default function ChartContainer({
         client_id: 'marginapexx',
         user_id: 'public_user',
         auto_save_delay: 1,
-        disabled_features: ['timeframes_toolbar', 'countdown'],
+        disabled_features: ['timeframes_toolbar', 'countdown', 'header_widget'],
         enabled_features: [],
         overrides: {
           "mainSeriesProperties.showCountdown": false
@@ -262,10 +262,10 @@ export default function ChartContainer({
   return (
     <div style={{ position: 'relative', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
 
-      {/* Widget mount target (shifted up by 38px to hide TradingView native header natively without CSS injection) */}
+      {/* Widget mount target */}
       <div 
         ref={containerRef} 
-        style={{ position: 'absolute', top: -38, left: 0, right: 0, bottom: 0, height: 'calc(100% + 38px)' }} 
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, height: '100%' }} 
       />
 
       {/* Loading overlay */}
