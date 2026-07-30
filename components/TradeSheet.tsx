@@ -154,8 +154,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const { positions: activePositions, refreshPositions } = useActivePositions();
 
   const isOpen = !!item;
-  const lotSize = (item && ((item as any).lot_size > 0 || (item as any).lotSize > 0))
-    ? Number((item as any).lot_size || (item as any).lotSize)
+  const rawLotSize = item ? Number((item as any).lot_size || (item as any).lotSize || 0) : 0;
+  const isOption = item?.symbol ? (item.symbol.endsWith('CE') || item.symbol.endsWith('PE')) : false;
+  const lotSize = (item && rawLotSize > 0 && !(isOption && rawLotSize === 1))
+    ? rawLotSize
     : (item ? getLotSize(item.symbol || item.name || '', scriptSettings) : 1);
 
   const dbSeg = item ? mapSegmentToDbSegment(item.segment, item.symbol) : '';
