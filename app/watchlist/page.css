@@ -2861,7 +2861,7 @@ body.dark .instrument-delete-btn:hover {
         left: var(--sidebar-width, 260px) !important;
         right: 0 !important;
         border-radius: 0 !important;
-        background: var(--container-bg, #a71313) !important;
+        background: var(--container-bg, #FFFFFF) !important;
         z-index: 100000 !important;
         display: none !important;
     }
