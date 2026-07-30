@@ -62,7 +62,6 @@ const mapSegmentToDbSegment = (s: string): string => {
   return trimmed;
 };
 
-// Smartly resolve Kite prefixes if the database is missing them
 const resolveKitePrefix = (key: string, settlement: string) => {
   let baseKey = key;
   if (baseKey.includes(':')) {
@@ -70,12 +69,37 @@ const resolveKitePrefix = (key: string, settlement: string) => {
   }
   const seg = (settlement || '').toUpperCase();
   let prefix = 'NSE:';
-  if (baseKey.startsWith('SENSEX') || baseKey.startsWith('BANKEX')) prefix = 'BFO:';
-  else if (seg.includes('MCX')) prefix = 'MCX:';
-  else if (seg.includes('NCO')) prefix = 'NCO:';
-  else if (seg.includes('CDS') || seg.includes('FOREX')) prefix = 'CDS:';
-  else if (seg.includes('BSE') || seg.includes('BFO')) prefix = 'BFO:';
-  else if (seg.includes('OPT') || seg.includes('FUT') || seg.includes('NFO')) prefix = 'NFO:';
+  if (baseKey.startsWith('SENSEX') || baseKey.startsWith('BANKEX')) {
+    prefix = 'BFO:';
+  } else if (
+    seg.includes('MCX') ||
+    baseKey.startsWith('CRUDEOIL') ||
+    baseKey.startsWith('NATGAS') ||
+    baseKey.startsWith('SILVER') ||
+    baseKey.startsWith('GOLD') ||
+    baseKey.startsWith('COPPER') ||
+    baseKey.startsWith('ZINC') ||
+    baseKey.startsWith('ALUMINIUM') ||
+    baseKey.startsWith('LEAD') ||
+    baseKey.startsWith('MENTHAOIL')
+  ) {
+    prefix = 'MCX:';
+  } else if (seg.includes('NCO')) {
+    prefix = 'NCO:';
+  } else if (
+    seg.includes('CDS') ||
+    seg.includes('FOREX') ||
+    baseKey.startsWith('USDINR') ||
+    baseKey.startsWith('EURINR') ||
+    baseKey.startsWith('GBPINR') ||
+    baseKey.startsWith('JPYINR')
+  ) {
+    prefix = 'CDS:';
+  } else if (seg.includes('BSE') || seg.includes('BFO')) {
+    prefix = 'BFO:';
+  } else if (seg.includes('OPT') || seg.includes('FUT') || seg.includes('NFO')) {
+    prefix = 'NFO:';
+  }
 
   // Catch base indexes
   if (prefix === 'BFO:' && !baseKey.match(/\d/)) prefix = 'BSE:';
