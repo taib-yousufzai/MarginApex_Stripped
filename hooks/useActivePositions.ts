@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { getSharedSession } from '@/lib/sharedSession';
+'use client';
+
+import { useMemo } from 'react';
+import { usePositionsData } from '@/contexts/PositionsContext';
 
 export interface ActivePosition {
   id: string;
@@ -11,38 +13,20 @@ export interface ActivePosition {
   qty_total: number;
   avg_price: number;
   product_type: string;
-  // include other fields if needed, but these are primary
 }
 
 export function useActivePositions() {
-  const [positions, setPositions] = useState<ActivePosition[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { positions, loading, refresh } = usePositionsData();
 
-  const fetchPositions = useCallback(async () => {
-    try {
-      const { token } = await getSharedSession();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
+  const activePositions = useMemo(() => {
+    return positions.filter(
+      (p) => p.status === 'open' || p.status === 'OPEN' || p.status === 'active'
+    ) as unknown as ActivePosition[];
+  }, [positions]);
 
-      const res = await fetch('/api/positions', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json();
-      if (json.positions) {
-        setPositions(json.positions.filter((p: any) => p.status === 'open' || p.status === 'OPEN'));
-      }
-    } catch (err) {
-      console.error('Failed to fetch positions:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchPositions();
-  }, [fetchPositions]);
-
-  return { positions, loading, refreshPositions: fetchPositions };
+  return {
+    positions: activePositions,
+    loading,
+    refreshPositions: refresh,
+  };
 }

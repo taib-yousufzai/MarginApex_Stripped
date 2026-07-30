@@ -4,6 +4,9 @@ import InstallPrompt from '@/components/InstallPrompt';
 import { MarketDataProvider } from '@/contexts/MarketDataContext';
 import { BinanceDataProvider } from '@/contexts/BinanceDataContext';
 import { ComexDataProvider } from '@/contexts/ComexDataContext';
+import { PositionsDataProvider } from '@/contexts/PositionsContext';
+import { OrdersDataProvider } from '@/contexts/OrdersContext';
+import { BalanceDataProvider } from '@/contexts/BalanceContext';
 import ClientShell from '@/components/ClientShell';
 export const viewport: Viewport = {
   themeColor: [{ media: '(prefers-color-scheme: light)', color: '#ffffff' }, { media: '(prefers-color-scheme: dark)', color: '#1E1E1E' }],
@@ -52,10 +55,16 @@ export default function RootLayout({
         <MarketDataProvider>
           <BinanceDataProvider>
             <ComexDataProvider>
-              <ClientShell>
-                {children}
-              </ClientShell>
-              <InstallPrompt />
+              <PositionsDataProvider>
+                <OrdersDataProvider>
+                  <BalanceDataProvider>
+                    <ClientShell>
+                      {children}
+                    </ClientShell>
+                    <InstallPrompt />
+                  </BalanceDataProvider>
+                </OrdersDataProvider>
+              </PositionsDataProvider>
             </ComexDataProvider>
           </BinanceDataProvider>
         </MarketDataProvider>

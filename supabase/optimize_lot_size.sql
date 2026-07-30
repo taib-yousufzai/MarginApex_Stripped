@@ -134,7 +134,7 @@ BEGIN
     END IF;
   END IF;
 
-  v_lots := COALESCE(NULLIF(v_order.lots, 0), v_order.qty / v_lot_size);
+  v_lots := v_order.qty / v_lot_size;
 
   -- 1. Intraday Commission (ALWAYS applied)
   IF v_comm_type = 'Per Crore' THEN

@@ -1313,8 +1313,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       throw new Error(rpcErr.message || 'Order execution failed. Please try again.');
     }
 
-    // Append margin/brokerage info to act_log in the background — user doesn't wait for this
-    (async () => {
+    // Append margin/brokerage info to act_log in the background via setImmediate so it doesn't block Next.js serverless/API response
+    setImmediate(async () => {
       try {
         const { data: actLog, error: actLogError } = await admin
           .from('act_logs')
@@ -1334,7 +1334,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             .eq('id', actLog.id);
         }
       } catch { /* non-critical — don't fail the order */ }
-    })();
+    });
 
     return oId as string;
   };

@@ -153,6 +153,19 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
   const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
   const pendingUpdatesRef = useRef<Record<string, QuoteData>>({});
 
+  // Periodically flush buffered updates to state at 250ms interval
+  useEffect(() => {
+    const flushQuotes = () => {
+      const pending = pendingUpdatesRef.current;
+      if (Object.keys(pending).length > 0) {
+        setQuotes(prev => ({ ...prev, ...pending }));
+        pendingUpdatesRef.current = {};
+      }
+    };
+    const flushInterval = setInterval(flushQuotes, 250);
+    return () => clearInterval(flushInterval);
+  }, []);
+
   useEffect(() => {
     const onMessage = (type: string, data: any) => {
       if (type === 'quotes') {
@@ -179,7 +192,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
             ask: (q.ask != null && q.ask > 0) ? q.ask : finalPrice * 1.0005,
           };
         }
-        setQuotes(prev => ({ ...prev, ...mapped }));
+        Object.assign(pendingUpdatesRef.current, mapped);
       } else if (type === 'update') {
         const { symbol, quote: q } = data;
         const close = q.ohlc?.close || q.close || 0;
@@ -201,7 +214,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
           bid: (q.bid != null && q.bid > 0) ? q.bid : finalPrice * 0.9995,
           ask: (q.ask != null && q.ask > 0) ? q.ask : finalPrice * 1.0005,
         };
-        setQuotes(prev => ({ ...prev, [symbol]: newQuote }));
+        pendingUpdatesRef.current[symbol] = newQuote;
       }
     };
 

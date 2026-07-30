@@ -870,6 +870,20 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         // Exit mode: show the full-screen overlay and await the order
         window.dispatchEvent(new Event('exit-overlay-start'));
         handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
+        
+        // Optimistic event for instant feedback on positions list
+        const optimisticPayload = {
+          symbol: item.symbol,
+          kite_instrument: computedKiteSymbol || item.symbol,
+          segment: item.segment,
+          side: placeSide,
+          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+          client_price: resolvedClientPrice,
+          product_type: propProductType || 'INTRADAY',
+        };
+        window.dispatchEvent(new Event('order_placed'));
+        window.dispatchEvent(new CustomEvent('order_placed_with_data', { detail: optimisticPayload }));
+
         try {
           const [res] = await Promise.all([
             placeOrder({
@@ -887,7 +901,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
               target: resolvedTarget,
               is_exit: true,
             }),
-            new Promise(r => setTimeout(r, 800)) // Ensure overlay shows for at least 800ms
+            new Promise(r => setTimeout(r, 600)) // Keeps overlay active briefly so user sees positions list update
           ]);
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new Event('position-closed'));
@@ -895,7 +909,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             showToast(`${placeSide} order sent for ${item.symbol}`);
             if (onSuccess) {
               try {
-                await onSuccess();
+                await onSuccess(); // Await refresh to guarantee UI is in-sync before dismissing loader
               } catch (e) {
                 console.error('onSuccess refresh failed', e);
               }
@@ -951,14 +965,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             target: resolvedTarget,
             is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
           }),
-          new Promise(r => setTimeout(r, 1500))
+          new Promise(r => setTimeout(r, 1000)) // Keeps overlay active briefly so user sees positions list update
         ]).then(async ([res]) => {
           if (!res.success) {
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
           } else {
             if (onSuccess) {
               try {
-                await onSuccess();
+                await onSuccess(); // Await refresh to guarantee UI is in-sync before dismissing loader
               } catch (e) {
                 console.error('onSuccess refresh failed', e);
               }
@@ -970,7 +984,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           setTimeout(() => {
             isExecutingRef.current = false;
             window.dispatchEvent(new Event('global-loader-end'));
-          }, 150);
+          }, 50);
         });
       }
     } catch (e) {
