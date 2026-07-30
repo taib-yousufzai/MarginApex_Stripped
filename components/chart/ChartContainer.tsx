@@ -139,6 +139,18 @@ export default function ChartContainer({
       isReadyRef.current = true;
       setChartStatus('ready');
 
+      // Inject CSS directly to hide native header in case feature flags or custom CSS fail
+      try {
+        const iframe = containerRef.current?.querySelector('iframe');
+        if (iframe && iframe.contentDocument) {
+          const style = iframe.contentDocument.createElement('style');
+          style.innerHTML = '.layout__area--top { display: none !important; } .header-chart-panel { display: none !important; }';
+          iframe.contentDocument.head.appendChild(style);
+        }
+      } catch (e) {
+        console.error('Failed to inject CSS into TV iframe', e);
+      }
+
       // Drain the pending queue
       const pending = pendingRef.current;
       if (pending.symbol) {
@@ -230,16 +242,16 @@ export default function ChartContainer({
   useEffect(() => {
     let lastPrice = liveQuote?.lastPrice ?? liveQuote?.last_price;
     if (lastPrice !== undefined) lastPrice = Number(lastPrice);
-    
+
     let volume = liveQuote?.volume ?? liveQuote?.v;
     if (volume !== undefined) volume = Number(volume);
-    
+
     let nowMs = liveQuote?.timestamp ? new Date(liveQuote.timestamp).getTime() : Date.now();
     if (nowMs !== undefined) nowMs = Number(nowMs);
 
     if (loading || candles.length === 0) return;
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
-    
+
     datafeedRef.current?.updateLive(lastPrice, nowMs, volume);
   }, [liveQuote]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -263,9 +275,9 @@ export default function ChartContainer({
     <div style={{ position: 'relative', flex: 1, width: '100%', height: '100%', overflow: 'hidden' }}>
 
       {/* Widget mount target */}
-      <div 
-        ref={containerRef} 
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, height: '100%' }} 
+      <div
+        ref={containerRef}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, height: '100%' }}
       />
 
       {/* Loading overlay */}

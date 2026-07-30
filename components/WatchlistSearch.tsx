@@ -142,9 +142,9 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
 
   return (
     <div className={`search-wrapper ${query ? 'has-text' : ''}`} ref={searchContainerRef} style={{ position: 'relative', width: '100%' }}>
-      <svg className="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M14 14.0001L11.1 11.1001" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <svg className="search-icon" width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M14 14.0001L11.1 11.1001" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
       <input 
         className="search-input"
