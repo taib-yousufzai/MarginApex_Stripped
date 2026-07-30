@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { getSession } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import type { Session } from '@supabase/supabase-js';
@@ -229,7 +230,7 @@ export default function ProfileDetailsPage() {
 
                         {editing && (
                             <button className="pd-save-btn" onClick={handleSave} disabled={saving}>
-                                {saving ? <><i className="fas fa-spinner fa-spin"></i> Saving…</> : <><i className="fas fa-check"></i> Save Changes</>}
+                                {saving ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}><AnimatedLoader size="small" /> Saving…</span> : <><i className="fas fa-check"></i> Save Changes</>}
                             </button>
                         )}
                     </>

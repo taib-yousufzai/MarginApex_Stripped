@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/lib/auth';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import './page.css';
 
 interface ReferralEarning {
@@ -97,7 +98,9 @@ export default function ReferAndEarnPage() {
 
           <div className="main-content padding-bottom">
             {loading ? (
-              <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>Loading...</div>
+              <div style={{ padding: '40px 0', width: '100%' }}>
+                <AnimatedLoader text="Loading..." fullScreen={false} />
+              </div>
             ) : (
               <>
                 <div className="refer-balance-card">

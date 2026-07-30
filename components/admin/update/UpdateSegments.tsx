@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { signOut } from '@/lib/auth';
 import { apiCall, Toast, ToastState, UserListItem } from '../AdminUtils';
+import AnimatedLoader from '@/components/AnimatedLoader';
 
 const ALL_SEGMENTS = ['INDEX-FUT', 'STOCK-OPT', 'NSE-EQ', 'COMEX', 'INDEX-OPT', 'MCX-FUT', 'CRYPTO', 'STOCK-FUT', 'MCX-OPT', 'FOREX'];
 
@@ -535,7 +536,11 @@ export default function UpdateSegments({ selectedUser }: { selectedUser: { id: s
     setToast({ message: `${segmentMode === 'scalper' ? 'Scalper' : 'Normal'} segment settings saved successfully`, type: 'success' });
   };
 
-  if (loading) return <div style={{ color: '#8b949e', padding: 20 }}>Loading...</div>;
+  if (loading) return (
+    <div style={{ padding: '40px 0', width: '100%' }}>
+      <AnimatedLoader text="Loading segments..." fullScreen={false} />
+    </div>
+  );
 
   return (
     <div className="adm-upd-root" style={{ padding: '0 0 40px 0' }}>

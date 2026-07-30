@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { getSession, signOut } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { pageCache } from '@/lib/pageCache';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import type { Session } from '@supabase/supabase-js';
 import './page.css';
 
@@ -376,7 +377,7 @@ export default function ProfilePage() {
                                         </div>
                                     )}
                                     <button className="qe-save-btn" onClick={handleQuickSave} disabled={saving}>
-                                        {saving ? <><i className="fas fa-spinner fa-spin"></i> Saving…</> : <><i className="fas fa-check"></i> Save Changes</>}
+                                        {saving ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}><AnimatedLoader size="small" /> Saving…</span> : <><i className="fas fa-check"></i> Save Changes</>}
                                     </button>
                                     <Link href="/profile/details" className="qe-full-link" onClick={closeModal}>
                                         <i className="fas fa-id-card"></i> View full profile details

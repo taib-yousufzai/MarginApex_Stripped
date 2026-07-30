@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useOrderEntry, OrderType, ProductType } from '@/hooks/useOrderEntry';
+import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
+import AnimatedLoader from '@/components/AnimatedLoader';
+
 import { supabase } from '@/lib/supabaseClient';
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
@@ -1607,7 +1610,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                     onClick={() => handlePlace('SELL')}
                   >
-                    {placingOrder ? <><i className="fas fa-spinner fa-spin" style={{marginRight: '8px'}}/> PLACING...</> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
+                    {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'SELL'}
                   </button>
                 )}
                 {(side === 'BUY' || side === 'BOTH') && (
@@ -1617,7 +1620,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                     onClick={() => handlePlace('BUY')}
                   >
-                    {placingOrder ? <><i className="fas fa-spinner fa-spin" style={{marginRight: '8px'}}/> PLACING...</> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
+                    {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : 'BUY'}
                   </button>
                 )}
               </div>

@@ -7,6 +7,8 @@ import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import OptionChainTable from './OptionChainTable';
 import TradingSegmentsDrawer from '@/components/TradingSegmentsDrawer';
+import { WatchlistItem, getTabForItem } from '@/app/watchlist/page';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { calculateMarginPortion } from '@/lib/marginCalculator';
 import './option-chain.css';
 import dynamic from 'next/dynamic';
@@ -949,7 +951,7 @@ function OptionChainContent() {
 
 export default function OptionChainPage() {
   return (
-    <Suspense fallback={<div className="loading-state">Loading...</div>}>
+    <Suspense fallback={<AnimatedLoader text="Loading..." />}>
       <OptionChainContent />
     </Suspense>
   );

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn, getSession, getRole } from '@/lib/auth';
 import RiskRulesPopup from '@/components/RiskRulesPopup';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import './page.css';
 
 export default function LoginPage() {
@@ -248,7 +249,7 @@ export default function LoginPage() {
           >
             {isLoading ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <AnimatedLoader size="small" />
                 {' '}Signing in…
               </>
             ) : (

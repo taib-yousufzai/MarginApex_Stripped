@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { requestPasswordReset } from '@/lib/auth';
 import '../login/page.css';
 
@@ -151,7 +152,7 @@ function ForgotPasswordForm() {
           >
             {isLoading ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <AnimatedLoader size="small" />
                 {' '}Sending…
               </>
             ) : (

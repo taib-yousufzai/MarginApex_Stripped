@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { signOut } from '@/lib/auth';
 import { apiCall, Toast, ToastState, SkeletonCard } from './AdminUtils';
+import AnimatedLoader from '@/components/AnimatedLoader';
 
 export type DashboardMetrics = {
   ledger_balance: number;
@@ -156,7 +157,7 @@ export default function DashboardPage({ selectedUser, onOpenUserPanel, isDemoMod
               <input type="date" className="adm-db-date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
             <button className="adm-db-refresh" onClick={() => fetchMetrics(true)} disabled={loading} style={{ padding: '0 12px', borderRadius: 6, marginLeft: 8 }}>
-              <i className={`fas fa-sync-alt ${loading ? 'fa-spin' : ''}`} />
+              {loading ? <AnimatedLoader size="small" /> : <i className="fas fa-sync-alt" />}
             </button>
           </div>
         </div>

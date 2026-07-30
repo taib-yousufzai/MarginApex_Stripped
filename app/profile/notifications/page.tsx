@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { getSession } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import './page.css';
@@ -170,7 +171,7 @@ export default function NotificationsPage() {
                     </span>
                     {unreadCount > 0 && (
                         <button className="notif-mark-all-btn" onClick={markAllRead} disabled={marking}>
-                            {marking ? <i className="fas fa-spinner fa-spin"></i> : 'Mark all read'}
+                            {marking ? <span style={{ display: 'inline-flex', alignItems: 'center' }}><AnimatedLoader size="small" /></span> : 'Mark all read'}
                         </button>
                     )}
                 </div>

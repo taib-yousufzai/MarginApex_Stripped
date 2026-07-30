@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { getSession, getRole } from '@/lib/auth';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { isContractExpired } from '@/lib/contractExpiry';
+
+import AnimatedLoader from '@/components/AnimatedLoader';
 import TickFlash from '@/components/TickFlash';
 import './page.css';
 
@@ -524,7 +526,9 @@ export default function Page() {
 
 
                     {kiteLoading && (
-                      <div className="market-status-msg"><i className="fas fa-circle-notch fa-spin" /> Checking connection…</div>
+                      <div className="market-status-msg" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AnimatedLoader size="small" /> Checking connection…
+                      </div>
                     )}
 
 

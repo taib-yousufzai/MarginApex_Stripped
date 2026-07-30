@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { updatePassword } from '@/lib/auth';
 import { supabase } from '@/lib/supabaseClient';
 import '../login/page.css';
@@ -282,7 +283,7 @@ function ResetPasswordForm() {
           >
             {isDisabled ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <AnimatedLoader size="small" />
                 {' '}Updating password…
               </>
             ) : (

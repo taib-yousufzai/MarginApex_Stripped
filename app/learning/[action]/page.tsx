@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { ErrorModal } from '@/components/ErrorModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getSession } from '@/lib/auth';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import './page.css';
 
 interface WatchlistItem {
@@ -187,7 +188,7 @@ export default function LearningPage() {
   if (authLoading) {
     return (
       <div className="empty-panel-state" style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <i className="fas fa-circle-notch fa-spin"></i>
+        <AnimatedLoader />
         <span>Authenticating session...</span>
       </div>
     );
@@ -273,7 +274,7 @@ export default function LearningPage() {
                         >
                           {scanningLoading ? (
                             <>
-                              <i className="fas fa-circle-notch fa-spin"></i>
+                              <AnimatedLoader size="small" />
                               <span>Scanning...</span>
                             </>
                           ) : (

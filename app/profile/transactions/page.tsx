@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getSession } from '@/lib/auth';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import type { Session } from '@supabase/supabase-js';
 import './page.css';
 
@@ -209,7 +210,7 @@ export default function TransactionHistoryPage() {
 
             {loading ? (
               <div style={{ textAlign: 'center', padding: '40px', color: '#8F9BB3' }}>
-                <i className="fas fa-spinner fa-spin" style={{ fontSize: '2rem', marginBottom: '10px' }}></i>
+                <AnimatedLoader />
                 <p>Loading transactions...</p>
               </div>
             ) : filteredTransactions.length === 0 ? (
@@ -353,7 +354,7 @@ export default function TransactionHistoryPage() {
                 suppressHydrationWarning
               >
                 {editSaving
-                  ? <><i className="fas fa-spinner fa-spin"></i> Submitting...</>
+                  ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><AnimatedLoader size="small" /> Submitting...</span>
                   : <><i className="fas fa-paper-plane"></i> Submit New Request</>
                 }
               </button>

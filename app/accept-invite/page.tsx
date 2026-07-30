@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import '../login/page.css';
@@ -280,7 +281,7 @@ function AcceptInviteForm() {
           >
             {isLoading ? (
               <>
-                <i className="fas fa-spinner fa-spin"></i>
+                <AnimatedLoader size="small" />
                 {' '}Setting up account…
               </>
             ) : (

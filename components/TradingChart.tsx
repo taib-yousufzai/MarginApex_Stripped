@@ -1872,7 +1872,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   onClick={() => handleAddMorePosition(pos)} 
                   disabled={isSubmitting || exitingPosIds.current.size > 0}
                 >
-                  {isSubmitting && addingPosId === pos.id && <i className="ti ti-loader spin" style={{ marginRight: '4px' }}></i>}
+                  {isSubmitting && addingPosId === pos.id && <AnimatedLoader size="small" />}
                   {isSubmitting && addingPosId === pos.id ? 'Adding...' : '+ Add More'}
                 </button>
                 <button
@@ -2338,7 +2338,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         }
                       }}>
                         <span className="btn-label">
-                          {isSubmitting && !addingPosId && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                          {isSubmitting && !addingPosId && orderSide === 'BUY' && <AnimatedLoader size="small" />}
                           BUY
                         </span>
                       </button>
@@ -2361,7 +2361,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         }
                       }}>
                         <span className="btn-label">
-                          {isSubmitting && !addingPosId && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                          {isSubmitting && !addingPosId && orderSide === 'SELL' && <AnimatedLoader size="small" />}
                           SELL
                         </span>
                       </button>
@@ -2399,7 +2399,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     }
                   }}>
                     <span className="btn-label">
-                      {isSubmitting && !addingPosId && orderSide === 'SELL' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                      {isSubmitting && !addingPosId && orderSide === 'SELL' && <AnimatedLoader size="small" />}
                       SELL
                     </span>
                   </button>
@@ -2419,7 +2419,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     }
                   }}>
                     <span className="btn-label">
-                      {isSubmitting && !addingPosId && orderSide === 'BUY' && <i className="ti ti-loader spin" style={{ marginRight: '6px' }}></i>}
+                      {isSubmitting && !addingPosId && orderSide === 'BUY' && <AnimatedLoader size="small" />}
                       BUY
                     </span>
                   </button>
@@ -2707,7 +2707,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     disabled={isSubmitting} 
                     onClick={handlePlaceOrder}
                   >
-                      {isSubmitting ? <i className="ti ti-loader spin"></i> : (modifyOrderId ? 'Update Order' : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue}`))}
+                      {isSubmitting ? <AnimatedLoader size="small" /> : (modifyOrderId ? 'Update Order' : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue}`))}
                   </button>
                 </div>
               </div>

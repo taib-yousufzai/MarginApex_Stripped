@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { signOut } from '@/lib/auth';
 import { apiCall, Toast, ToastState, SkeletonLine, SkeletonCard } from './AdminUtils';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { toCsvPayRequests } from '@/lib/csvExport';
 import type { PayRequest } from '@/lib/csvExport';
 
@@ -601,7 +602,7 @@ export default function PayinOutPage({ isDemoMode }: { isDemoMode: boolean }) {
                           fontWeight: 'bold', cursor: isPending ? 'pointer' : 'not-allowed',
                           opacity: isPending ? 1 : 0.4
                         }}>
-                        {actionLoading[r.id] ? <i className="fas fa-spinner fa-spin" /> : 'A'}
+                        {actionLoading[r.id] ? <AnimatedLoader size="small" /> : 'A'}
                       </button>
                     </td>
                     <td style={{ padding: '16px', textAlign: 'center' }}>
@@ -614,7 +615,7 @@ export default function PayinOutPage({ isDemoMode }: { isDemoMode: boolean }) {
                           fontWeight: 'bold', cursor: isPending ? 'pointer' : 'not-allowed',
                           opacity: isPending ? 1 : 0.4
                         }}>
-                        {actionLoading[r.id] ? <i className="fas fa-spinner fa-spin" /> : 'R'}
+                        {actionLoading[r.id] ? <AnimatedLoader size="small" /> : 'R'}
                       </button>
                     </td>
                   </tr>

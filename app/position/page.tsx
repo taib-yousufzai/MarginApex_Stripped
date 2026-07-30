@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth';
 import { pageCache } from '@/lib/pageCache';
 import { useMyPositions, EnrichedPosition } from '@/hooks/useMyPositions';
 import { useOrderEntry } from '@/hooks/useOrderEntry';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
 import type { TradeSheetItem } from '@/components/TradeSheet';
@@ -1663,7 +1664,7 @@ export default function PositionPage() {
                     disabled={isExitingAll}
                   >
                     {isExitingAll ? (
-                      <><i className="fas fa-circle-notch fa-spin" style={{ marginRight: '6px' }} /> Closing...</>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><AnimatedLoader size="small" /> Closing...</span>
                     ) : (
                       'Confirm Exit All'
                     )}
@@ -1679,7 +1680,7 @@ export default function PositionPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '12px 16px', background: 'var(--card-alt-bg)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Brokerage</span>
                   {isFetchingPreview ? (
-                    <i className="fas fa-circle-notch fa-spin" style={{ color: 'var(--text-muted)' }}></i>
+                    <AnimatedLoader size="small" />
                   ) : (
                     <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                       ₹{convertPreviewBrokerage != null ? convertPreviewBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}

@@ -9,6 +9,7 @@ import { useOrderEntry, OrderSide, OrderType, ProductType } from '@/hooks/useOrd
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import dynamic from 'next/dynamic';
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
@@ -1542,9 +1543,8 @@ function WatchlistContent() {
                 </div>
                 <div className="watchlist-card-list" style={{ paddingBottom: basketMode ? '120px' : '0px' }}>
                   {allowedSegments === null ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 20px', gap: '12px', color: 'var(--text-secondary, #6B7280)' }}>
-                      <i className="fas fa-circle-notch fa-spin" style={{ fontSize: '1.5rem', color: '#C62E2E', opacity: 0.6 }} />
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Loading watchlist…</span>
+                    <div style={{ padding: '40px 0' }}>
+                      <AnimatedLoader text="Loading watchlist..." />
                     </div>
                   ) : filteredItems.length === 0 ? <EmptyState /> : filteredItems.map((item, index) => (
                     <InstrumentRow
@@ -2107,7 +2107,7 @@ function WatchlistContent() {
                     style={{ flex: 1, background: isExecutingBasket ? '#9CA3AF' : '#2C8E5A', color: '#fff', border: 'none', padding: '13px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', boxShadow: isExecutingBasket ? 'none' : '0 4px 12px rgba(44,142,90,0.3)' }}
                   >
                     {isExecutingBasket ? (
-                      <><i className="fas fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>Executing...</>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><AnimatedLoader size="small" /> Executing...</span>
                     ) : (
                       <><i className="fas fa-bolt" style={{ marginRight: '6px' }}></i>Confirm</>
                     )}
@@ -3101,11 +3101,11 @@ export default function WatchlistPage() {
   }, []);
 
   if (!mounted) {
-    return <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading watchlist (mounted false)...</div>;
+    return <AnimatedLoader text="Loading watchlist..." />;
   }
 
   return (
-    <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading watchlist (Suspense)...</div>}>
+    <Suspense fallback={<AnimatedLoader text="Loading watchlist..." />}>
       <WatchlistContent />
     </Suspense>
   );

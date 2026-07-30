@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { signOut } from '@/lib/auth';
 import { apiCall, Toast, ToastState, TAB_INSTRUMENTS, WatchlistItem } from './AdminUtils';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
 
@@ -173,7 +174,7 @@ export default function MarketWatchPage() {
           {showDropdown && (
             <div className="adm-mw-dropdown">
               {searching ? (
-                <div className="adm-mw-dd-empty"><i className="fas fa-spinner fa-spin" style={{ marginRight: 8 }} />Searching…</div>
+                <div className="adm-mw-dd-empty" style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}><AnimatedLoader size="small" />Searching…</div>
               ) : suggestions.length === 0 ? (
                 <div className="adm-mw-dd-empty">No results found</div>
               ) : (

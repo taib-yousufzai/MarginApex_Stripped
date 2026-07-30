@@ -3,6 +3,7 @@ import { ErrorModal } from '@/components/ErrorModal';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import AnimatedLoader from '@/components/AnimatedLoader';
 import { useRouter } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import type { Session } from '@supabase/supabase-js';
@@ -383,7 +384,7 @@ export default function BankDetailsPage() {
 
             {loading ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--bd-muted, #8F9BB3)' }}>
-                <i className="fas fa-spinner fa-spin" style={{ fontSize: '2rem' }} />
+                <AnimatedLoader />
               </div>
             ) : (
               <>
@@ -533,7 +534,7 @@ export default function BankDetailsPage() {
                                       suppressHydrationWarning
                                     >
                                       {inlineSaving
-                                        ? <><i className="fas fa-spinner fa-spin" /> Saving...</>
+                                        ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><AnimatedLoader size="small" /> Saving...</span>
                                         : <><i className="fas fa-check" /> Save Changes</>}
                                     </button>
                                   </div>
@@ -616,7 +617,7 @@ export default function BankDetailsPage() {
                 </div>
               ))}
               <button type="button" className="bd-save-btn" onClick={handleAddSave} disabled={addSaving} suppressHydrationWarning>
-                {addSaving ? <><i className="fas fa-spinner fa-spin" /> Saving...</> : 'Add Account'}
+                {addSaving ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><AnimatedLoader size="small" /> Saving...</span> : 'Add Account'}
               </button>
             </div>
           </div>
