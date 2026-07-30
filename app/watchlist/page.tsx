@@ -577,7 +577,9 @@ function WatchlistContent() {
   const [isExecutingBasket, setIsExecutingBasket] = useState(false);
 
   const getWatchlistLotSize = (item: any): number => {
-    if (item && item.lotSize && item.lotSize > 0) return item.lotSize;
+    const rawLotSize = Number(item?.lotSize || 0);
+    const isOption = item?.symbol ? (item.symbol.endsWith('CE') || item.symbol.endsWith('PE')) : false;
+    if (item && rawLotSize > 0 && !(isOption && rawLotSize === 1)) return rawLotSize;
     const n = (item.name || '').toUpperCase();
     const s = (item.symbol || '').toUpperCase();
     const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
