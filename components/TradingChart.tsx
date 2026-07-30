@@ -1793,8 +1793,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
               fontWeight: positionViewMode === 'cumulative' ? 700 : 600,
               border: 'none', borderRadius: 0, cursor: 'pointer',
               background: 'transparent',
-              color: positionViewMode === 'cumulative' ? '#2d6a4f' : 'var(--text-secondary, #6b7280)',
-              borderBottom: positionViewMode === 'cumulative' ? '2.5px solid #2d6a4f' : '2.5px solid transparent',
+              color: positionViewMode === 'cumulative' ? 'var(--navy, #101828)' : 'var(--text-secondary, #6b7280)',
+              borderBottom: positionViewMode === 'cumulative' ? '2.5px solid var(--navy, #101828)' : '2.5px solid transparent',
               marginBottom: '-2px',
               transition: 'all 0.15s',
             }}
@@ -1808,8 +1808,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
               fontWeight: positionViewMode === 'detailed' ? 700 : 600,
               border: 'none', borderRadius: 0, cursor: 'pointer',
               background: 'transparent',
-              color: positionViewMode === 'detailed' ? '#2d6a4f' : 'var(--text-secondary, #6b7280)',
-              borderBottom: positionViewMode === 'detailed' ? '2.5px solid #2d6a4f' : '2.5px solid transparent',
+              color: positionViewMode === 'detailed' ? 'var(--navy, #101828)' : 'var(--text-secondary, #6b7280)',
+              borderBottom: positionViewMode === 'detailed' ? '2.5px solid var(--navy, #101828)' : '2.5px solid transparent',
               marginBottom: '-2px',
               transition: 'all 0.15s',
             }}
