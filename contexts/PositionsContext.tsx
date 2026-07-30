@@ -38,7 +38,10 @@ if (typeof window !== 'undefined') {
   try {
     const saved = localStorage.getItem('cached_open_positions');
     if (saved) {
-      globalPositionsCache = JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        globalPositionsCache = parsed;
+      }
     }
   } catch (e) {}
 }
