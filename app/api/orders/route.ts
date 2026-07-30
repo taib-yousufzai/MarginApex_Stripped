@@ -34,6 +34,19 @@ import type {
  * Fetch the Binance LTP for a crypto symbol using the same
  * Redis → Ticker Daemon → Binance REST cascade as the Kite path.
  */
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 250): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
 async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, bid: number, ask: number} | null> {
   let cleanSym = symbol.replace('/', '').toUpperCase();
   if (!cleanSym.endsWith('USDT')) cleanSym = cleanSym + 'USDT';
@@ -59,7 +72,7 @@ async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, bid: num
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: cleanSym });
-    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+    const resTicker = await fetchWithTimeout(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' }, 150);
     if (resTicker.ok) {
       const json = await resTicker.json();
       if (json.success && json.data && json.data[cleanSym]) {
@@ -75,7 +88,7 @@ async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, bid: num
 
   // 3. Direct Binance REST fallback
   try {
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+    const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' }, 250);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.price) {
@@ -131,7 +144,7 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, nu
       try {
         const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
         const params = new URLSearchParams({ symbols: remainingKiteIds.join(',') });
-        const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+        const resTicker = await fetchWithTimeout(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' }, 150);
         if (resTicker.ok) {
           const json = await resTicker.json();
           if (json.success && json.data) {
@@ -162,13 +175,13 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, nu
       const params = new URLSearchParams();
       missingKiteIds.forEach(i => params.append('i', i));
 
-      const res = await fetch(`https://api.kite.trade/quote?${params}`, {
+      const res = await fetchWithTimeout(`https://api.kite.trade/quote?${params}`, {
         headers: {
           'X-Kite-Version': '3',
           Authorization: `token ${apiKey}:${session.accessToken}`,
         },
-        cache: 'no-store', signal: AbortSignal.timeout(100),
-      });
+        cache: 'no-store'
+      }, 250);
       
       
 
