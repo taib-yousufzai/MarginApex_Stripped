@@ -203,7 +203,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           const tsStr = p.id.toString().split('-')[1];
           if (tsStr) {
             const ts = parseInt(tsStr, 10);
-            return now - ts < 3000;
+            return now - ts < 10000; // Preserve for up to 10 seconds during slow DB updates
           }
         }
         return false;

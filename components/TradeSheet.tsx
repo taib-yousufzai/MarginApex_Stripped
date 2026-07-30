@@ -885,31 +885,28 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         window.dispatchEvent(new CustomEvent('order_placed_with_data', { detail: optimisticPayload }));
 
         try {
-          const [res] = await Promise.all([
-            placeOrder({
-              symbol: item.symbol,
-              kite_instrument: computedKiteSymbol || item.symbol,
-              segment: item.segment,
-              side: placeSide,
-              qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-              lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
-              order_type: resolvedOrderType as any,
-              product_type: propProductType || 'INTRADAY',
-              client_price: resolvedClientPrice,
-              trigger_price: resolvedTriggerPrice,
-              stop_loss: resolvedStopLoss,
-              target: resolvedTarget,
-              is_exit: true,
-            }),
-            new Promise(r => setTimeout(r, 600)) // Keeps overlay active briefly so user sees positions list update
-          ]);
+          const res = await placeOrder({
+            symbol: item.symbol,
+            kite_instrument: computedKiteSymbol || item.symbol,
+            segment: item.segment,
+            side: placeSide,
+            qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+            lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+            order_type: resolvedOrderType as any,
+            product_type: propProductType || 'INTRADAY',
+            client_price: resolvedClientPrice,
+            trigger_price: resolvedTriggerPrice,
+            stop_loss: resolvedStopLoss,
+            target: resolvedTarget,
+            is_exit: true,
+          });
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new Event('position-closed'));
           if (res.success) {
             showToast(`${placeSide} order sent for ${item.symbol}`);
             if (onSuccess) {
               try {
-                await onSuccess(); // Await refresh to guarantee UI is in-sync before dismissing loader
+                onSuccess(); // Fire-and-forget, do NOT await it!
               } catch (e) {
                 console.error('onSuccess refresh failed', e);
               }
@@ -928,7 +925,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           setTimeout(() => {
             isExecutingRef.current = false;
             window.dispatchEvent(new Event('exit-overlay-end'));
-          }, 150);
+          }, 50);
         }
       } else {
         // Buy/Sell flow: show the global loader overlay
@@ -949,30 +946,27 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         showToast(`${placeSide} order sent for ${item.symbol}`);
         onSuccess?.();
 
-        Promise.all([
-          placeOrder({
-            symbol: item.symbol,
-            kite_instrument: computedKiteSymbol || item.symbol,
-            segment: item.segment,
-            side: placeSide,
-            qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-            lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
-            order_type: resolvedOrderType as any,
-            product_type: productType,
-            client_price: resolvedClientPrice,
-            trigger_price: resolvedTriggerPrice,
-            stop_loss: resolvedStopLoss,
-            target: resolvedTarget,
-            is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
-          }),
-          new Promise(r => setTimeout(r, 1000)) // Keeps overlay active briefly so user sees positions list update
-        ]).then(async ([res]) => {
+        placeOrder({
+          symbol: item.symbol,
+          kite_instrument: computedKiteSymbol || item.symbol,
+          segment: item.segment,
+          side: placeSide,
+          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+          lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+          order_type: resolvedOrderType as any,
+          product_type: productType,
+          client_price: resolvedClientPrice,
+          trigger_price: resolvedTriggerPrice,
+          stop_loss: resolvedStopLoss,
+          target: resolvedTarget,
+          is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
+        }).then((res) => {
           if (!res.success) {
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
           } else {
             if (onSuccess) {
               try {
-                await onSuccess(); // Await refresh to guarantee UI is in-sync before dismissing loader
+                onSuccess(); // Fire-and-forget, do NOT await it!
               } catch (e) {
                 console.error('onSuccess refresh failed', e);
               }
