@@ -154,16 +154,23 @@ export default function ChartContainer({
       }
       pendingRef.current = {};
 
-      // Subscribe to auto save needed event
-      tvWidgetRef.current?.subscribe('onAutoSaveNeeded', () => {
-        tvWidgetRef.current?.save((state: any) => {
-          try {
-            localStorage.setItem('marginapexx_tv_layout', JSON.stringify(state));
-          } catch (e) {
-            console.error('Failed to save chart layout:', e);
-          }
-        });
-      });
+      const saveChartState = () => {
+        if (!tvWidgetRef.current) return;
+        try {
+          tvWidgetRef.current.save((state: any) => {
+            if (state) {
+              localStorage.setItem('marginapexx_tv_layout', JSON.stringify(state));
+            }
+          });
+        } catch (e) {
+          console.error('Failed to save chart layout:', e);
+        }
+      };
+
+      // Subscribe to auto save and drawing/indicator changes
+      tvWidgetRef.current?.subscribe('onAutoSaveNeeded', saveChartState);
+      tvWidgetRef.current?.subscribe('drawing_event', saveChartState);
+      tvWidgetRef.current?.subscribe('study_event', saveChartState);
     };
 
     // Arm 30-second timeout
