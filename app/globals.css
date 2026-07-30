@@ -43,7 +43,7 @@ body {
   margin: 0;
   padding: 0;
   width: 100%;
-  font-size: 15px; /* Scale anchor — changed from 16px (+2%) to expand the whole app. */
+  font-size: 14.5px; /* Reduced from 15px to zoom out the UI slightly */
   font-family: 'Inter', sans-serif;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
