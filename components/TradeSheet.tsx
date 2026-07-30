@@ -918,9 +918,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             }, 1500);
           } else {
             showToast(`Order Failed: ${res.error}`);
+            window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
           showToast(`Order Failed: ${err.message}`);
+          window.dispatchEvent(new Event('order_failed'));
         } finally {
           setTimeout(() => {
             isExecutingRef.current = false;
@@ -963,6 +965,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }).then((res) => {
           if (!res.success) {
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
+            window.dispatchEvent(new Event('order_failed'));
           } else {
             if (onSuccess) {
               try {
@@ -974,6 +977,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           }
         }).catch(err => {
           window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
+          window.dispatchEvent(new Event('order_failed'));
         }).finally(() => {
           setTimeout(() => {
             isExecutingRef.current = false;

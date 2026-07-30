@@ -380,9 +380,15 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     const handleOrderPlaced = () => {
       debouncedFetch(100);
     };
+
+    const handleOrderFailed = () => {
+      optimisticallyRemovedIds.current.clear();
+      fetchPositions();
+    };
     
     window.addEventListener('order_placed', handleOrderPlaced);
     window.addEventListener('order_placed_with_data', handleOrderPlacedWithData);
+    window.addEventListener('order_failed', handleOrderFailed);
 
     const timer = setInterval(() => {
       if (!isSubscribed) fetchPositions();
@@ -393,6 +399,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       supabase.removeChannel(channel);
       window.removeEventListener('order_placed', handleOrderPlaced);
       window.removeEventListener('order_placed_with_data', handleOrderPlacedWithData);
+      window.removeEventListener('order_failed', handleOrderFailed);
     };
   }, [fetchPositions]);
 
