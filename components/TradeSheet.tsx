@@ -891,7 +891,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           window.dispatchEvent(new Event('position-closed'));
           if (res.success) {
             showToast(`${placeSide} order sent for ${item.symbol}`);
-            onSuccess?.();
+            if (onSuccess) {
+              try {
+                await onSuccess();
+              } catch (e) {
+                console.error('onSuccess refresh failed', e);
+              }
+            }
             // Delayed re-fetch to catch Supabase propagation delay
             setTimeout(() => {
               window.dispatchEvent(new Event('order_placed'));
@@ -903,8 +909,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         } catch (err: any) {
           showToast(`Order Failed: ${err.message}`);
         } finally {
-          isExecutingRef.current = false;
-          window.dispatchEvent(new Event('exit-overlay-end'));
+          setTimeout(() => {
+            isExecutingRef.current = false;
+            window.dispatchEvent(new Event('exit-overlay-end'));
+          }, 150);
         }
       } else {
         // Buy/Sell flow: show the global loader overlay

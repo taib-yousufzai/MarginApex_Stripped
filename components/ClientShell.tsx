@@ -36,11 +36,22 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       setIsGlobalLoading(true);
     };
     const onEnd = () => setIsGlobalLoading(false);
+
+    const onExitStart = () => {
+      setLoadingText('Exiting Position...');
+      setIsGlobalLoading(true);
+    };
+    const onExitEnd = () => setIsGlobalLoading(false);
+
     window.addEventListener('global-loader-start', onStart);
     window.addEventListener('global-loader-end', onEnd);
+    window.addEventListener('exit-overlay-start', onExitStart);
+    window.addEventListener('exit-overlay-end', onExitEnd);
     return () => {
       window.removeEventListener('global-loader-start', onStart);
       window.removeEventListener('global-loader-end', onEnd);
+      window.removeEventListener('exit-overlay-start', onExitStart);
+      window.removeEventListener('exit-overlay-end', onExitEnd);
     };
   }, []);
 
