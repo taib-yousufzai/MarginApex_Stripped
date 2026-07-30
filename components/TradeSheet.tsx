@@ -870,19 +870,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         // Exit mode: show the full-screen overlay and await the order
         window.dispatchEvent(new Event('exit-overlay-start'));
         handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
-        
-        // Optimistic event for instant feedback on positions list
-        const optimisticPayload = {
-          symbol: item.symbol,
-          kite_instrument: computedKiteSymbol || item.symbol,
-          segment: item.segment,
-          side: placeSide,
-          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-          client_price: resolvedClientPrice,
-          product_type: propProductType || 'INTRADAY',
-        };
-        window.dispatchEvent(new Event('order_placed'));
-        window.dispatchEvent(new CustomEvent('order_placed_with_data', { detail: optimisticPayload }));
 
         try {
           const res = await placeOrder({
