@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { isContractExpired } from '@/lib/contractExpiry';
 
 export interface QuoteData {
   lastPrice: number;
@@ -33,7 +32,7 @@ class MarketWSManager {
   private ws: WebSocket | null = null;
   private listeners: Set<(type: string, data: any) => void> = new Set();
   public symbolRefCount: Map<string, number> = new Map();
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private wsUrl: string;
 
   constructor() {
@@ -45,15 +44,10 @@ class MarketWSManager {
         url = tickerUrl.replace(/^http/, 'ws');
       }
     }
-    if (!url && typeof window !== 'undefined') {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        url = `${protocol}//localhost:8080`;
-      } else {
-        url = `wss://marginapexx-production.up.railway.app`;
-      }
+    if (!url) {
+      url = `wss://marginapexx-production.up.railway.app`;
     }
-    this.wsUrl = url || 'ws://localhost:8080';
+    this.wsUrl = url;
 
     if (typeof window !== 'undefined') {
       let lastHiddenTime = 0;
@@ -63,13 +57,13 @@ class MarketWSManager {
         } else if (document.visibilityState === 'visible') {
           if (lastHiddenTime > 0 && Date.now() - lastHiddenTime > 10000) {
             if (this.ws) this.ws.close();
-            else this.connect();
+            else if (this.symbolRefCount.size > 0) this.connect();
           }
           lastHiddenTime = 0;
         }
       });
       window.addEventListener('online', () => {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) this.connect();
+        if ((!this.ws || this.ws.readyState !== WebSocket.OPEN) && this.symbolRefCount.size > 0) this.connect();
       });
     }
   }
@@ -91,13 +85,18 @@ class MarketWSManager {
         } else if (payload.type === 'update') {
           this.notifyListeners('update', { symbol: payload.symbol, quote: payload.data });
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error('[MarketWSManager] error parsing message:', err);
+      }
     };
     this.ws.onclose = () => this.scheduleReconnect();
-    this.ws.onerror = () => {};
+    this.ws.onerror = (e) => {
+      console.error('[MarketWSManager] WebSocket error:', e);
+    };
   }
 
   private scheduleReconnect() {
+    if (this.symbolRefCount.size === 0) return;
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
     this.reconnectTimeout = setTimeout(() => this.connect(), 3000);
   }
@@ -106,8 +105,15 @@ class MarketWSManager {
     for (const listener of this.listeners) listener(type, data);
   }
 
-  public subscribe(symbols: string[], listener?: (type: string, data: any) => void) {
-    if (listener) this.listeners.add(listener);
+  public addListener(listener: (type: string, data: any) => void) {
+    this.listeners.add(listener);
+  }
+
+  public removeListener(listener: (type: string, data: any) => void) {
+    this.listeners.delete(listener);
+  }
+
+  public subscribe(symbols: string[]) {
     this.connect();
     const toSubscribe: string[] = [];
     for (const sym of symbols) {
@@ -120,7 +126,7 @@ class MarketWSManager {
     }
   }
 
-  public unsubscribe(symbols: string[], listener?: (type: string, data: any) => void) {
+  public unsubscribe(symbols: string[]) {
     const toUnsubscribe: string[] = [];
     for (const sym of symbols) {
       const count = this.symbolRefCount.get(sym) || 0;
@@ -135,15 +141,14 @@ class MarketWSManager {
       this.ws.send(JSON.stringify({ action: 'unsubscribe', symbols: toUnsubscribe }));
     }
     if (this.symbolRefCount.size === 0) {
-      if (listener) this.listeners.delete(listener);
       if (this.ws) {
         this.ws.close();
         this.ws = null;
       }
     }
   }
-  public get isConnected(): boolean {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  public get isConnectingOrOpen(): boolean {
+    return this.ws !== null;
   }
 }
 
@@ -152,6 +157,7 @@ const wsManager = new MarketWSManager();
 export const MarketDataProvider = ({ children }: { children: React.ReactNode }) => {
   const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
   const pendingUpdatesRef = useRef<Record<string, QuoteData>>({});
+  const fetchInitialQuotesRef = useRef<() => void>(() => {});
 
   // Periodically flush buffered updates to state at 250ms interval
   useEffect(() => {
@@ -174,9 +180,11 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
           const q = quote as any;
           const close = q.ohlc?.close || q.close || 0;
           let finalPrice = q.last_price || close;
-          if (q.bid > 0 && q.ask > 0) {
-            if (finalPrice > q.ask) finalPrice = q.ask;
-            if (finalPrice < q.bid) finalPrice = q.bid;
+          const bid = Number(q.bid || 0);
+          const ask = Number(q.ask || 0);
+          if (bid > 0 && ask > 0) {
+            if (finalPrice > ask) finalPrice = ask;
+            if (finalPrice < bid) finalPrice = bid;
           }
           const changePercent = close > 0 ? ((finalPrice - close) / close) * 100 : 0;
           mapped[key] = {
@@ -197,9 +205,11 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
         const { symbol, quote: q } = data;
         const close = q.ohlc?.close || q.close || 0;
         let finalPrice = q.last_price || close;
-        if (q.bid > 0 && q.ask > 0) {
-          if (finalPrice > q.ask) finalPrice = q.ask;
-          if (finalPrice < q.bid) finalPrice = q.bid;
+        const bid = Number(q.bid || 0);
+        const ask = Number(q.ask || 0);
+        if (bid > 0 && ask > 0) {
+          if (finalPrice > ask) finalPrice = ask;
+          if (finalPrice < bid) finalPrice = bid;
         }
         const changePercent = close > 0 ? ((finalPrice - close) / close) * 100 : 0;
         const newQuote = {
@@ -218,23 +228,18 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
       }
     };
 
-    // We subscribe globally to nothing initially, but we attach the global listener
-    wsManager.subscribe([], onMessage);
+    wsManager.addListener(onMessage);
 
 
 
     const fetchInitialQuotes = async () => {
-      if (wsManager.isConnected) return;
+      if (wsManager.isConnectingOrOpen) return;
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
       try {
         let baseUrl = process.env.NEXT_PUBLIC_TICKER_URL;
         if (!baseUrl) {
-          if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            baseUrl = 'https://marginapexx-production.up.railway.app';
-          } else {
-            baseUrl = 'http://localhost:8080';
-          }
+          baseUrl = 'https://marginapexx-production.up.railway.app';
         }
         const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(s)).join(',')}`);
         if (res.ok) {
@@ -243,20 +248,30 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
             onMessage('quotes', json.data);
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error('[MarketDataProvider] HTTP fallback error:', err);
+      }
     };
+
+    fetchInitialQuotesRef.current = fetchInitialQuotes;
+    fetchInitialQuotes();
 
     const pollInterval = setInterval(fetchInitialQuotes, 3000);
 
     return () => {
       clearInterval(pollInterval);
-      wsManager.unsubscribe([], onMessage);
+      wsManager.removeListener(onMessage);
     };
   }, []);
 
   const subscribe = useCallback((symbols: string[]) => {
     const validSymbols = symbols.filter(Boolean);
-    if (validSymbols.length > 0) wsManager.subscribe(validSymbols);
+    if (validSymbols.length > 0) {
+      wsManager.subscribe(validSymbols);
+      if (!wsManager.isConnectingOrOpen) {
+        fetchInitialQuotesRef.current?.();
+      }
+    }
   }, []);
 
   const unsubscribe = useCallback((symbols: string[]) => {

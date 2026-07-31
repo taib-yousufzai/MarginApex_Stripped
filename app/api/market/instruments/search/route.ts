@@ -556,7 +556,17 @@ export async function GET(request: NextRequest) {
       } else if (type === 'EQ') {
         segmentLabel = `${exch} - Equity`;
       } else {
-        segmentLabel = inst.segment || inst.exchange || '';
+        // Robust fallback by inspecting the tradingsymbol
+        const symUpper = (inst.tradingsymbol || '').toUpperCase();
+        if (symUpper.includes('CE') || symUpper.includes('PE') || symUpper.includes('OPT')) {
+          if (['NSE', 'BSE'].includes(exch)) segmentLabel = isIndex ? `${exch} - Options` : `${exch} - Stock Options`;
+          else segmentLabel = `${exch} - Options`;
+        } else if (symUpper.includes('FUT')) {
+          if (['NSE', 'BSE'].includes(exch)) segmentLabel = isIndex ? `${exch} - Futures` : `${exch} - Stock Futures`;
+          else segmentLabel = `${exch} - Futures`;
+        } else {
+          segmentLabel = inst.segment || inst.exchange || '';
+        }
       }
 
       const kiteId = `${inst.exchange}:${inst.tradingsymbol}`;

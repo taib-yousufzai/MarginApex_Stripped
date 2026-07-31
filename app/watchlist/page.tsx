@@ -247,7 +247,21 @@ export function getTabForItem(item: WatchlistItem): TabLabel {
   if (item.segment && SEGMENT_TAB_MAP[item.segment]) {
     return SEGMENT_TAB_MAP[item.segment];
   }
-  return 'INDEX-FUT'; // Fallback
+
+  // Robust fallback for unmapped instruments
+  const n = (item.name || item.symbol || '').toUpperCase();
+  if (n.includes('NATURALGAS') || n.includes('CRUDEOIL') || n.includes('GOLD') || n.includes('SILVER') || n.includes('COPPER') || n.includes('ZINC') || n.includes('MCX') || n.includes('ALUMINIUM') || n.includes('LEAD')) {
+    if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) return 'MCX-OPT';
+    return 'MCX-FUT';
+  }
+  if (n.includes('BTC') || n.includes('ETH') || n.includes('DOGE') || n.includes('USDT') || n.includes('CRYPTO')) return 'CRYPTO';
+  if (n.includes('USDINR') || n.includes('EURINR') || n.includes('GBPINR') || n.includes('JPYINR') || n.includes('CDS')) return 'FOREX';
+  if (n.includes('RELIANCE') || n.includes('HDFC') || n.includes('TCS') || n.includes('INFY') || n.includes('STK')) {
+    if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) return 'STOCK-OPT';
+    return 'STOCK-FUT';
+  }
+
+  return 'INDEX-FUT'; // Ultimate Fallback
 }
 
 /** Filters items to those belonging to the active tab. */
@@ -277,8 +291,9 @@ export function filterBySearch(items: WatchlistItem[], query: string): Watchlist
 export function getExchangeBadge(segment: string): string {
   if (segment.startsWith('NSE') && segment !== 'NSE - Equity') return 'NFO';
   if (segment.startsWith('BSE') && segment !== 'BSE - Equity') return 'BFO';
-  if (segment.startsWith('MCX')) return 'MCX';
-  if (segment.startsWith('CDS')) return 'CDS';
+  if (segment.startsWith('MCX') || segment.includes('MCX')) return 'MCX';
+  if (segment.startsWith('CDS') || segment.includes('FOREX')) return 'CDS';
+  if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
   if (segment === 'NSE - Equity') return 'NSE';
   if (segment === 'BSE - Equity') return 'BSE';
   return 'OTH';
@@ -1005,7 +1020,17 @@ function WatchlistContent() {
     // would re-open the deep-linked chart whenever a new item is added from the library.
     if (deepLinkHandledRef.current) return;
     deepLinkHandledRef.current = true;
-    const query = deepLinkSymbol.toUpperCase();
+    // Map dashboard display names back to their standard search terms
+    const aliasMap: Record<string, string> = {
+      'NAT GAS': 'NATURALGAS',
+      'CRUDE OIL': 'CRUDEOIL',
+      'BANK NIFTY': 'BANKNIFTY',
+    };
+    
+    let query = deepLinkSymbol.toUpperCase();
+    if (aliasMap[query]) {
+      query = aliasMap[query];
+    }
 
     const tryOpen = (items: WatchlistItem[]) => {
       let item = items.find(i =>

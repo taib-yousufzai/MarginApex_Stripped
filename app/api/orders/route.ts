@@ -1320,7 +1320,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       p_stop_loss:    resolvedStopLoss,
       p_target:       target ? parseFloat(target.toString()) : null,
       p_is_exit:      is_exit ?? false,
-      p_buffer_fee:   bufferFee
+      p_buffer_fee:   bufferFee,
+      p_status:       isImmediate ? 'EXECUTED' : 'PENDING'
     });
     if (rpcErr) {
       throw new Error(rpcErr.message || 'Order execution failed. Please try again.');
