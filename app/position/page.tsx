@@ -1207,7 +1207,7 @@ export default function PositionPage() {
                                     if (pos.hold_lock_active) {
                                       setLockModalPos(actualPos);
                                     } else {
-                                      handleRowClick(actualPos);
+                                      openTradeExit(actualPos, false);
                                     }
                                   }}
                                 >
