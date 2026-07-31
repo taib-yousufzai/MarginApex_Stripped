@@ -1672,6 +1672,7 @@ function WatchlistContent() {
                 item={selectedItem as any}
                 side={tradeSide === 'BOTH' ? 'BUY' : tradeSide}
                 onClose={closeTradeSheet}
+                hideLotText={true}
               />
             )}
 

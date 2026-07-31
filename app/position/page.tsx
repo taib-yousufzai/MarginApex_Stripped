@@ -1757,6 +1757,7 @@ export default function PositionPage() {
         isFromPositions={tradeSheetIsAddMore}
         linkedPosId={tradeSheetLinkedPosId}
         initialExitQty={tradeSheetInitialExitQty}
+        hideLotText={true}
       />
 
       {/* Chart Sheet */}
