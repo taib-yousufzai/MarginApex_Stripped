@@ -9,8 +9,9 @@ export function deriveExchange(symbolName: string): string {
   if (symbolName.startsWith('NSE:')) return 'NSE';
   if (symbolName.startsWith('BSE:')) return 'BSE';
   if (symbolName.startsWith('MCX:')) return 'MCX';
-  if (symbolName.startsWith('NFO:') || symbolName.startsWith('BFO:')) return 'NSE';
-  if (symbolName.startsWith('CDS:')) return 'NSE';
+  if (symbolName.startsWith('NFO:')) return 'NFO';
+  if (symbolName.startsWith('BFO:')) return 'BFO';
+  if (symbolName.startsWith('CDS:')) return 'CDS';
 
   // Guess exchange based on commodity/currency names if no prefix is provided
   const upper = symbolName.toUpperCase();
@@ -29,6 +30,11 @@ export function deriveExchange(symbolName: string): string {
     upper.startsWith('GBPINR') || upper.startsWith('JPYINR')
   ) {
     return 'CDS';
+  }
+
+  if (upper.match(/(CE|PE|FUT)$/)) {
+    if (upper.includes('SENSEX') || upper.includes('BANKEX')) return 'BFO';
+    return 'NFO';
   }
 
   return 'NSE';
