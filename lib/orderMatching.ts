@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { getAdminClient } from './adminClient.ts';
 import { telemetry } from './metrics.ts';
 import { checkAndExecuteAccountLiquidation } from './liquidationEngine.ts';
-import { calculateCarryBrokerage } from './brokerage.ts';
+import { calculateCarryBrokerage } from './trading/BrokerageCalculator';
 import { isContractExpired } from './contractExpiry.ts';
 import { calculateFloatingPnl, calculateExitPrice } from './floatingPnl.ts';
 

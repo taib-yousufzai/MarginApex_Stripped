@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { getSharedKiteSession } from '@/lib/kiteSession';
-import { calculateCarryBrokerage } from '@/lib/brokerage';
+import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 
 /**
  * Fetch LTPs for a mixed batch of instruments (Kite + Binance crypto).
@@ -342,4 +342,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
   }
 }
+
 

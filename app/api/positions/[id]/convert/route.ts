@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
-import { calculateCarryBrokerage } from '@/lib/brokerage';
+import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 import { getLotSizeFromDB } from '@/lib/lotSize';
 import { calculateFreeMarginFromPositions } from '@/lib/floatingPnl';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '@/lib/supabaseClient';
 
 interface ActionLog {
   id: string;
@@ -23,7 +23,6 @@ export default function ActionLogsPage() {
   const [search, setSearch] = useState('');
   const [filterModule, setFilterModule] = useState('ALL');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const supabase = createClientComponentClient();
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);

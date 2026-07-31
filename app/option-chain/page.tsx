@@ -9,7 +9,7 @@ import OptionChainTable from './OptionChainTable';
 import TradingSegmentsDrawer from '@/components/TradingSegmentsDrawer';
 import { WatchlistItem, getTabForItem } from '@/app/watchlist/page';
 import AnimatedLoader from '@/components/AnimatedLoader';
-import { calculateMarginPortion } from '@/lib/marginCalculator';
+import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import './option-chain.css';
 import dynamic from 'next/dynamic';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
@@ -956,3 +956,4 @@ export default function OptionChainPage() {
     </Suspense>
   );
 }
+

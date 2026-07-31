@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { calculateCarryBrokerage } from './brokerage.ts';
+import { calculateCarryBrokerage } from './trading/BrokerageCalculator';
 import { calculateExitPrice, calculateFreeMargin } from './floatingPnl.ts';
 
 export interface LiquidationResult {

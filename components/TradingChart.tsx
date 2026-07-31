@@ -14,7 +14,7 @@ import OptionChainTable from '@/app/option-chain/OptionChainTable';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
-import { calculateMarginPortion } from '@/lib/marginCalculator';
+import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import './trading-chart.css';
@@ -2800,4 +2800,5 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     </div>
   );
 }
+
 

@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { getSharedKiteSession } from '@/lib/kiteSession';
-import { calculateCarryBrokerage } from '@/lib/brokerage';
+import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 import { calculateExitPrice } from '@/lib/floatingPnl';
 import type { ClosePositionResponse } from '@/lib/types/order';
 import { logAction, extractClientIp } from '@/lib/actionLogger';

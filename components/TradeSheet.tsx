@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
-import { calculateMarginPortion } from '@/lib/marginCalculator';
+import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import { ErrorModal } from '@/components/ErrorModal';
 export interface TradeSheetItem {
   name: string;
@@ -1720,3 +1720,4 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     </>
   );
 }
+

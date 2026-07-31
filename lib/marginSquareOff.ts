@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { calculateCarryBrokerage } from './brokerage';
+import { calculateCarryBrokerage } from './trading/BrokerageCalculator';
 import { calculateFloatingPnl, calculateExitPrice, calculateFreeMargin } from './floatingPnl';
 
 export async function checkAndSquareOffPositionsForMargin(userId: string, adminClient: SupabaseClient) {
