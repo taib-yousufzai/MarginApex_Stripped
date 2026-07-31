@@ -1781,10 +1781,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         {/* Cumulative / Detailed Toggle */}
         <div style={{
           display: 'flex',
-          padding: '0 8px',
           borderBottom: '2px solid var(--border-light, #E8ECF0)',
           background: 'var(--container-bg, #fff)',
           flexShrink: 0,
+          width: 'calc(100% + 1rem)',
+          margin: '-0.5rem -0.5rem 0 -0.5rem'
         }}>
           <button
             onClick={() => setPositionViewMode('cumulative')}
