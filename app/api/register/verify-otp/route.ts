@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createHash } from 'crypto';
 import { getAdminClient } from '@/lib/adminClient';
+import { logAction, extractClientIp } from '@/lib/actionLogger';
 
 function hashOtp(otp: string): string {
   return createHash('sha256').update(otp).digest('hex');
@@ -66,19 +67,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Check whether this email already has an auth account ─────────────────
-    const { data: existingUsers } = await admin.auth.admin.listUsers();
-    const alreadyExists = existingUsers?.users?.some(
-      (u) => u.email?.toLowerCase() === emailLower,
-    );
-    if (alreadyExists) {
-      await admin.from('otp_verifications').delete().eq('email', emailLower);
-      return Response.json(
-        { error: 'An account with this email already exists. Please sign in.' },
-        { status: 409 },
-      );
-    }
-
     // ── OTP valid → create the auth user (email pre-confirmed) ───────────────
     // email_confirm: true  →  bypasses Supabase confirmation email entirely.
     // broker_ref in user_metadata is picked up by the handle_new_user DB trigger.
@@ -121,7 +109,8 @@ export async function POST(req: NextRequest) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let client_id = '';
     let isUnique = false;
-    while (!isUnique) {
+    let attempts = 0;
+    while (!isUnique && attempts < 10) {
       client_id = '';
       for (let i = 0; i < 6; i++) {
         client_id += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -130,6 +119,17 @@ export async function POST(req: NextRequest) {
       if (!existing) {
         isUnique = true;
       }
+      attempts++;
+    }
+    
+    if (!isUnique) {
+      console.error('[verify-otp] Failed to generate unique client_id after 10 attempts');
+      // Roll back auth user so the registration can be retried cleanly
+      await admin.auth.admin.deleteUser(userId);
+      return Response.json(
+        { error: 'Failed to create user profile due to ID collision. Please try again.' },
+        { status: 500 },
+      );
     }
 
     const { error: profileError } = await admin.from('profiles').upsert(
@@ -161,8 +161,24 @@ export async function POST(req: NextRequest) {
     await admin.from('otp_verifications').delete().eq('email', emailLower);
 
     console.info('[verify-otp] Account created:', userId, '| parent_id:', record.broker_ref);
+    
+    logAction({
+      actionType: 'REGISTER_USER',
+      module: 'AUTH',
+      apiEndpoint: '/api/register/verify-otp',
+      httpMethod: 'POST',
+      ipAddress: extractClientIp(req.headers),
+      userId: userId,
+      username: emailLower,
+      role: 'user',
+      requestPayload: { email: emailLower },
+      responseStatus: 200,
+      isSuccess: true,
+      metadata: { broker_ref: record.broker_ref, client_id }
+    });
+
     return Response.json({ success: true, userId });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[verify-otp] Unexpected error:', err);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }

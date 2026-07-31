@@ -20,28 +20,26 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status');
 
-    let positionsQuery = admin.from('positions').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    let positionsQuery = admin.from('positions').select('*').eq('user_id', user.id);
     if (statusParam) {
       if (statusParam === 'open') {
-        // 'open' shorthand — include both 'open' and 'active' statuses
-        positionsQuery = positionsQuery.in('status', ['open', 'active']);
+        // 'open' shorthand — include both 'open' and 'active' statuses (case-insensitive)
+        positionsQuery = positionsQuery
+        .in('status', ['open', 'OPEN', 'active', 'ACTIVE'])
+        .order('created_at', { ascending: false });
       } else {
-        positionsQuery = positionsQuery.eq('status', statusParam);
+        positionsQuery = positionsQuery.eq('status', statusParam).order('updated_at', { ascending: false });
 
         // For closed positions, default to today-only unless 'all' param is passed
         if (statusParam === 'closed' && !searchParams.get('all')) {
-          // Compute today's start in IST (UTC+5:30), then convert to UTC for the DB query
-          const now = new Date();
-          const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-          const istNow = new Date(now.getTime() + istOffset);
-          const istMidnight = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
-          const utcMidnight = new Date(istMidnight.getTime() - istOffset);
+          const targetDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+          const utcMidnight = new Date(`${targetDateStr}T00:00:00+05:30`);
           positionsQuery = positionsQuery.gte('updated_at', utcMidnight.toISOString());
         }
       }
     } else {
-      // Default: only return open/active — closed positions are fetched explicitly
-      positionsQuery = positionsQuery.in('status', ['open', 'active']);
+      // Default: only return open/active — closed positions are fetched explicitly (case-insensitive)
+      positionsQuery = positionsQuery.in('status', ['open', 'OPEN', 'active', 'ACTIVE']).order('created_at', { ascending: false });
     }
 
     // Fetch positions

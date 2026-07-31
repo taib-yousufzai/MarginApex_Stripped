@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
+import { logAction, extractClientIp } from '@/lib/actionLogger';
 
 const ALLOWED_FIELDS = [
     'full_name', 'phone', 'date_of_birth',
@@ -49,36 +50,92 @@ export async function PATCH(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     let body: Record<string, unknown>;
-    try { body = await request.json(); }
+    try { body = await request.clone().json(); }
     catch { return NextResponse.json({ error: 'Invalid request body' }, { status: 400 }); }
 
     const updates: Record<string, string> = {};
+    const loggedFields: Record<string, string> = {};
     for (const field of ALLOWED_FIELDS) {
-        if (typeof body[field] === 'string') updates[field] = (body[field] as string).trim();
+        if (typeof body[field] === 'string') {
+            const v = (body[field] as string).trim();
+            updates[field] = v;
+            loggedFields[field] = v;
+        } else if (typeof body[field] === 'number') {
+            const v = String(body[field]).trim();
+            updates[field] = v;
+            loggedFields[field] = v;
+        }
     }
 
     if (Object.keys(updates).length === 0)
         return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
 
     const admin = getAdminClient();
-    const { error } = await admin.from('profiles').update(updates).eq('id', user.id);
-    if (error) {
-        console.error('[PATCH /api/user/profile]', error);
-        return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
+    const bankUpdate: Record<string, string> = {};
+    if (updates.bank_name) bankUpdate.bank_name = updates.bank_name;
+    if (updates.account_no) bankUpdate.account_no = updates.account_no;
+    if (updates.ifsc) bankUpdate.ifsc = updates.ifsc;
+    
+    // Remove bank fields from profile update payload (sync only to bank accounts)
+    delete updates.bank_name;
+    delete updates.account_no;
+    delete updates.ifsc;
+
+    if (Object.keys(updates).length > 0) {
+        const { error } = await admin.from('profiles').update(updates).eq('id', user.id);
+        if (error) {
+            console.error('[PATCH /api/user/profile]', error);
+            return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
+        }
     }
 
     // Also update primary bank account if bank fields are present
-    if (updates.bank_name || updates.account_no || updates.ifsc) {
-        await admin
+    if (Object.keys(bankUpdate).length > 0) {
+        const { data: updatedBank, error: bankUpdateError } = await admin
             .from('user_bank_accounts')
-            .update({
-                bank_name: updates.bank_name,
-                account_no: updates.account_no,
-                ifsc: updates.ifsc
-            })
+            .update(bankUpdate)
             .eq('user_id', user.id)
-            .eq('is_primary', true);
+            .eq('is_primary', true)
+            .select('id');
+            
+        if (bankUpdateError) {
+            console.error('[PATCH /api/user/profile] Bank update error:', bankUpdateError);
+            return NextResponse.json({ error: 'Failed to update bank details' }, { status: 500 });
+        }
+        
+        if (!updatedBank || updatedBank.length === 0) {
+            // No primary bank account exists, insert one
+            const { error: bankInsertError } = await admin
+                .from('user_bank_accounts')
+                .insert({
+                    user_id: user.id,
+                    bank_name: bankUpdate.bank_name || null,
+                    account_no: bankUpdate.account_no || null,
+                    ifsc: bankUpdate.ifsc || null,
+                    is_primary: true
+                });
+                
+            if (bankInsertError) {
+                console.error('[PATCH /api/user/profile] Bank insert error:', bankInsertError);
+                return NextResponse.json({ error: 'Failed to insert bank details' }, { status: 500 });
+            }
+        }
     }
+
+    logAction({
+      actionType: 'UPDATE_PROFILE',
+      module: 'USER_PREFERENCES',
+      apiEndpoint: '/api/user/profile',
+      httpMethod: 'PATCH',
+      ipAddress: extractClientIp(request.headers),
+      userId: user.id,
+      username: user.user_metadata?.username || user.email,
+      role: user.user_metadata?.role,
+      requestPayload: loggedFields,
+      responseStatus: 200,
+      isSuccess: true,
+      metadata: { fields_updated: Object.keys(loggedFields) }
+    });
 
     return NextResponse.json({ success: true });
 }

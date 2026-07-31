@@ -19,6 +19,7 @@ import { getSharedKiteSession } from '@/lib/kiteSession';
 import { calculateCarryBrokerage } from '@/lib/brokerage';
 import { calculateExitPrice } from '@/lib/floatingPnl';
 import type { ClosePositionResponse } from '@/lib/types/order';
+import { logAction, extractClientIp } from '@/lib/actionLogger';
 
 /**
  * Fetch the Kite LTP for a single instrument key server-side.
@@ -184,14 +185,54 @@ async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: numbe
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: { id: string } },
+): Promise<NextResponse> {
+  const ipAddress = extractClientIp(request.headers);
+  const clonedRequest = request.clone();
+  
+  let payload: any = null;
+  try {
+    payload = await clonedRequest.json();
+  } catch {}
+
+  const response = await handleClosePosition(request, params, ipAddress);
+
+  let errorMessage: string | null = null;
+  if (!response.ok) {
+    try {
+      const errorData = await response.clone().json();
+      errorMessage = errorData.error || errorData.message || 'Unknown error';
+    } catch {
+      errorMessage = 'Failed to parse error response';
+    }
+  }
+
+  logAction({
+    actionType: 'CLOSE_POSITION',
+    module: 'TRADING',
+    apiEndpoint: '/api/positions/[id]/close',
+    httpMethod: 'POST',
+    ipAddress,
+    requestPayload: payload,
+    responseStatus: response.status,
+    isSuccess: response.ok,
+    errorMessage,
+  });
+
+  return response;
+}
+
+async function handleClosePosition(
+  request: NextRequest,
+  params: { id: string },
+  clientIp: string
 ): Promise<NextResponse> {
   const user = await getUserFromRequest(request);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { id: positionId } = await params;
+  const { id: positionId } = params;
   if (!positionId) {
     return NextResponse.json({ error: 'Missing position id' }, { status: 400 });
   }
@@ -225,8 +266,9 @@ export async function POST(
     (!speculativeSegment.toUpperCase().includes('CRYPTO')) 
         ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', segmentId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
+    // Initial speculative fetch: use child settings as a best-effort guess.
     admin.from('segment_settings').select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
-        .eq('user_id', user.id) // Fallback: user.id, but actually we need parent_id. We'll use user.id here for now, but really this might be wrong if it's a child user. We can just fetch it sequentially if we need to, but let's assume it works.
+        .eq('user_id', user.id)
         .eq('segment', speculativeSegment)
         .eq('side', speculativeSide)
         .maybeSingle(),
@@ -258,9 +300,15 @@ export async function POST(
     const targetTable = profileResult.data?.trading_mode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
 
     const [realHr, realSeg, realLtp] = await Promise.all([
-      (!segUp.includes('CRYPTO')) ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', actualSegId).maybeSingle() : Promise.resolve({ data: null, error: null }),
-      admin.from(targetTable).select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
-          .eq('user_id', lookupId).eq('segment', pos.settlement ?? '').eq('side', pos.side).maybeSingle(),
+      (!segUp.includes('CRYPTO'))
+        ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', actualSegId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      admin.from(targetTable)
+          .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+          .eq('user_id', lookupId)
+          .eq('segment', pos.settlement ?? '')
+          .eq('side', pos.side)
+          .maybeSingle(),
       (clientPrice ? Promise.resolve(null) : fetchLtp(pos.symbol, pos.settlement ?? ''))
     ]);
     finalHrResult = realHr;
@@ -276,10 +324,6 @@ export async function POST(
         return NextResponse.json({ error: 'market is closed' }, { status: 400 });
       }
       const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-      const dayOfWeek = nowIST.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-      }
       const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
       if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
         return NextResponse.json({ error: 'market is closed' }, { status: 400 });
@@ -310,10 +354,10 @@ export async function POST(
     ? (baseLtp - Number(pos.entry_price)) * Number(pos.qty_open)
     : (Number(pos.entry_price) - baseLtp) * Number(pos.qty_open);
 
-  const durationSec = Math.floor((Date.now() - new Date(pos.entry_time).getTime()) / 1000);
+  const durationSec = pos.entry_time ? Math.floor((Date.now() - new Date(pos.entry_time).getTime()) / 1000) : 0;
   const requiredHold = pnlValue > 0 ? profitHoldSec : lossHoldSec;
 
-  if (durationSec < requiredHold) {
+  if (pos.entry_time && durationSec < requiredHold) {
     return NextResponse.json({
       error: `Anti-Scalping: Minimum hold time of ${requiredHold}s required for this trade. Elapsed: ${durationSec}s.`,
     }, { status: 403 });
@@ -353,6 +397,30 @@ export async function POST(
     console.error('[POST /api/positions/[id]/close] RPC error:', rpcErr);
     return NextResponse.json({ error: 'Failed to close position. Please try again.' }, { status: 500 });
   }
+
+  // Record the exit transaction in the orders history table so it shows up in the History tab
+  const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
+  admin.from('orders').insert({
+    user_id: user.id,
+    symbol: pos.symbol,
+    kite_instrument: pos.kite_instrument || pos.symbol,
+    segment: pos.settlement || 'NSE-EQ',
+    side: exitSide,
+    status: 'EXECUTED',
+    qty: pos.qty_open,
+    lots: pos.lots || 0,
+    price: exitPrice,
+    fill_price: exitPrice,
+    ltp_at_entry: baseLtp,
+    order_type: 'MARKET',
+    product_type: pos.product_type || 'INTRADAY',
+    info: positionId, // linking to original position
+    is_exit: true
+  }).then(({ error: historyErr }) => {
+    if (historyErr) {
+      console.error('[POST /api/positions/[id]/close] Failed to log exit order history:', historyErr);
+    }
+  });
 
   const response: ClosePositionResponse = {
     pnl:        Number(pnl),

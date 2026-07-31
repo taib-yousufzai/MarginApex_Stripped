@@ -12,6 +12,7 @@
 import { requireAdmin } from '../../../_auth';
 import { getRole } from '../../../../../../lib/auth';
 import type { EntryType, Direction } from '../../../../../../lib/ledger';
+import { logAction, extractClientIp } from '@/lib/actionLogger';
 
 const VALID_ENTRY_TYPES: EntryType[] = ['DEPOSIT', 'WITHDRAWAL', 'ADJUSTMENT', 'CORRECTION', 'REFUND'];
 
@@ -19,16 +20,28 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ) {
+  let callerUser: any = null;
+  let body: any = null;
+  let ipAddress: string = '';
+
   try {
+    ipAddress = extractClientIp(request.headers);
     const authResult = await requireAdmin(request);
     if (authResult instanceof Response) return authResult;
-    const { adminClient, callerUser } = authResult;
+    
+    callerUser = authResult.callerUser;
+    const adminClient = authResult.adminClient;
 
     const resolvedParams = await Promise.resolve(params);
     const userId = resolvedParams.id;
 
-    const body = await request.json();
-    const { amount, type, remark, description, entry_type } = body;
+    const clonedRequest = request.clone();
+    
+    try {
+      body = await clonedRequest.json();
+    } catch {}
+    
+    const { amount, type, remark, description, entry_type } = body || {};
 
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return Response.json({ error: 'Invalid amount' }, { status: 400 });
@@ -129,7 +142,7 @@ export async function POST(
     // 4. Fetch user positions to compute snapshot metrics (brokerage, margin used, open pnl, m2m, etc.)
     const { data: positions, error: posError } = await adminClient
       .from('positions')
-      .select('status, brokerage, settlement, pnl, entry_time, exit_time')
+      .select('status, brokerage, settlement, pnl, entry_time, exit_time, locked_margin, margin_required')
       .eq('user_id', userId);
 
     let totalBrokerage = 0;
@@ -144,7 +157,7 @@ export async function POST(
       for (const pos of positions) {
         totalBrokerage += Number(pos.brokerage || 0);
         if (pos.status === 'open' || pos.status === 'active') {
-          marginUsed += Math.abs(Number(pos.settlement || 0));
+          marginUsed += Math.abs(Number(pos.locked_margin || pos.margin_required || 0));
           openPnL += Number(pos.pnl || 0);
         }
         const isToday = pos.entry_time >= today || (pos.exit_time && pos.exit_time >= today);
@@ -156,21 +169,25 @@ export async function POST(
       console.error('[POST ledger] Error fetching positions for stats:', posError.message);
     }
 
+    // 4. Log action to action_logs (act_logs has been deprecated for this route)
     const logReason = `[${type} - ${remark}] Note: ${(description || '').trim()} | Balance: ₹${newBalance.toFixed(2)} | Margin Used: ₹${marginUsed.toFixed(2)} | Brokerage: ₹${totalBrokerage.toFixed(2)} | Open PnL: ₹${openPnL.toFixed(2)} | M2M: ₹${m2m.toFixed(2)} | Demo: ${profile.demo_user ? 'Yes' : 'No'}`;
 
-    // 4. Log action to act_logs
-    const { error: logError } = await adminClient.from('act_logs').insert({
-      type: 'ADMIN_ACTION',
-      user_id: callerUser.id,
-      target_user_id: userId,
-      reason: logReason,
-      price: type === 'Credit' ? adjustment : -adjustment,
-      created_at: new Date().toISOString(),
+    logAction({
+      actionType: 'WALLET_ADJUSTMENT',
+      module: 'WALLET',
+      apiEndpoint: '/api/admin/users/[id]/ledger',
+      httpMethod: 'POST',
+      ipAddress,
+      userId: callerUser.id,
+      username: callerUser.user_metadata?.username || callerUser.email,
+      role: callerRole,
+      requestPayload: body,
+      responseStatus: 200,
+      isSuccess: true,
+      metadata: { target_user_id: userId, amount: adjustment, type, entry_type, log_reason: logReason },
+      walletBefore: currentBalance,
+      walletAfter: newBalance
     });
-
-    if (logError) {
-      console.error('[POST ledger] act_log insert error:', logError.message);
-    }
 
     return Response.json({ 
       success: true, 
@@ -180,6 +197,22 @@ export async function POST(
 
   } catch (error: any) {
     console.error('[POST ledger] Unexpected error:', error);
+    
+    logAction({
+      actionType: 'WALLET_ADJUSTMENT',
+      module: 'WALLET',
+      apiEndpoint: '/api/admin/users/[id]/ledger',
+      httpMethod: 'POST',
+      ipAddress: ipAddress || 'unknown',
+      userId: callerUser?.id,
+      username: callerUser?.user_metadata?.username || callerUser?.email,
+      role: callerUser ? getRole(callerUser) : undefined,
+      requestPayload: body || {},
+      responseStatus: 500,
+      isSuccess: false,
+      errorMessage: error.message || 'Internal server error'
+    });
+
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

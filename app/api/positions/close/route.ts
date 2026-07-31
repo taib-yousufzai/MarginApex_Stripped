@@ -233,13 +233,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             }
 
             const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-            const dayOfWeek = nowIST.getDay();
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-            if (isWeekend) {
-              results.push({ positionId: pos.id, success: false, error: 'market is closed' });
-              continue;
-            }
 
             const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
             if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
@@ -256,7 +250,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
         const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
-        const baseLtp = quotesMap[lookupKey] ?? Number(pos.ltp ?? pos.entry_price);
+        const baseLtp = quotesMap[lookupKey];
+        if (!baseLtp || baseLtp <= 0) {
+          results.push({ positionId: pos.id, success: false, error: 'Failed to fetch live market price' });
+          continue;
+        }
 
         // Exit price computation
         let exitPrice: number;

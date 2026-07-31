@@ -88,7 +88,7 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
   let session = '0915-1530';
   if (isCrypto) session = '24x7';
   else if (exchange === 'MCX') session = '0900-2355';
-  else if (symbolName.startsWith('CDS:')) session = '0900-1700';
+  else if (exchange === 'CDS') session = '0900-1700';
 
   return {
     name,

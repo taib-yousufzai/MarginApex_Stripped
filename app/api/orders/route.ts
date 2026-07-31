@@ -27,6 +27,7 @@ import type {
   PlaceOrderResponse,
   MyOrder,
 } from '@/lib/types/order';
+import { logAction, extractClientIp } from '@/lib/actionLogger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -246,7 +247,7 @@ function mapSegmentToDbSegment(s: string): string {
   if (trimmed === 'MCX - Options' || trimmed === 'MCX-OPT') return 'MCX-OPT';
   if (['NSE - Equity', 'BSE - Equity', 'NSE-EQ'].includes(trimmed)) return 'NSE-EQ';
   if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
-  if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options' || trimmed === 'FOREX' || trimmed === 'CDS') return 'FOREX';
+  if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options' || trimmed === 'CDS') return 'FOREX';
   if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
   // Raw exchange → infer segment (for positions stored with raw settlement values)
   if (trimmed === 'NFO' || trimmed === 'BFO') return 'INDEX-FUT';
@@ -290,8 +291,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const admin = getAdminClient();
     const { searchParams } = request.nextUrl;
-    const page  = parseInt(searchParams.get('page')  ?? '1',  10);
-    const limit = parseInt(searchParams.get('limit') ?? '50', 10);
+    const page  = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10) || 1);
+    const limit = Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10) || 50);
     const from  = (page - 1) * limit;
     const to    = from + limit - 1;
 
@@ -346,11 +347,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         virtualOrders.push({
           id: `pos-gtt-${pos.id}`,
           symbol: pos.symbol,
-          segment: pos.settlement || '',
+          segment: pos.settlement || 'NSE-EQ',
           side: pos.side === 'BUY' ? 'SELL' : 'BUY',
           status: 'PENDING',
-          qty: Number(pos.qty_open),
-          lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+          qty: Number(pos.qty_open || 0),
+          lots: Number(pos.lots ?? 0) || (Number(pos.qty_open) > 0 ? 1 : 0),
           fill_price: 0,
           ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
           order_type: 'GTT',
@@ -360,18 +361,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           trigger_price: stopLoss,
           stop_loss: stopLoss,
           target: target,
-          created_at: pos.created_at || new Date().toISOString(),
+          created_at: pos.entry_time || pos.created_at || new Date(0).toISOString(),
         });
       } else {
         if (stopLoss !== null && stopLoss > 0) {
           virtualOrders.push({
             id: `pos-sl-${pos.id}`,
             symbol: pos.symbol,
-            segment: pos.settlement || '',
+            segment: pos.settlement || 'NSE-EQ',
             side: pos.side === 'BUY' ? 'SELL' : 'BUY', // Stop loss exit is opposite side
             status: 'PENDING',
-            qty: Number(pos.qty_open),
-            lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+            qty: Number(pos.qty_open || 0),
+            lots: Number(pos.lots ?? 0) || (Number(pos.qty_open) > 0 ? 1 : 0),
             fill_price: stopLoss,
             ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
             order_type: 'SL',
@@ -388,11 +389,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           virtualOrders.push({
             id: `pos-target-${pos.id}`,
             symbol: pos.symbol,
-            segment: pos.settlement || '',
+            segment: pos.settlement || 'NSE-EQ',
             side: pos.side === 'BUY' ? 'SELL' : 'BUY', // Target exit is opposite side
             status: 'PENDING',
-            qty: Number(pos.qty_open),
-            lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+            qty: Number(pos.qty_open || 0),
+            lots: Number(pos.lots ?? 0) || (Number(pos.qty_open) > 0 ? 1 : 0),
             fill_price: target,
             ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
             order_type: 'LIMIT',
@@ -420,7 +421,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 // ─── POST /api/orders ─────────────────────────────────────────────────────────
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function handleOrderPlacement(request: NextRequest, clientIp: string): Promise<NextResponse> {
   try {
     // 1. Authenticate
     let user = await getUserFromRequest(request);
@@ -459,7 +460,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let is_exit = body_is_exit === true || (body_is_exit as any) === 'true';
 
   let symbol = rawSymbol;
-  let kiteInst = kite_instrument;
+  // Ensure kiteInst always has a non-empty string before any .toUpperCase() calls
+  let kiteInst = kite_instrument || rawSymbol || '';
 
   // 3. Basic field validation
   if (!symbol || !side || !qty || !segment) {
@@ -483,8 +485,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (symbol.toUpperCase().endsWith('USDT')) {
       symbol = symbol.substring(0, symbol.length - 4);
     }
-    if (!kiteInst.toUpperCase().endsWith('USDT')) {
-      kiteInst = kiteInst + 'USDT';
+    const kiUpper = kiteInst.toUpperCase();
+    if (!kiUpper.endsWith('USDT')) {
+      kiteInst = kiUpper + 'USDT';
+    } else {
+      kiteInst = kiUpper;
     }
   } else {
     dbSegment = mapSymbolToSegment(symbol);
@@ -494,7 +499,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Step A: Fetch profile first (we need parent_id + trading_mode for the next batch) ──
   const profileResult = await admin.from('profiles')
-    .select('id, active, read_only, segments, parent_id, balance, trading_mode')
+    .select('id, active, read_only, segments, parent_id, balance, trading_mode, template_id')
     .eq('id', user.id)
     .single();
 
@@ -513,7 +518,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const targetTable = isScalper ? 'scalper_segment_settings' : 'segment_settings';
   const parentId = profile.parent_id && profile.parent_id !== user.id ? profile.parent_id : null;
 
-  kiteInst = kiteInst || symbol;
+  if (!kiteInst) {
+    return NextResponse.json({ error: 'Instrument symbol missing' }, { status: 400 });
+  }
   
   if (!kiteInst.includes(':') && dbSegment !== 'CRYPTO') {
     let prefix = 'NSE';
@@ -554,9 +561,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // LTP fetch, script settings, blocked scripts, and market hours — all at once.
   const segUpper = dbSegment.toUpperCase();
   let segmentId = 'nse';
-  if (segUpper.includes('MCX') || segUpper.includes('COMEX')) segmentId = 'mcx';
+  if (segUpper.includes('MCX')) segmentId = 'mcx';
   else if (segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
   else if (segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
+  else if (segUpper.includes('COMEX')) segmentId = 'comex';
+  else if (segUpper.includes('CRYPTO')) segmentId = 'crypto';
 
   const [
     segSettingsResult,
@@ -660,7 +669,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Instrument details check (Expiry & Lot Size)
     admin.from('instruments')
       .select('expiry, lot_size, name')
-      .or(`tradingsymbol.eq.${symbol},id.eq.${kite_instrument}`)
+      .or(`tradingsymbol.eq.${symbol},id.eq.${kiteInst}`)
       .limit(1)
       .maybeSingle(),
   ]);
@@ -674,10 +683,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return NextResponse.json({ error: 'Market is closed for ' + dbSegment }, { status: 400 });
         }
         const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const dayOfWeek = nowIST.getDay();
-        if (dayOfWeek === 0 || dayOfWeek === 6) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
         const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
         if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
           return NextResponse.json({ error: 'market is closed' }, { status: 400 });
@@ -949,10 +954,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const baseLtp = kiteLtp;
 
   // Use server price for margin check so it's always accurate regardless of UI staleness
-  const marginPrice = (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT')
-    ? client_price   // pending orders: use the user's specified price
-    : baseLtp;       // MARKET/SLM: use live server price
-  const exposure      = qty * marginPrice;
+  let marginPrice: number;
+  if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
+    if (client_price == null || isNaN(client_price)) {
+      return NextResponse.json({ error: 'Price is required for this order type.' }, { status: 400 });
+    }
+    marginPrice = client_price;
+  } else {
+    marginPrice = baseLtp;
+  }
+  const exposure = qty * marginPrice;
   
   let marginPortion = 0;
   if (!is_exit) {
@@ -975,7 +986,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let intradayCharge = 0;
   let carryCharge = 0;
   let gttCharge = 0;
-
+  if (!symbolLotSize || symbolLotSize <= 0) {
+    return NextResponse.json({ error: 'Invalid lot size for symbol' }, { status: 400 });
+  }
   const lotsUsed = qty / symbolLotSize;
 
   // 1. Base Commission (ALWAYS applied as intraday at entry, matching DB temp_merge.sql)
@@ -1096,7 +1109,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const isLong = (is_exit && activePosition) ? (activePosition.side === 'BUY') : (side === 'BUY');
 
   // Enforce Anti-Scalping hold duration for manual market exits
-  if (is_exit && activePosition && (order_type === 'MARKET' || order_type === 'SLM')) {
+  if (is_exit && activePosition && activePosition.entry_time && (order_type === 'MARKET' || order_type === 'SLM')) {
     const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
     const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
@@ -1166,41 +1179,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const topLimit = Number(segSetting.top_limit ?? 0);
   const minLimit = Number(segSetting.min_limit ?? 0);
   if (['LIMIT', 'SL', 'GTT'].includes(order_type ?? 'MARKET')) {
-    if (side === 'BUY') {
-      if (topLimit > 0) {
-        const maxAllowed = baseLtp * (1 + topLimit / 100);
-        if (client_price > maxAllowed) {
-          return NextResponse.json({
-            error: `Maximum price allowed is ₹${maxAllowed.toFixed(2)}`
-          }, { status: 400 });
-        }
+    
+    if (topLimit > 0) {
+      const maxAllowed = baseLtp * (1 + topLimit / 100);
+      if (client_price > maxAllowed) {
+        return NextResponse.json({
+          error: `Maximum price allowed is ₹${maxAllowed.toFixed(2)}`
+        }, { status: 400 });
       }
+    }
 
-      if (minLimit > 0) {
-        const minAllowed = baseLtp * (1 - minLimit / 100);
-        if (client_price < minAllowed) {
-          return NextResponse.json({
-            error: `Minimum price allowed is ₹${minAllowed.toFixed(2)}`
-          }, { status: 400 });
-        }
-      }
-    } else { // SELL side
-      if (topLimit > 0) {
-        const maxAllowed = baseLtp * (1 + topLimit / 100);
-        if (client_price > maxAllowed) {
-          return NextResponse.json({
-            error: `Maximum price allowed is ₹${maxAllowed.toFixed(2)}`
-          }, { status: 400 });
-        }
-      }
-
-      if (minLimit > 0) {
-        const minAllowed = baseLtp * (1 - minLimit / 100);
-        if (client_price < minAllowed) {
-          return NextResponse.json({
-            error: `Minimum price allowed is ₹${minAllowed.toFixed(2)}`
-          }, { status: 400 });
-        }
+    if (minLimit > 0) {
+      const minAllowed = baseLtp * (1 - minLimit / 100);
+      if (client_price < minAllowed) {
+        return NextResponse.json({
+          error: `Minimum price allowed is ₹${minAllowed.toFixed(2)}`
+        }, { status: 400 });
       }
     }
   }
@@ -1417,5 +1411,45 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.error('[POST /api/orders] FATAL ERROR:', globalError);
     return NextResponse.json({ error: 'Internal server error', details: globalError.message, stack: globalError.stack }, { status: 500 });
   }
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const ipAddress = extractClientIp(request.headers);
+  // We need to clone the request because we can only read the body once
+  const clonedRequest = request.clone();
+  
+  let payload: any = null;
+  try {
+    payload = await clonedRequest.json();
+  } catch {
+    // Body will fail if it's empty or invalid JSON, handled by handleOrderPlacement
+  }
+
+  const response = await handleOrderPlacement(request, ipAddress);
+
+  // Read the response safely for error messages
+  let errorMessage: string | null = null;
+  if (!response.ok) {
+    try {
+      const errorData = await response.clone().json();
+      errorMessage = errorData.error || errorData.message || 'Unknown error';
+    } catch {
+      errorMessage = 'Failed to parse error response';
+    }
+  }
+
+  logAction({
+    actionType: 'PLACE_ORDER',
+    module: 'TRADING',
+    apiEndpoint: '/api/orders',
+    httpMethod: 'POST',
+    ipAddress,
+    requestPayload: payload,
+    responseStatus: response.status,
+    isSuccess: response.ok,
+    errorMessage,
+  });
+
+  return response;
 }
 

@@ -6,6 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { validatePayRequest, WalletRules } from '../../../../lib/payValidation';
+import { logAction, extractClientIp } from '@/lib/actionLogger';
 
 function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -57,8 +58,8 @@ export async function POST(request: Request): Promise<Response> {
       min_deposit: Number(rulesData.min_deposit),
     };
 
-    let body: unknown;
-    try { body = await request.json(); } catch {
+    let body: any;
+    try { body = await request.clone().json(); } catch {
       return Response.json({ error: 'Invalid type' }, { status: 400 });
     }
 
@@ -91,8 +92,24 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ error: 'Internal server error' }, { status: 500 });
     }
 
+    logAction({
+      actionType: validatedData.type === 'DEPOSIT' ? 'SUBMIT_DEPOSIT' : 'SUBMIT_WITHDRAWAL',
+      module: 'WALLET',
+      apiEndpoint: '/api/pay/request',
+      httpMethod: 'POST',
+      ipAddress: extractClientIp(request.headers),
+      userId: user.id,
+      username: user.user_metadata?.username || user.email,
+      role: user.user_metadata?.role,
+      requestPayload: body,
+      responseStatus: 201,
+      isSuccess: true,
+      metadata: { request_id: insertData.id, amount: validatedData.amount }
+    });
+
     return Response.json({ id: insertData.id }, { status: 201 });
-  } catch {
+  } catch (error: any) {
+    console.error('[POST pay request]', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -127,8 +144,8 @@ export async function PATCH(request: Request): Promise<Response> {
     if (userError || !userData?.user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     const user = userData.user;
 
-    let body: Record<string, unknown>;
-    try { body = await request.json(); } catch {
+    let body: Record<string, any>;
+    try { body = await request.clone().json(); } catch {
       return Response.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
@@ -154,16 +171,24 @@ export async function PATCH(request: Request): Promise<Response> {
       return Response.json({ error: 'Only pending requests can be edited' }, { status: 409 });
     }
 
-    // Step 2 — cancel the old request
-    const { error: cancelErr } = await adminClient
+    // Step 2 — cancel the old request (enforce PENDING status to avoid race conditions with admin)
+    const { error: cancelErr, data: canceledData } = await adminClient
       .from('pay_requests')
       .update({ status: 'CANCELLED_BY_USER', updated_at: new Date().toISOString() })
-      .eq('id', oldId);
+      .eq('id', oldId)
+      .eq('status', 'PENDING')
+      .select('id');
 
     if (cancelErr) {
       console.error('[PATCH /api/pay/request] cancel error:', cancelErr.message);
       return Response.json({ error: 'Internal server error' }, { status: 500 });
     }
+    
+    if (!canceledData || canceledData.length === 0) {
+      return Response.json({ error: 'Request was already processed or cancelled' }, { status: 409 });
+    }
+
+
 
     // Step 3 — validate new fields using wallet_rules
     const { data: rulesData, error: rulesError } = await adminClient
@@ -186,10 +211,13 @@ export async function PATCH(request: Request): Promise<Response> {
     const validation = validatePayRequest(payload, rules, new Date());
     if (!validation.valid) {
       // Roll back cancellation so the user isn't left with nothing
-      await adminClient
+      const { error: rollbackErr } = await adminClient
         .from('pay_requests')
         .update({ status: 'PENDING', updated_at: new Date().toISOString() })
         .eq('id', oldId);
+      if (rollbackErr) {
+        console.error('[PATCH /api/pay/request] rollback failed during validation:', rollbackErr);
+      }
       return Response.json({ error: validation.error }, { status: validation.status });
     }
     const { data: validatedData } = validation;
@@ -213,18 +241,37 @@ export async function PATCH(request: Request): Promise<Response> {
 
     if (insertErr) {
       // Roll back cancellation
-      await adminClient
+      const { error: rollbackErr2 } = await adminClient
         .from('pay_requests')
         .update({ status: 'PENDING', updated_at: new Date().toISOString() })
         .eq('id', oldId);
+      if (rollbackErr2) {
+        console.error('[PATCH /api/pay/request] rollback failed during insert error:', rollbackErr2);
+      }
       if (insertErr.code === '23505') {
         return Response.json({ error: 'This UTR has already been submitted.' }, { status: 400 });
       }
       return Response.json({ error: 'Internal server error' }, { status: 500 });
     }
 
+    logAction({
+      actionType: validatedData.type === 'DEPOSIT' ? 'EDIT_DEPOSIT' : 'EDIT_WITHDRAWAL',
+      module: 'WALLET',
+      apiEndpoint: '/api/pay/request',
+      httpMethod: 'PATCH',
+      ipAddress: extractClientIp(request.headers),
+      userId: user.id,
+      username: user.user_metadata?.username || user.email,
+      role: user.user_metadata?.role,
+      requestPayload: body,
+      responseStatus: 201,
+      isSuccess: true,
+      metadata: { new_id: newRow.id, old_id: oldId, amount: validatedData.amount }
+    });
+
     return Response.json({ id: newRow.id, cancelled_id: oldId }, { status: 201 });
-  } catch {
+  } catch (error: any) {
+    console.error('[PATCH pay request]', error);
     return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
