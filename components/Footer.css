@@ -117,28 +117,7 @@ body.dark .footer-tab.active {
 
 /* Single persistent gradient overlay — moved to footer-nav::after above. */
 
-/* Full-width bottom gradient for Home, Order, History active tabs.
-   Applied on the nav container via data-active — not on the tab button.
-   Watchlist and Position are NOT listed here — their ::after overlay is untouched. */
-.footer-nav[data-active="home"]::before,
-.footer-nav[data-active="order"]::before,
-.footer-nav[data-active="history"]::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 2.5rem;
-  background: linear-gradient(to top, rgba(0,0,0,0.18), transparent);
-  pointer-events: none;
-  z-index: 0;
-}
 
-body.dark .footer-nav[data-active="home"]::before,
-body.dark .footer-nav[data-active="order"]::before,
-body.dark .footer-nav[data-active="history"]::before {
-  display: none;
-}
 
 .footer-icon {
   font-size: 1.25rem;
