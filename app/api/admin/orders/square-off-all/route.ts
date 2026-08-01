@@ -90,13 +90,12 @@ export async function POST(request: Request): Promise<Response> {
         });
       }
 
-      const { error: rpcErr } = await adminClient.rpc('close_position', {
-        p_position_id: pos.id,
-        p_user_id: pos.user_id,
-        p_ltp: baseLtp,
-        p_exit_price: exitPrice,
-        p_closed_by: 'ADMIN_SQOFF_ALL',
-        p_brokerage: carryBrokerage,
+      const { error: rpcErr } = await adminClient.rpc('close_position_v2', {
+        p_position_id:        pos.id,
+        p_close_qty:          Number(pos.qty_open),
+        p_close_price:        exitPrice,
+        p_closed_by:          'ADMIN',
+        p_expected_brokerage: carryBrokerage,
       });
 
       if (rpcErr) {

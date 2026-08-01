@@ -208,13 +208,12 @@ export async function GET(request: Request) {
           });
         }
         
-        const { error: rpcErr } = await admin.rpc('close_position', {
-          p_position_id: pos.id,
-          p_user_id: userProfile.id,
-          p_ltp: baseLtp,
-          p_exit_price: exitPrice,
-          p_closed_by: 'SYSTEM_ACTION', // Use the standardized system action close reason
-          p_brokerage: carryBrokerage,
+        const { error: rpcErr } = await admin.rpc('close_position_v2', {
+          p_position_id:        pos.id,
+          p_close_qty:          Number(pos.qty_open),
+          p_close_price:        exitPrice,
+          p_closed_by:          'SYSTEM',
+          p_expected_brokerage: carryBrokerage,
         });
 
         if (!rpcErr) {

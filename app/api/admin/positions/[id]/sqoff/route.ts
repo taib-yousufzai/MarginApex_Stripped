@@ -87,13 +87,12 @@ export async function POST(
       });
     }
 
-    const { data: pnl, error: rpcErr } = await adminClient.rpc('close_position', {
-      p_position_id: id,
-      p_user_id: position.user_id,
-      p_ltp: baseLtp,
-      p_exit_price: exitPrice,
-      p_closed_by: 'ADMIN_ACTION',
-      p_brokerage: carryBrokerage,
+    const { data: pnl, error: rpcErr } = await adminClient.rpc('close_position_v2', {
+      p_position_id:        id,
+      p_close_qty:          Number(position.qty_open),
+      p_close_price:        exitPrice,
+      p_closed_by:          'ADMIN',
+      p_expected_brokerage: carryBrokerage,
     });
 
     if (rpcErr) {

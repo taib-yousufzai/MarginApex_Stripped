@@ -101,13 +101,12 @@ export async function checkAndSquareOffPositionsForMargin(userId: string, adminC
         });
 
         // Call RPC close_position
-        const { error: rpcErr } = await adminClient.rpc('close_position', {
-          p_position_id: pos.id,
-          p_user_id: userId,
-          p_ltp: baseLtp,
-          p_exit_price: exitPrice,
-          p_closed_by: 'SYSTEM_ACTION',
-          p_brokerage: carryBrokerage,
+        const { error: rpcErr } = await adminClient.rpc('close_position_v2', {
+          p_position_id:        pos.id,
+          p_close_qty:          Number(pos.qty_open),
+          p_close_price:        exitPrice,
+          p_closed_by:          'SYSTEM',
+          p_expected_brokerage: carryBrokerage,
         });
 
         if (!rpcErr) {

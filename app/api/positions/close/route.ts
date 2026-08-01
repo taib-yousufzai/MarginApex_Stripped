@@ -302,13 +302,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         let rpcErr: any;
         
         for (let attempt = 1; attempt <= 2; attempt++) {
-          const result = await admin.rpc('close_position', {
-            p_position_id: pos.id,
-            p_user_id:     user.id,
-            p_ltp:         baseLtp,
-            p_exit_price:  exitPrice,
-            p_closed_by:   'USER_ACTION',
-            p_brokerage:   carryBrokerage,
+          const result = await admin.rpc('close_position_v2', {
+            p_position_id:        pos.id,
+            p_close_qty:          Number(pos.qty_open),
+            p_close_price:        exitPrice,
+            p_closed_by:          'USER',
+            p_expected_brokerage: carryBrokerage,
           });
           
           pnl = result.data;

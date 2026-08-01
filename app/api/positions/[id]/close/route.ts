@@ -384,13 +384,12 @@ async function handleClosePosition(
   // Conversions no longer deduct it upfront, so there's no need to check for CARRY_CONV txs.
 
   // Call the atomic RPC
-  const { data: pnl, error: rpcErr } = await admin.rpc('close_position', {
-    p_position_id: positionId,
-    p_user_id:     user.id,
-    p_ltp:         baseLtp,
-    p_exit_price:  exitPrice,
-    p_closed_by:   'USER',
-    p_brokerage:   carryBrokerage,
+  const { data: pnl, error: rpcErr } = await admin.rpc('close_position_v2', {
+    p_position_id:        positionId,
+    p_close_qty:          Number(pos.qty_open),
+    p_close_price:        exitPrice,
+    p_closed_by:          'USER',
+    p_expected_brokerage: carryBrokerage,
   });
 
   if (rpcErr) {

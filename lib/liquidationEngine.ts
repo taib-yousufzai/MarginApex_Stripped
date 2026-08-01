@@ -154,13 +154,12 @@ export async function checkAndExecuteAccountLiquidation(
 
     // Attempt close with one retry
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const { error: closeErr } = await admin.rpc('close_position', {
-        p_position_id: pos.id,
-        p_user_id: userId,
-        p_ltp: ltp,
-        p_exit_price: exitPrice,
-        p_closed_by: 'AUTO_LIQUIDATION',
-        p_brokerage: carryBrokerage,
+      const { error: closeErr } = await admin.rpc('close_position_v2', {
+        p_position_id:        pos.id,
+        p_close_qty:          Number(pos.qty_open),
+        p_close_price:        exitPrice,
+        p_closed_by:          'LIQUIDATION',
+        p_expected_brokerage: carryBrokerage,
       });
 
       if (!closeErr) return true;

@@ -681,13 +681,12 @@ export class InMemoryMatchingEngine {
       if (positionsToClose.length > 0) {
         const closeStart = performance.now();
         await Promise.all(positionsToClose.map(async ({ pos, ltp, exitPrice, closeReason, carryBrokerage }) => {
-          const { error: closeRpcErr } = await admin.rpc('close_position', {
-            p_position_id: pos.id,
-            p_user_id: pos.user_id,
-            p_ltp: ltp,
-            p_exit_price: exitPrice,
-            p_closed_by: closeReason,
-            p_brokerage: carryBrokerage,
+          const { error: closeRpcErr } = await admin.rpc('close_position_v2', {
+            p_position_id:        pos.id,
+            p_close_qty:          Number(pos.qty_open),
+            p_close_price:        exitPrice,
+            p_closed_by:          closeReason,
+            p_expected_brokerage: carryBrokerage,
           });
 
           if (closeRpcErr) {
