@@ -24,7 +24,8 @@ CREATE OR REPLACE FUNCTION public.place_order_v2(
   p_target         numeric DEFAULT NULL,
   p_info           text DEFAULT NULL,
   p_expected_margin numeric DEFAULT 0,
-  p_expected_brokerage numeric DEFAULT 0
+  p_expected_brokerage numeric DEFAULT 0,
+  p_idempotency_key text DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -41,6 +42,14 @@ BEGIN
     -- ISOLATE V1 TRIGGERS (Strangler Fig)
     PERFORM set_config('app.is_v2', 'true', true);
 
+    -- IDEMPOTENCY CHECK: If this exact request was already processed, return the existing order
+    IF p_idempotency_key IS NOT NULL THEN
+        SELECT id INTO v_order_id FROM public.orders WHERE idempotency_key = p_idempotency_key;
+        IF FOUND THEN
+            RETURN v_order_id;
+        END IF;
+    END IF;
+
     -- STEP 1: VALIDATE MARGIN (Calculate vs Validate Rule)
     SELECT balance INTO v_profile_balance
     FROM public.profiles
@@ -52,9 +61,9 @@ BEGIN
 
     -- STEP 2: INSERT ORDER
     INSERT INTO public.orders (
-        user_id, symbol, side, status, qty, price, order_type, info, buffer_fee
+        user_id, symbol, side, status, qty, price, order_type, info, buffer_fee, idempotency_key
     ) VALUES (
-        p_user_id, p_symbol, p_side, p_status, p_qty, p_fill_price, p_order_type, p_info, p_buffer_fee
+        p_user_id, p_symbol, p_side, p_status, p_qty, p_fill_price, p_order_type, p_info, p_buffer_fee, p_idempotency_key
     ) RETURNING id INTO v_order_id;
 
     -- STEP 3 & 4: UPSERT POSITION AND LEDGER (Only if immediate execution)

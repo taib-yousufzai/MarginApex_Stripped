@@ -6,6 +6,8 @@ export interface ClosePositionParams {
   closeQty: number;
   closePrice: number;
   closedBy?: 'USER' | 'ADMIN' | 'SYSTEM' | 'LIQUIDATION';
+  /** TS-calculated brokerage. DB will record it but TS is responsible for the calculation. */
+  expectedBrokerage?: number;
 }
 
 export class PositionService {
@@ -57,17 +59,18 @@ export class PositionService {
   /**
    * Closes or partially closes a position.
    * Ensures that margin release and PnL realization happen atomically in the DB.
+   * TS calculates brokerage and passes it for the DB to record in a single transaction.
    */
   static async closePosition(params: ClosePositionParams): Promise<void> {
     const admin = getAdminClient();
 
-    // Call the database function to handle the position close, PnL realization, and ledger update
+    // Call the v2 RPC with all financial expectations wired through
     const { error: rpcErr } = await admin.rpc('close_position_v2', {
       p_position_id: params.positionId,
       p_close_qty: params.closeQty,
       p_close_price: params.closePrice,
-      p_closed_by: params.closedBy || 'USER'
-      // Note: p_expected_brokerage and margin credits should be wired up from TS here in v2
+      p_closed_by: params.closedBy || 'USER',
+      p_expected_brokerage: params.expectedBrokerage || 0
     });
 
     if (rpcErr) {

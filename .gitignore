@@ -45,3 +45,18 @@ next-env.d.ts
 
 
 .agents
+
+# scratch / temp files (prevent accumulation)
+scratch/
+brain/
+fix_*.js
+fix_*.mjs
+fix_*.ps1
+check_*.ts
+check_*.js
+check_*.sql
+test_*.js
+temp.*
+temp_*
+*.bak
+*.orig

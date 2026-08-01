@@ -1,4 +1,5 @@
 import { getAdminClient } from '@/lib/adminClient';
+import { randomUUID } from 'crypto';
 
 export interface ExecutionParams {
   userId: string;
@@ -56,6 +57,7 @@ export class ExecutionService {
       }
 
       const executeDbCall = async () => {
+        const idempotencyKey = randomUUID();
         const { data: oId, error: rpcErr } = await admin.rpc('place_order_v2', {
           p_user_id:      params.userId,
           p_symbol:       params.symbol,
@@ -76,7 +78,8 @@ export class ExecutionService {
           p_buffer_fee:   params.bufferFee,
           p_status:       params.isImmediate ? 'EXECUTED' : 'PENDING',
           p_expected_margin: params.requiredMargin,
-          p_expected_brokerage: params.brokerage
+          p_expected_brokerage: params.brokerage,
+          p_idempotency_key: idempotencyKey
         });
 
         if (rpcErr) {
