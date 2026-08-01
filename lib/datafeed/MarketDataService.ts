@@ -14,62 +14,77 @@ export async function fetchWithTimeout(url: string, options: any = {}, timeoutMs
   }
 }
 
+// Simple inflight cache for Binance requests to avoid duplicate concurrent calls for the same symbol
+const binanceInflight = new Map<string, Promise<{ltp: number, bid: number, ask: number} | null>>();
+
 export async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, bid: number, ask: number} | null> {
   let cleanSym = symbol.replace('/', '').toUpperCase();
   if (!cleanSym.endsWith('USDT')) cleanSym = cleanSym + 'USDT';
 
-  // 1. Redis cache (Ticker Daemon writes Binance prices here too)
-  try {
-    const { getRedisClient } = await import('@/lib/redis');
-    const redis = getRedisClient();
-    const cached = await redis.hget('market:quotes', cleanSym);
-    if (cached) {
-      const q = JSON.parse(cached);
-      if (q && q.last_price !== undefined) {
-        return {
-          ltp: Number(q.last_price),
-          bid: Number(q.bid || q.last_price * 0.9995),
-          ask: Number(q.ask || q.last_price * 1.0005)
-        };
-      }
-    }
-  } catch { /* fall through */ }
+  let promise = binanceInflight.get(cleanSym);
+  if (!promise) {
+    promise = (async () => {
+      try {
+        // 1. Redis cache (Ticker Daemon writes Binance prices here too)
+        try {
+          const { getRedisClient } = await import('@/lib/redis');
+          const redis = getRedisClient();
+          const cached = await redis.hget('market:quotes', cleanSym);
+          if (cached) {
+            const q = JSON.parse(cached);
+            if (q && q.last_price !== undefined) {
+              return {
+                ltp: Number(q.last_price),
+                bid: Number(q.bid || q.last_price * 0.9995),
+                ask: Number(q.ask || q.last_price * 1.0005)
+              };
+            }
+          }
+        } catch { /* fall through */ }
 
-  // 2. Ticker Daemon in-memory endpoint
-  try {
-    const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
-    const params = new URLSearchParams({ symbols: cleanSym });
-    const resTicker = await fetchWithTimeout(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' }, 150);
-    if (resTicker.ok) {
-      const json = await resTicker.json();
-      if (json.success && json.data && json.data[cleanSym]) {
-        const q = json.data[cleanSym];
-        return {
-          ltp: Number(q.last_price),
-          bid: Number(q.bid || q.last_price * 0.9995),
-          ask: Number(q.ask || q.last_price * 1.0005)
-        };
-      }
-    }
-  } catch { /* fall through */ }
+        // 2. Ticker Daemon in-memory endpoint
+        try {
+          const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
+          const params = new URLSearchParams({ symbols: cleanSym });
+          const resTicker = await fetchWithTimeout(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' }, 150);
+          if (resTicker.ok) {
+            const json = await resTicker.json();
+            if (json.success && json.data && json.data[cleanSym]) {
+              const q = json.data[cleanSym];
+              return {
+                ltp: Number(q.last_price),
+                bid: Number(q.bid || q.last_price * 0.9995),
+                ask: Number(q.ask || q.last_price * 1.0005)
+              };
+            }
+          }
+        } catch { /* fall through */ }
 
-  // 3. Direct Binance REST fallback
-  try {
-    const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' }, 250);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.price) {
-      const ltp = parseFloat(data.price);
-      return { ltp, bid: ltp * 0.9995, ask: ltp * 1.0005 };
-    }
-    return null;
-  } catch (err) {
-    console.error('[fetchBinanceQuote] Error:', err);
-    return null;
+        // 3. Direct Binance REST fallback
+        try {
+          const res = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' }, 250);
+          if (!res.ok) return null;
+          const data = await res.json();
+          if (data.price) {
+            const ltp = parseFloat(data.price);
+            return { ltp, bid: ltp * 0.9995, ask: ltp * 1.0005 };
+          }
+          return null;
+        } catch (err) {
+          console.error('[fetchBinanceQuote] Error:', err);
+          return null;
+        }
+      } finally {
+        binanceInflight.delete(cleanSym);
+      }
+    })();
+    binanceInflight.set(cleanSym, promise);
   }
+  return promise;
 }
 
-export async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, number>> {
+// Raw fetch function for Kite quotes
+async function executeRawKiteQuotes(instruments: string[]): Promise<Record<string, number>> {
   if (instruments.length === 0) return {};
   const result: Record<string, number> = {};
   const foundKiteIds = new Set<string>();
@@ -190,4 +205,56 @@ export async function fetchKiteQuotes(instruments: string[]): Promise<Record<str
     console.error('[fetchKiteQuotes] Error:', err);
     return result;
   }
+}
+
+// Coalescing state for Kite quotes
+let pendingKiteSymbols = new Set<string>();
+let pendingKiteResolvers: Array<(quotes: Record<string, number>) => void> = [];
+let batchTimeout: NodeJS.Timeout | null = null;
+
+async function processKiteBatch() {
+  const symbols = Array.from(pendingKiteSymbols);
+  const resolvers = pendingKiteResolvers;
+  
+  // Clear batch queue
+  pendingKiteSymbols = new Set();
+  pendingKiteResolvers = [];
+  batchTimeout = null;
+
+  if (symbols.length === 0) return;
+
+  try {
+    const batchQuotes = await executeRawKiteQuotes(symbols);
+    for (const resolve of resolvers) {
+      resolve(batchQuotes);
+    }
+  } catch (err) {
+    console.error('[MarketDataService] Batch process failed:', err);
+    for (const resolve of resolvers) {
+      resolve({});
+    }
+  }
+}
+
+export function fetchKiteQuotes(instruments: string[]): Promise<Record<string, number>> {
+  if (instruments.length === 0) return Promise.resolve({});
+
+  return new Promise((resolve) => {
+    instruments.forEach(inst => pendingKiteSymbols.add(inst));
+    pendingKiteResolvers.push((batchQuotes) => {
+      const subset: Record<string, number> = {};
+      instruments.forEach(inst => {
+        if (batchQuotes[inst] !== undefined) {
+          subset[inst] = batchQuotes[inst];
+          subset[`${inst}_bid`] = batchQuotes[`${inst}_bid`];
+          subset[`${inst}_ask`] = batchQuotes[`${inst}_ask`];
+        }
+      });
+      resolve(subset);
+    });
+
+    if (!batchTimeout) {
+      batchTimeout = setTimeout(processKiteBatch, 10); // 10ms coalescing window
+    }
+  });
 }
