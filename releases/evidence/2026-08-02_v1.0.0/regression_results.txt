@@ -1,0 +1,34 @@
+Starting Position Engine Permanent Regression Suite...
+Executing Test 1: Single BUY...
+Executing Test 2: Same-Side Addition (Averaging)...
+Executing Test 3: Partial Netting...
+Executing Test 4: Massive Reversal...
+Executing Test 5: Heavy FIFO (100 lots, exit 73)...
+Executing Test 6: Margin Exhaustion...
+Test 6 Success: Over-margin trade rejected correctly.
+Executing Test 7: Multi-User Isolation...
+
+================================================================
+SUCCESS: All Position Engine regression scenarios & invariants verified!
+================================================================
+
+Scenarios passed: 7/7
+  Test 1: Single BUY (Create Long)                    ✅ PASS
+  Test 2: Same-Side Addition (Averaging)              ✅ PASS
+  Test 3: Partial Netting & Splitting                 ✅ PASS
+  Test 4: Massive Reversal (Long -> Short)            ✅ PASS
+  Test 5: Heavy FIFO (100 lots, exit 73)              ✅ PASS
+  Test 6: Margin Exhaustion Protection                ✅ PASS
+  Test 7: Multi-User Isolation                        ✅ PASS
+
+Invariants verified after each scenario:
+  - No negative qty_open
+  - No negative locked_margin
+  - Closed positions have qty_open = 0
+  - Closed positions have locked_margin = 0
+  - Ledger totals reconcile with profile balance (tolerance: ±2.0)
+
+Executed against: production (db.cpcvklekwwawgtgbyrmp.supabase.co)
+Timestamp: 2026-08-02T16:40:38Z
+Operator: taib-yousufzai
+Commit: 99010ecf0eff (tag: position-engine-v1.0.0-rc1)

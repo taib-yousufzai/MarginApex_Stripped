@@ -1,0 +1,32 @@
+Rollback Rehearsal Record
+=========================
+Date:        2026-08-02
+Environment: production (staging path)
+Operator:    taib-yousufzai
+Commit:      9661d5c (position-engine-v1.0.0-rc1)
+
+Status: PENDING — NOT YET EXECUTED
+
+This file is a placeholder. The rollback rehearsal requires a staging environment
+with live traffic routing, which has not been configured at time of Phase 2 execution.
+
+Required steps (to be completed before Phase 3 begins):
+  1. Route a small % of traffic to the legacy place_order path
+  2. Confirm at least one order executes on the legacy path
+  3. Confirm reconciliation remains clean
+  4. Switch traffic back to place_order_v2
+  5. Confirm orders resume on v2 path
+  6. Record timing and outcome in this file
+
+Rollback mechanism available:
+  - shadow_mode_config: enabled flag controls shadow comparison
+  - place_order (legacy) remains deployed and callable
+  - Application can be pointed to legacy path by reverting ExecutionService.ts
+    to call admin.rpc('place_order') instead of callEngineRpc('place_order_v2')
+
+Decision: Evidence package sealed with rollback rehearsal PENDING.
+          Phase 3 shadow mode will serve as the rollback validation path:
+          if shadow mismatch rate exceeds threshold, shadow_mode_config auto-disables
+          and the legacy path remains available as fallback.
+
+This record will be updated once a formal rollback drill is executed.

@@ -1,0 +1,18 @@
+{
+  "id": "ed937301-5e7a-4b4f-8192-3f894b9cf555",
+  "version": "1.0.0",
+  "engine_version": "1.0.0",
+  "contract_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "migration_hash": "4b5aad7f6e78f7bb",
+  "schema_hash": null,
+  "git_commit": "99010ecf0efff35b14e56bd7fdc4cf8f04e34fdb",
+  "git_branch": "main",
+  "manifest_hash": null,
+  "deployed_at": "2026-08-02T11:48:15.652Z",
+  "deployed_by": "taib-yousufzai",
+  "environment": "production",
+  "deployment_id": "rc1-99010ec",
+  "verification_passed": false,
+  "notes": null
+}

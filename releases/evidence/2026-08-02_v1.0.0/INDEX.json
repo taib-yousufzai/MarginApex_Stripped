@@ -1,0 +1,35 @@
+{
+  "release": "2026-08-02_v1.0.0",
+  "version": "1.0.0",
+  "environment": "production",
+  "collected_at": "2026-08-02T16:53:50.838Z",
+  "engine_version": "1.0.0",
+  "contract_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "migration_hash": "4b5aad7f6e78f7bb",
+  "manifest_hash": null,
+  "git_commit": "99010ecf0efff35b14e56bd7fdc4cf8f04e34fdb",
+  "git_branch": "main",
+  "deployed_by": "taib-yousufzai",
+  "deployed_at": "2026-08-02T11:48:15.652Z",
+  "verification_passed": false,
+  "package_hash": "35c7170ac2fc54326a2ddf1d80c080d93bce2c56355cc497b2283953a8dd9d05",
+  "package_hash_algorithm": "sha256",
+  "files": {
+    "automatic": [
+      "release_manifest.json",
+      "governance_audit.json",
+      "engine_releases_row.json",
+      "engine_metadata_row.json"
+    ],
+    "manual": [
+      "deployment_verification.txt",
+      "contract_tests.txt",
+      "regression_results.txt",
+      "load_test_summary.txt",
+      "rollback_rehearsal.txt"
+    ],
+    "missing": []
+  },
+  "complete": true
+}

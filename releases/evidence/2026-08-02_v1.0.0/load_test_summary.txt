@@ -1,0 +1,44 @@
+Position Engine Load & Concurrency Tests
+========================================
+Runner:   vitest v4.1.4
+Suite:    tests/load.test.ts
+Result:   5/5 PASSED
+Duration: 29.99s
+
+Scenario 1: Idempotency Key Duplicate Retries (Race Condition Test)   ✅ PASS
+  - 5 concurrent place_order_v2 calls with same idempotency_key
+  - Exactly 1 unique order ID returned (deduplication verified)
+
+Scenario 2: High Concurrency FIFO Chain Execution                     ✅ PASS
+  - 100 concurrent BUY lots (1 qty each) via Promise.all
+  - Single SELL 100 via place_order_v2 FIFO exit
+  - Result: 0 open, 100 closed positions verified
+
+Scenario 3: Detailed FIFO Lot Netting and Margin Verification         ✅ PASS
+  - 4 BUY lots at different prices (10@100, 20@105, 15@98, 8@101)
+  - SELL 25 consumes oldest-first (FIFO): all 10@100, then 15@105
+  - Remaining: 5@105, 15@98, 8@101 (3 open lots verified)
+  - Realized P&L: -25 (verified: (102-100)*10 + (102-105)*15)
+  - Proportional margin release verified: 52.5 on partial lot
+  - Ledger types verified: DEPOSIT, MARGIN_DEBIT, PNL_DEBIT, MARGIN_CREDIT
+
+Scenario 4: FIFO across chained partial exits                         ✅ PASS
+  - 3 BUY lots (10, 20, 30)
+  - 3 sequential SELL orders consuming across lot boundaries
+  - Final state: 1 open lot with 15 remaining (verified)
+
+Scenario 5: Multi-Symbol and Multi-User Isolation                     ✅ PASS
+  - User A and User B trade same symbol concurrently
+  - User A exit does not affect User B's positions (verified)
+  - User B retains 20 open qty after User A fully exits
+
+SLO Targets (measured against production database latency):
+  Note: RPC latency SLOs (P95/P99) require rpc_metrics population under
+  real trading traffic — these will be measured during Phase 3 shadow mode.
+  The load tests verify correctness and concurrency safety, not latency percentiles.
+  Latency SLO verification: DEFERRED to Phase 3 (requires sustained traffic).
+
+Environment: production (db.cpcvklekwwawgtgbyrmp.supabase.co)
+Timestamp: 2026-08-02T22:17:56Z
+Operator: taib-yousufzai
+Commit: 9661d5c (position-engine-v1.0.0-rc1)

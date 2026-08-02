@@ -1,0 +1,68 @@
+======================================================================
+DEPLOYMENT VERIFICATION REPORT
+======================================================================
+✅ engine_metadata.engine_version  (1.0.0)
+✅ engine_metadata.contract_version  (1.0.0)
+✅ engine_metadata.schema_version  (1.0.0)
+✅ engine_metadata.migration_hash  (4b5aad7f6e78f7bb)
+✅ function:place_order_v2
+✅ function:close_position_v2
+✅ function:get_trade_context_v1
+✅ function:apply_carry_charges_v1
+✅ function:convert_position_v1
+✅ function:run_shadow_order_v2
+✅ function:run_shadow_close_v2
+✅ function:create_position_internal
+✅ function:increase_position_internal
+✅ function:reduce_position_internal
+✅ function:current_engine_version
+✅ function:financial_events_deny_mutation
+⚠️  forbidden_function:process_executed_position  (Legacy function still exists — run demolition_script.sql after observation window)
+⚠️  forbidden_function:place_order  (Legacy function still exists — run demolition_script.sql after observation window)
+⚠️  forbidden_function:close_position  (Legacy function still exists — run demolition_script.sql after observation window)
+⚠️  forbidden_function:handle_order_execution  (Legacy function still exists — run demolition_script.sql after observation window)
+⚠️  forbidden_function:calculate_position_margin  (Legacy function still exists — run demolition_script.sql after observation window)
+⚠️  forbidden_function:position_insert_margin_debit  (Legacy function still exists — run demolition_script.sql after observation window)
+✅ table:positions
+✅ table:orders
+✅ table:transactions
+✅ table:profiles
+✅ table:rpc_metrics
+✅ table:shadow_mismatch_logs
+✅ table:shadow_mode_config
+✅ table:engine_metadata
+✅ table:engine_releases
+✅ table:engine_schema_snapshots
+✅ table:financial_events
+✅ table:act_logs
+✅ index:idx_rpc_metrics_time
+✅ index:idx_rpc_metrics_correlation
+✅ index:idx_financial_events_correlation
+✅ index:idx_financial_events_user_time
+✅ index:idx_financial_events_type_time
+✅ index:idx_shadow_mismatch_corr
+✅ trigger:financial_events_deny_update
+✅ trigger:financial_events_deny_delete
+✅ trigger:engine_releases_deny_update
+✅ trigger:engine_releases_deny_delete
+✅ shadow_mode_config  (enabled=true, max_mismatch_rate=0.01)
+✅ migration_hash_recorded  (sha256[0:16]=e5ade396487503f4 (67 files hashed))
+✅ schema_snapshot_recorded  (baseline sha256 schema hash captured)
+
+----------------------------------------------------------------------
+Passed:   41
+Warnings: 6
+Failed:   0
+----------------------------------------------------------------------
+
+⚠️  DEPLOYMENT VERIFIED WITH WARNINGS
+Warnings are non-blocking. Legacy functions pending demolition after observation window.
+
+Release manifest written to: releases/2026-08-02-16-42-40_production_pass.json
+Manifest hash: 61144d6e248375e5
+engine_releases row inserted (deployment_id=rc1-99010ec, passed=true)
+
+Timestamp: 2026-08-02T16:42:40Z
+Operator: taib-yousufzai
+Environment: production
+Commit: 99010ecf0eff (tag: position-engine-v1.0.0-rc1)
