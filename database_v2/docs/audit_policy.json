@@ -1,0 +1,59 @@
+{
+  "policy_version": "1.0.0",
+  "compatible_engine_version": "1.0.0",
+  "compatible_contract_version": "1.0.0",
+  "financial_columns": [
+    "balance",
+    "settlement_amount",
+    "equity",
+    "reserved_margin",
+    "used_margin",
+    "available_balance",
+    "realized_pnl",
+    "unrealized_pnl"
+  ],
+  "approved_files": [
+    "load.test.ts",
+    "ShadowModeService.ts",
+    "deploy_position_engine.ts",
+    "ts_audit_checker.ts"
+  ],
+  "allowlist": [
+    {
+      "file": "scripts/fixReferralCodes.ts",
+      "expires": "2026-09-01",
+      "reason": "Temporary data maintenance script for historical users."
+    }
+  ],
+  "adr_references": {
+    "transactions": "ADR-001: Ledger-First Architecture",
+    "profiles": "ADR-002: Ledger-First Balances",
+    "positions": "ADR-003: Financial Isolation Boundary",
+    "orders": "ADR-003: Financial Isolation Boundary"
+  },
+  "approved_rpc_versions": [
+    "place_order_v2",
+    "close_position_v2",
+    "get_trade_context_v1",
+    "apply_carry_charges_v1",
+    "convert_position_v1",
+    "run_shadow_order_v2",
+    "run_shadow_close_v2",
+    "rebaseline_user_profile_balance",
+    "current_engine_version",
+    "financial_events_deny_mutation",
+    "engine_releases_deny_mutation",
+    "compute_schema_hash",
+    "detect_schema_drift",
+    "classify_schema_drift"
+  ],
+  "approved_gateways": [
+    "place_order_v2",
+    "close_position_v2",
+    "get_trade_context_v1",
+    "apply_carry_charges_v1",
+    "convert_position_v1",
+    "run_shadow_order_v2",
+    "run_shadow_close_v2"
+  ]
+}

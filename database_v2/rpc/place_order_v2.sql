@@ -1,9 +1,9 @@
 -- ==============================================================================
--- MIGRATION: place_order_v2 (Synchronous Financial Transaction Block)
--- Date: 2026-07-31
+-- DATABASE v2: place_order_v2
+-- Synchronous Financial Transaction Block routing into the Position Engine.
+-- Uses FIFO (First-In, First-Out) lot selection for cumulative exits.
 -- ==============================================================================
 
--- 1. Create the new transactional RPC
 CREATE OR REPLACE FUNCTION public.place_order_v2(
   p_user_id        uuid,
   p_symbol         text,
@@ -35,16 +35,21 @@ DECLARE
     v_order_id uuid;
     v_profile_balance numeric;
     v_position_id uuid;
-    v_new_qty_open numeric;
-    v_new_qty_total numeric;
-    v_new_avg_price numeric;
+    v_pos RECORD;
+    v_pos_qty_open numeric;
+    v_pos_side text;
+    v_remaining_qty numeric;
+    v_closed_qty numeric;
 BEGIN
     -- ISOLATE V1 TRIGGERS (Strangler Fig)
     PERFORM set_config('app.is_v2', 'true', true);
 
-    -- IDEMPOTENCY CHECK: If this exact request was already processed, return the existing order
+    -- IDEMPOTENCY CHECK: If this exact request was already processed, return the existing order (Scoped to user)
     IF p_idempotency_key IS NOT NULL THEN
-        SELECT id INTO v_order_id FROM public.orders WHERE idempotency_key = p_idempotency_key;
+        SELECT id INTO v_order_id 
+        FROM public.orders 
+        WHERE user_id = p_user_id AND idempotency_key = p_idempotency_key
+        LIMIT 1;
         IF FOUND THEN
             RETURN v_order_id;
         END IF;
@@ -59,70 +64,116 @@ BEGIN
         RAISE EXCEPTION 'Insufficient balance. Available: %, Required: %', v_profile_balance, (p_expected_margin + p_expected_brokerage + p_buffer_fee);
     END IF;
 
-    -- STEP 2: INSERT ORDER
-    INSERT INTO public.orders (
-        user_id, symbol, side, status, qty, price, order_type, info, buffer_fee, idempotency_key
-    ) VALUES (
-        p_user_id, p_symbol, p_side, p_status, p_qty, p_fill_price, p_order_type, p_info, p_buffer_fee, p_idempotency_key
-    ) RETURNING id INTO v_order_id;
-
-    -- STEP 3 & 4: UPSERT POSITION AND LEDGER (Only if immediate execution)
-    IF p_status = 'EXECUTED' THEN
+    -- STEP 2: INSERT ORDER (Gracefully handle concurrent idempotency race conditions)
+    BEGIN
+        INSERT INTO public.orders (
+            user_id, symbol, side, status, qty, price, order_type, info, buffer_fee, idempotency_key
+        ) VALUES (
+            p_user_id, p_symbol, p_side, p_status, p_qty, p_fill_price, p_order_type, p_info, p_buffer_fee, p_idempotency_key
+        ) RETURNING id INTO v_order_id;
+    EXCEPTION WHEN unique_violation THEN
+        SELECT id INTO v_order_id 
+        FROM public.orders 
+        WHERE user_id = p_user_id AND idempotency_key = p_idempotency_key
+        LIMIT 1;
         
-        -- See if position exists
-        SELECT id, qty_open, qty_total, avg_price 
-        INTO v_position_id, v_new_qty_open, v_new_qty_total, v_new_avg_price
+        IF FOUND THEN
+            RETURN v_order_id;
+        ELSE
+            RAISE;
+        END IF;
+    END;
+
+    -- STEP 3: ROUTE INTO POSITION ENGINE (Only if immediate execution)
+    IF p_status = 'EXECUTED' THEN
+        -- Find if an open position exists for this symbol
+        SELECT id, qty_open, side
+        INTO v_position_id, v_pos_qty_open, v_pos_side
         FROM public.positions
         WHERE user_id = p_user_id AND symbol = p_symbol AND status = 'open'
+        ORDER BY entry_time DESC
+        LIMIT 1
         FOR UPDATE;
 
-        IF FOUND THEN
-            -- Average it (Simplified logic for now to assume averaging)
-            v_new_qty_total := v_new_qty_total + p_qty;
-            v_new_qty_open := v_new_qty_open + p_qty;
-            v_new_avg_price := ((v_new_avg_price * (v_new_qty_open - p_qty)) + (p_fill_price * p_qty)) / v_new_qty_open;
+        IF NOT FOUND OR v_pos_side = p_side THEN
+            -- Lifecycle: Create Position Lot (Same-side additions create separate lots for FIFO)
+            PERFORM public.create_position_internal(
+                p_user_id, p_symbol, p_side, p_qty, p_fill_price, p_ltp,
+                p_product_type, p_segment, p_stop_loss, p_target,
+                p_expected_margin, p_expected_margin, p_expected_brokerage
+            );
 
-            UPDATE public.positions
-            SET qty_open = v_new_qty_open,
-                qty_total = v_new_qty_total,
-                avg_price = v_new_avg_price,
-                ltp = p_ltp,
-                updated_at = now()
-            WHERE id = v_position_id;
+            -- Ledger entries for new position margin
+            IF p_expected_margin > 0 THEN
+                INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
+                VALUES (p_user_id, 'MARGIN_DEBIT', p_expected_margin, 'APPROVED', 'MRG_' || v_order_id::text);
+            END IF;
+
         ELSE
-            -- New position
-            INSERT INTO public.positions (
-                user_id, symbol, side, status, qty_open, qty_total, avg_price, entry_price, ltp
-            ) VALUES (
-                p_user_id, p_symbol, p_side, 'open', p_qty, p_qty, p_fill_price, p_fill_price, p_ltp
-            ) RETURNING id INTO v_position_id;
+            -- Lifecycle: Opposite-Side Netting/Exiting (FIFO Order Consuming Oldest First)
+            v_remaining_qty := p_qty;
+            
+            FOR v_pos IN 
+                SELECT id, qty_open 
+                FROM public.positions
+                WHERE user_id = p_user_id AND symbol = p_symbol AND status = 'open' AND side = v_pos_side
+                ORDER BY entry_time ASC
+                FOR UPDATE
+            LOOP
+                IF v_remaining_qty <= 0 THEN
+                    EXIT;
+                END IF;
+
+                IF v_pos.qty_open > v_remaining_qty THEN
+                    -- Lifecycle: Reduce Position (Partial Close lot)
+                    v_closed_qty := v_remaining_qty;
+                    PERFORM public.reduce_position_internal(
+                        v_pos.id, v_closed_qty, p_fill_price, p_ltp,
+                        0, p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                    );
+                    v_remaining_qty := 0;
+                ELSE
+                    -- Lifecycle: Close Position (Full Close lot)
+                    v_closed_qty := v_pos.qty_open;
+                    PERFORM public.close_position_v2(
+                        v_pos.id, v_closed_qty, p_fill_price,
+                        'FIFO_EXIT', 0, p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                    );
+                    v_remaining_qty := v_remaining_qty - v_closed_qty;
+                END IF;
+            END LOOP;
+
+            -- Lifecycle: Reverse Position (Create new opposite side position if remaining quantity exists)
+            IF v_remaining_qty > 0 THEN
+                PERFORM public.create_position_internal(
+                    p_user_id, p_symbol, p_side, v_remaining_qty, p_fill_price, p_ltp,
+                    p_product_type, p_segment, p_stop_loss, p_target,
+                    p_expected_margin, p_expected_margin, p_expected_brokerage
+                );
+
+                -- Ledger entries for reversed side entry margin debit
+                IF p_expected_margin > 0 THEN
+                    INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
+                    VALUES (p_user_id, 'MARGIN_DEBIT', p_expected_margin, 'APPROVED', 'MRG_' || v_order_id::text);
+                END IF;
+            END IF;
         END IF;
 
-        -- STEP 4: WRITE TO LEDGER
-        IF p_expected_margin > 0 THEN
-            INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
-            VALUES (p_user_id, 'MARGIN_DEBIT', p_expected_margin, 'APPROVED', 'MRG_' || v_order_id);
-        END IF;
-
+        -- Write brokerage transaction once at order execution level
         IF p_expected_brokerage > 0 THEN
             INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
-            VALUES (p_user_id, 'BROKERAGE_DEBIT', p_expected_brokerage, 'APPROVED', 'BRK_' || v_order_id);
+            VALUES (p_user_id, 'BROKERAGE_DEBIT', p_expected_brokerage, 'APPROVED', 'BRK_' || v_order_id::text);
         END IF;
 
+        -- Write buffer fee transaction once at order execution level
         IF p_buffer_fee > 0 THEN
             INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
-            VALUES (p_user_id, 'BUFFER_FEE_DEBIT', p_buffer_fee, 'APPROVED', 'BUF_' || v_order_id);
+            VALUES (p_user_id, 'BUFFER_FEE_DEBIT', p_buffer_fee, 'APPROVED', 'BUF_' || v_order_id::text);
         END IF;
-
-        -- STEP 5: DEDUCT PROFILE BALANCE
-        -- The sync_profile_balance trigger on transactions handles the actual profile deduction for these types.
-        -- We rely on that trigger (passive consistency) rather than manual deduction to prevent double-spending.
-        -- Wait, the user said "passive consistency is fine". We will let the transactions trigger handle profile updates.
-
     END IF;
 
     RETURN v_order_id;
 END;
 $$;
 
-
+REVOKE EXECUTE ON FUNCTION public.place_order_v2 FROM public;

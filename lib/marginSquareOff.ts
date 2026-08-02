@@ -120,8 +120,7 @@ export async function checkAndSquareOffPositionsForMargin(userId: string, adminC
             created_at: new Date().toISOString()
           });
 
-          // Also update position's margin_required to 0 in database since it's closed
-          await adminClient.from('positions').update({ margin_required: 0 }).eq('id', pos.id);
+          // margin_required is already set to 0 atomically by close_position_v2
         }
       }
     }

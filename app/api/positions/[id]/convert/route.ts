@@ -117,14 +117,7 @@ export async function POST(
       }
     }
 
-    // 4. Update the position row itself in the positions table
-    const updateData: any = { 
-      product_type,
-      margin_required: newMarginRequired,
-      locked_margin: newMarginRequired
-    };
-
-    // 3.5 Deduct carry brokerage if converting to CARRY and not yet paid
+    // 3.5 Calculate carry brokerage if converting to CARRY and not yet paid
     let carryBrokerageToCharge = 0;
     if (product_type === 'CARRY' && !pos.carry_brokerage_paid) {
       carryBrokerageToCharge = calculateCarryBrokerage({
@@ -145,48 +138,33 @@ export async function POST(
             error: `Insufficient margin. Free margin: ₹${freeMargin.toFixed(2)}, Required: ₹${(marginDifference + carryBrokerageToCharge).toFixed(2)} (including ₹${carryBrokerageToCharge.toFixed(2)} carry brokerage)`
           }, { status: 400 });
         }
-        
-        // Deduct from profile balance
-        const newBalance = Number(profile.balance || 0) - carryBrokerageToCharge;
-        const { error: balanceErr } = await admin.from('profiles').update({ balance: newBalance }).eq('id', user.id);
-        
-        if (balanceErr) {
-          console.error('[Positions Convert API] Error deducting brokerage:', balanceErr);
-          return NextResponse.json({ error: 'Failed to deduct carry brokerage' }, { status: 500 });
-        }
-        
-        // Log it
-        await admin.from('act_logs').insert({
-          user_id: user.id,
-          action: 'BROKERAGE_DEDUCTION',
-          reason: `Carry Brokerage charged on conversion to CARRY for ${pos.symbol} (Qty: ${pos.qty_open}) | Amount: ₹${carryBrokerageToCharge.toFixed(2)}`,
-          ip_address: request.headers.get('x-forwarded-for') || '127.0.0.1'
-        });
-        
-        updateData.carry_brokerage_paid = true;
       }
     }
 
-    const { error: posUpdateErr } = await admin.from('positions')
-      .update(updateData)
-      .eq('id', positionId)
-      .eq('user_id', user.id);
+    // Call the atomic database transaction RPC
+    const idempotencyKey = `CONV_BRK_${positionId}`;
+    const { data: success, error: rpcErr } = await admin.rpc('convert_position_v1', {
+      p_position_id: positionId,
+      p_user_id: user.id,
+      p_new_product_type: product_type,
+      p_new_margin: newMarginRequired,
+      p_carry_brokerage: carryBrokerageToCharge,
+      p_idempotency_key: idempotencyKey
+    });
 
-    if (posUpdateErr) {
-      console.error('[Positions Convert API] Error updating position:', posUpdateErr);
-      return NextResponse.json({ error: 'Failed to convert position product type' }, { status: 500 });
+    if (rpcErr || !success) {
+      console.error('[Positions Convert API] RPC Error:', rpcErr);
+      return NextResponse.json({ error: rpcErr?.message || 'Failed to convert position' }, { status: 500 });
     }
 
-    // 3. Update all EXECUTED orders for this user, symbol, and side (as fallback / consistency)
-    const { error: ordErr } = await admin.from('orders')
-      .update({ product_type })
-      .eq('user_id', user.id)
-      .eq('symbol', pos.symbol)
-      .eq('side', pos.side)
-      .eq('status', 'EXECUTED');
-
-    if (ordErr) {
-      console.error('[Positions Convert API] Error updating orders:', ordErr);
+    // Log action asynchronously
+    if (carryBrokerageToCharge > 0) {
+      admin.from('act_logs').insert({
+        user_id: user.id,
+        action: 'BROKERAGE_DEDUCTION',
+        reason: `Carry Brokerage charged on conversion to CARRY for ${pos.symbol} (Qty: ${pos.qty_open}) | Amount: ₹${carryBrokerageToCharge.toFixed(2)}`,
+        ip_address: request.headers.get('x-forwarded-for') || '127.0.0.1'
+      }).catch(err => console.error('[Positions Convert API] Failed to log act_log:', err));
     }
 
     return NextResponse.json({ success: true, product_type }, { status: 200 });

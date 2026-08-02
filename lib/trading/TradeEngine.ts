@@ -210,12 +210,9 @@ export class TradeEngine {
     }
 
     const activePosition = openPositions.find((p: any) => p.symbol === symbol && p.product_type === (product_type || 'INTRADAY'));
-    if (!is_exit && activePosition && activePosition.side !== side) {
-      if (qty <= Number(activePosition.qty_open)) {
-        is_exit = true; 
-      } else {
-        throw new Error(`You already have an open ${activePosition.side} position. Please exit it first.`);
-      }
+    // DB RPC place_order_v2 natively handles opposite-side netting and splitting.
+    if (activePosition && activePosition.side !== side) {
+      is_exit = true;
     }
 
     let kiteLtp = quotesMap[kiteInst] ?? null;
@@ -279,10 +276,8 @@ export class TradeEngine {
 
     const requiredMargin = marginPortion + brokerage;
 
-    const freeMargin = calculateFreeMarginFromPositions(Number(profile.balance ?? 0), openPositions);
-    if (!is_exit && !RiskValidation.validateMargin(freeMargin, requiredMargin)) {
-       throw new Error(`Insufficient margin. Free Margin: ₹${freeMargin.toFixed(2)}, Required: ₹${requiredMargin.toFixed(2)}`);
-    }
+    // Validation is delegated to database RPC place_order_v2
+
 
     // 4. Execution Price Calculation (BufferCalculator)
     

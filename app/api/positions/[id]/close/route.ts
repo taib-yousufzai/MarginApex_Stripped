@@ -397,29 +397,8 @@ async function handleClosePosition(
     return NextResponse.json({ error: 'Failed to close position. Please try again.' }, { status: 500 });
   }
 
-  // Record the exit transaction in the orders history table so it shows up in the History tab
-  const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
-  admin.from('orders').insert({
-    user_id: user.id,
-    symbol: pos.symbol,
-    kite_instrument: pos.kite_instrument || pos.symbol,
-    segment: pos.settlement || 'NSE-EQ',
-    side: exitSide,
-    status: 'EXECUTED',
-    qty: pos.qty_open,
-    lots: pos.lots || 0,
-    price: exitPrice,
-    fill_price: exitPrice,
-    ltp_at_entry: baseLtp,
-    order_type: 'MARKET',
-    product_type: pos.product_type || 'INTRADAY',
-    info: positionId, // linking to original position
-    is_exit: true
-  }).then(({ error: historyErr }) => {
-    if (historyErr) {
-      console.error('[POST /api/positions/[id]/close] Failed to log exit order history:', historyErr);
-    }
-  });
+  // Exit order history is now recorded atomically inside close_position_v2.
+  // No direct orders table mutation needed here.
 
   const response: ClosePositionResponse = {
     pnl:        Number(pnl),

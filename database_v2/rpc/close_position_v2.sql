@@ -4,13 +4,14 @@
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION public.close_position_v2(
-  p_position_id    uuid,
-  p_close_qty      numeric,
-  p_close_price    numeric,
-  p_closed_by      text,
-  p_expected_brokerage numeric DEFAULT 0
+  p_position_id        uuid,
+  p_close_qty          numeric,
+  p_close_price        numeric,
+  p_closed_by          text,
+  p_expected_brokerage numeric DEFAULT 0,
+  p_idempotency_key    text DEFAULT NULL
 )
-RETURNS uuid
+RETURNS numeric
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
@@ -20,25 +21,44 @@ DECLARE
     v_side text;
     v_qty_open numeric;
     v_avg_price numeric;
+    v_locked_margin numeric;
+    v_margin_required numeric;
+    v_settlement text;
+    v_product_type text;
     
     v_pnl numeric;
-    v_margin_released numeric; -- Requires fetching required margin based on closed qty
-    -- For simplicity in v2, margin release could be derived from the proportional open qty 
-    -- or provided explicitly by TS and verified here.
-    v_expected_margin_credit numeric;
+    v_margin_released numeric;
+    v_pnl_type text;
+    v_exit_side text;
 BEGIN
     -- ISOLATE V1 TRIGGERS (Strangler Fig)
     PERFORM set_config('app.is_v2', 'true', true);
 
+    -- IDEMPOTENCY CHECK: If this request was already processed, return the cached PNL
+    IF p_idempotency_key IS NOT NULL THEN
+        SELECT 
+          CASE WHEN type = 'PNL_CREDIT' THEN amount ELSE -amount END INTO v_pnl
+        FROM public.transactions
+        WHERE ref_id = 'CLOSE_PNL_' || p_idempotency_key;
+        
+        IF FOUND THEN
+            RETURN v_pnl;
+        END IF;
+    END IF;
+
     -- STEP 1: Lock Position
-    SELECT user_id, symbol, side, qty_open, avg_price
-    INTO v_user_id, v_symbol, v_side, v_qty_open, v_avg_price
+    SELECT user_id, symbol, side, qty_open, avg_price, locked_margin, margin_required, settlement, product_type
+    INTO v_user_id, v_symbol, v_side, v_qty_open, v_avg_price, v_locked_margin, v_margin_required, v_settlement, v_product_type
     FROM public.positions
     WHERE id = p_position_id AND status IN ('open', 'active')
     FOR UPDATE;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Position not found or already closed.';
+    END IF;
+
+    IF p_close_qty <= 0 THEN
+        RAISE EXCEPTION 'Close quantity must be greater than 0.';
     END IF;
 
     IF p_close_qty > v_qty_open THEN
@@ -52,35 +72,58 @@ BEGIN
         v_pnl := (v_avg_price - p_close_price) * p_close_qty;
     END IF;
 
-    -- STEP 3: Update Position
+    -- STEP 3: Proportional Margin Release and Lots Calculation
+    v_exit_side := CASE WHEN v_side = 'BUY' THEN 'SELL' ELSE 'BUY' END;
+    -- If fully closing, release 100% of remaining locked margin to avoid rounding issues
+    IF p_close_qty = v_qty_open THEN
+        v_margin_released := v_locked_margin;
+    ELSE
+        v_margin_released := round((v_locked_margin * p_close_qty) / v_qty_open, 2);
+    END IF;
+
+    -- STEP 4: Update Position
     UPDATE public.positions
     SET qty_open = qty_open - p_close_qty,
         pnl = pnl + v_pnl,
         exit_price = p_close_price,
+        locked_margin = locked_margin - v_margin_released,
+        margin_required = margin_required - v_margin_released,
         status = CASE WHEN (qty_open - p_close_qty) <= 0 THEN 'closed' ELSE status END,
         closed_by = p_closed_by,
+        exit_time = CASE WHEN (qty_open - p_close_qty) <= 0 THEN now() ELSE exit_time END,
         updated_at = now()
     WHERE id = p_position_id;
 
-    -- STEP 4: Write to Ledger
+    -- STEP 5: Record the Exit Order Transaction
+    INSERT INTO public.orders (
+        user_id, symbol, kite_instrument, segment, side, status, qty, lots,
+        price, fill_price, ltp_at_entry, order_type, product_type, info, is_exit, idempotency_key
+    )
+    VALUES (
+        v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'NSE-EQ'), v_exit_side, 'EXECUTED', p_close_qty, p_close_qty,
+        p_close_price, p_close_price, p_close_price, 'MARKET', COALESCE(v_product_type, 'INTRADAY'), p_position_id::text, true, p_idempotency_key
+    );
+
+    -- STEP 6: Write to Ledger
     -- Brokerage
     IF p_expected_brokerage > 0 THEN
         INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
-        VALUES (v_user_id, 'BROKERAGE_DEBIT', p_expected_brokerage, 'APPROVED', 'BRK_' || p_position_id);
+        VALUES (v_user_id, 'BROKERAGE_DEBIT', p_expected_brokerage, 'APPROVED', COALESCE('CLOSE_BRK_' || p_idempotency_key, 'BRK_' || p_position_id::text));
     END IF;
 
     -- PnL
-    IF v_pnl > 0 THEN
+    IF v_pnl <> 0 THEN
+        v_pnl_type := CASE WHEN v_pnl > 0 THEN 'PNL_CREDIT' ELSE 'PNL_DEBIT' END;
         INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
-        VALUES (v_user_id, 'PNL_CREDIT', v_pnl, 'APPROVED', 'PNL_' || p_position_id);
-    ELSIF v_pnl < 0 THEN
-        INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
-        VALUES (v_user_id, 'PNL_DEBIT', ABS(v_pnl), 'APPROVED', 'PNL_' || p_position_id);
+        VALUES (v_user_id, v_pnl_type, ABS(v_pnl), 'APPROVED', COALESCE('CLOSE_PNL_' || p_idempotency_key, 'PNL_' || p_position_id::text));
     END IF;
 
-    -- (Margin Release logic omitted for brevity in this architectural draft,
-    -- but ideally TS passes p_expected_margin_credit and DB verifies it).
+    -- Margin Release
+    IF v_margin_released > 0 THEN
+        INSERT INTO public.transactions (user_id, type, amount, status, ref_id)
+        VALUES (v_user_id, 'MARGIN_CREDIT', v_margin_released, 'APPROVED', COALESCE('CLOSE_MRG_' || p_idempotency_key, 'MRG_RET_' || p_position_id::text));
+    END IF;
 
-    RETURN p_position_id;
+    RETURN v_pnl;
 END;
 $$;

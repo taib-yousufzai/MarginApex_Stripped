@@ -146,16 +146,49 @@ export async function GET(request: Request) {
         const baseLtp = await fetchLtp(pos.symbol, pos.settlement);
         const ltpToUse = baseLtp || pos.ltp || pos.entry_price;
         
-        const { error: rpcErr } = await admin.rpc('rollover_carry_position', {
+        // 1. Close current CARRY position at LTP using v2 engine
+        const closeIdempotency = `ROLL_CLOSE_${pos.id}_${new Date().toISOString().slice(0, 10)}`;
+        const { error: closeErr } = await admin.rpc('close_position_v2', {
           p_position_id: pos.id,
-          p_ltp: ltpToUse
+          p_close_qty: Number(pos.qty_open),
+          p_close_price: ltpToUse,
+          p_closed_by: 'WEEKLY_ROLLOVER',
+          p_expected_brokerage: 0,
+          p_idempotency_key: closeIdempotency
         });
 
-        if (!rpcErr) {
+        if (closeErr) {
+          results.errors.push(`Failed to close pos ${pos.id} for rollover: ${closeErr.message}`);
+          continue;
+        }
+
+        // 2. Open new CARRY position at LTP using v2 engine
+        const openIdempotency = `ROLL_OPEN_${pos.id}_${new Date().toISOString().slice(0, 10)}`;
+        const { error: openErr } = await admin.rpc('place_order_v2', {
+          p_user_id: prof.id,
+          p_symbol: pos.symbol,
+          p_kite_inst: pos.symbol, // fallback to symbol
+          p_segment: pos.settlement || 'NSE-EQ',
+          p_side: pos.side,
+          p_order_type: 'MARKET',
+          p_product_type: 'CARRY',
+          p_qty: Number(pos.qty_open),
+          p_lots: Number(pos.qty_open), // approximation
+          p_ltp: ltpToUse,
+          p_fill_price: ltpToUse,
+          p_is_exit: false,
+          p_buffer_fee: 0,
+          p_status: 'EXECUTED',
+          p_expected_margin: 0, // already validated
+          p_expected_brokerage: 0,
+          p_idempotency_key: openIdempotency
+        });
+
+        if (!openErr) {
           results.rolledOver++;
           usersToUpdate.add(prof.id);
         } else {
-          results.errors.push(`Failed to rollover pos ${pos.id}`);
+          results.errors.push(`Failed to reopen pos ${pos.id} for rollover: ${openErr.message}`);
         }
       } catch (e: any) {
         results.errors.push(`Error processing pos ${pos.id}: ${e.message}`);

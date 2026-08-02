@@ -148,30 +148,18 @@ export async function GET(request: Request) {
             charge = Math.max(0, Math.round(charge * 100) / 100);
 
             if (charge > 0) {
-              const currentBalance = Number(userProfile.balance || 0);
-              const newBalance = currentBalance - charge;
-
-              // Debit balance
-              const { error: uError } = await admin
-                .from('profiles')
-                .update({ balance: newBalance })
-                .eq('id', userProfile.id);
+              const idempotencyKey = `EOD_CARRY_${pos.id}_${new Date().toISOString().slice(0, 10)}`;
+              const { data: charged, error: uError } = await admin.rpc('apply_carry_charges_v1', {
+                p_position_id: pos.id,
+                p_charge_amount: charge,
+                p_idempotency_key: idempotencyKey
+              });
 
               if (!uError) {
-                userProfile.balance = newBalance; // update local cache
-
-                // Log transaction
-                await admin.from('transactions').insert({
-                  user_id: userProfile.id,
-                  type: 'FEE',
-                  amount: charge,
-                  status: 'APPROVED',
-                  ref_id: `EOD Carry Charge: ${pos.symbol}`,
-                  created_at: new Date().toISOString(),
-                });
+                userProfile.balance = Number(userProfile.balance || 0) - charge; // update local cache
                 results.carryCharged++;
               } else {
-                results.errors.push(`Failed to debit charge for pos ${pos.id}`);
+                results.errors.push(`Failed to debit charge for pos ${pos.id}: ${uError.message}`);
               }
             }
           }
