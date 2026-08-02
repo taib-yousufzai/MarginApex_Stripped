@@ -68,10 +68,12 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS engine_releases_deny_update ON public.engine_releases;
 CREATE TRIGGER engine_releases_deny_update
     BEFORE UPDATE ON public.engine_releases
     FOR EACH ROW EXECUTE FUNCTION public.engine_releases_deny_mutation();
 
+DROP TRIGGER IF EXISTS engine_releases_deny_delete ON public.engine_releases;
 CREATE TRIGGER engine_releases_deny_delete
     BEFORE DELETE ON public.engine_releases
     FOR EACH ROW EXECUTE FUNCTION public.engine_releases_deny_mutation();

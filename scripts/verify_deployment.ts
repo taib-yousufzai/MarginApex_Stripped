@@ -154,7 +154,7 @@ function writeReleaseManifest(
   passCount:       number,
   warnCount:       number,
   failCount:       number,
-): void {
+): string {
   const releasesDir = path.resolve(process.cwd(), 'releases');
   if (!fs.existsSync(releasesDir)) {
     fs.mkdirSync(releasesDir, { recursive: true });
@@ -245,11 +245,17 @@ async function main(): Promise<void> {
     ssl: { rejectUnauthorized: false },
   });
 
-  // Captured during check #1 for use in the manifest
+  // Captured during checks — used for engine_releases INSERT after finally
   let deployedEngineVersion   = EXPECTED_ENGINE_VERSION;
   let deployedContractVersion = EXPECTED_CONTRACT_VERSION;
   let deployedSchemaVersion   = EXPECTED_SCHEMA_VERSION;
   let deployedMigrationHash   = '';
+  const environment  = process.env.DEPLOY_ENV ?? process.env.NODE_ENV ?? 'local';
+  const operator     = process.env.CI_WORKFLOW ?? process.env.CI_ACTOR ?? 'unknown';
+  let   releaseCommit = 'N/A';
+  try { releaseCommit = execSync('git rev-parse HEAD', { stdio: 'pipe' }).toString().trim(); } catch { /* */ }
+  let   releaseBranch = 'N/A';
+  try { releaseBranch = execSync('git rev-parse --abbrev-ref HEAD', { stdio: 'pipe' }).toString().trim(); } catch { /* */ }
 
   // Hoisted so it's available both inside try (for INSERT) and after finally (for UPDATE)
   const deploymentId = process.env.DEPLOY_ID ?? `local-${Date.now()}`;
@@ -425,45 +431,9 @@ async function main(): Promise<void> {
       warn('schema_snapshot_recorded', `could not record baseline: ${e.message}`);
     }
 
-    // ── 10. Insert engine_releases row ────────────────────────────────────────
-    // One immutable row per deployment. Idempotent via deployment_id UNIQUE constraint.
-    const environment  = process.env.DEPLOY_ENV ?? process.env.NODE_ENV ?? 'local';
-    const operator     = process.env.CI_WORKFLOW ?? process.env.CI_ACTOR ?? 'unknown';
-    let   releaseCommit = 'N/A';
-    try {
-      releaseCommit = execSync('git rev-parse HEAD', { stdio: 'pipe' }).toString().trim();
-    } catch { /* git not available */ }
-    let releaseBranch = 'N/A';
-    try {
-      releaseBranch = execSync('git rev-parse --abbrev-ref HEAD', { stdio: 'pipe' }).toString().trim();
-    } catch { /* git not available */ }
-
-    try {
-      await client.query(
-        `INSERT INTO public.engine_releases
-           (version, engine_version, contract_version, schema_version,
-            migration_hash, git_commit, git_branch,
-            deployed_by, environment, deployment_id, verification_passed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (deployment_id) DO NOTHING`,
-        [
-          deployedEngineVersion,
-          deployedEngineVersion,
-          deployedContractVersion,
-          deployedSchemaVersion,
-          deployedMigrationHash || 'pending',
-          releaseCommit,
-          releaseBranch,
-          operator,
-          environment,
-          deploymentId,
-          false,  // updated to true after final verification pass completes
-        ]
-      );
-      pass('engine_releases_row', `deployment_id=${deploymentId}`);
-    } catch (e: any) {
-      warn('engine_releases_row', `could not insert release row: ${e.message}`);
-    }
+    // ── 10. Collect release identity for post-result INSERT ──────────────────
+    // engine_releases is append-only. The row is inserted after all checks
+    // complete so verification_passed can be set accurately in one write.
 
   } finally {
     await client.end();
@@ -490,29 +460,36 @@ async function main(): Promise<void> {
   console.log(`Failed:   ${failures.length}`);
   console.log('----------------------------------------------------------------------');
 
-  // Update the engine_releases row with final pass/fail and manifest hash.
-  // Uses a new client since the main client is already closed.
-  const updateReleaseRow = async (passed: boolean, manifestHash: string): Promise<void> => {
-    const updateClient = new Client({
+  // Insert engine_releases row now that verification_passed is known.
+  // Append-only: one INSERT per deployment_id, no subsequent updates.
+  const insertReleaseRow = async (passed: boolean, manifestHash: string): Promise<void> => {
+    const rc = new Client({
       host: 'db.cpcvklekwwawgtgbyrmp.supabase.co',
-      port: 5432,
-      user: 'postgres',
-      password,
-      database: 'postgres',
-      ssl: { rejectUnauthorized: false },
+      port: 5432, user: 'postgres', password,
+      database: 'postgres', ssl: { rejectUnauthorized: false },
     });
     try {
-      await updateClient.connect();
-      await updateClient.query(
-        `UPDATE public.engine_releases
-         SET verification_passed = $1, manifest_hash = $2
-         WHERE deployment_id = $3`,
-        [passed, manifestHash, deploymentId]
+      await rc.connect();
+      await rc.query(
+        `INSERT INTO public.engine_releases
+           (version, engine_version, contract_version, schema_version,
+            migration_hash, manifest_hash, git_commit, git_branch,
+            deployed_by, environment, deployment_id, verification_passed)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (deployment_id) DO NOTHING`,
+        [
+          deployedEngineVersion, deployedEngineVersion,
+          deployedContractVersion, deployedSchemaVersion,
+          deployedMigrationHash || 'pending', manifestHash,
+          releaseCommit, releaseBranch,
+          operator, environment, deploymentId, passed,
+        ]
       );
+      console.log(`engine_releases row inserted (deployment_id=${deploymentId}, passed=${passed})`);
     } catch (e: any) {
-      console.warn(`[verify] Could not update engine_releases row: ${e.message}`);
+      console.warn(`[verify] Could not insert engine_releases row: ${e.message}`);
     } finally {
-      await updateClient.end();
+      await rc.end();
     }
   };
 
@@ -524,7 +501,7 @@ async function main(): Promise<void> {
       deployedEngineVersion, deployedContractVersion, deployedSchemaVersion,
       deployedMigrationHash, passes.length, warnings.length, failures.length,
     );
-    await updateReleaseRow(false, mHash);
+    await insertReleaseRow(false, mHash);
     process.exit(1);
   } else if (warnings.length > 0) {
     console.log('\n⚠️  DEPLOYMENT VERIFIED WITH WARNINGS');
@@ -533,7 +510,7 @@ async function main(): Promise<void> {
       deployedEngineVersion, deployedContractVersion, deployedSchemaVersion,
       deployedMigrationHash, passes.length, warnings.length, failures.length,
     );
-    await updateReleaseRow(true, mHash);
+    await insertReleaseRow(true, mHash);
     process.exit(0);
   } else {
     console.log('\n✅ DEPLOYMENT VERIFIED');
@@ -541,7 +518,7 @@ async function main(): Promise<void> {
       deployedEngineVersion, deployedContractVersion, deployedSchemaVersion,
       deployedMigrationHash, passes.length, warnings.length, failures.length,
     );
-    await updateReleaseRow(true, mHash);
+    await insertReleaseRow(true, mHash);
     process.exit(0);
   }
 }

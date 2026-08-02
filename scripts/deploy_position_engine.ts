@@ -14,6 +14,7 @@ const SQL_FILES = [
   'supabase/migrations/20260802_financial_events_journal.sql',
   'supabase/migrations/20260802_engine_releases.sql',
   'supabase/migrations/20260802_schema_snapshots.sql',
+  'supabase/migrations/20260802_add_fee_transaction_type.sql',
   // ── Position Engine functions (internal helpers first) ────────────────────
   'database_v2/functions/create_position_internal.sql',
   'database_v2/functions/increase_position_internal.sql',
@@ -21,6 +22,7 @@ const SQL_FILES = [
   // ── Position Engine public RPCs ───────────────────────────────────────────
   'database_v2/rpc/close_position_v2.sql',
   'database_v2/rpc/place_order_v2.sql',
+  'database_v2/rpc/get_trade_context_v2.sql',
   'database_v2/rpc/run_shadow_order_v2.sql',
   'database_v2/rpc/run_shadow_close_v2.sql',
   'database_v2/rpc/apply_carry_charges_v1.sql',

@@ -55,6 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_financial_events_type_time
 
 ALTER TABLE public.financial_events ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS financial_events_insert_only ON public.financial_events;
 CREATE POLICY financial_events_insert_only
     ON public.financial_events
     FOR INSERT
@@ -71,10 +72,12 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS financial_events_deny_update ON public.financial_events;
 CREATE TRIGGER financial_events_deny_update
     BEFORE UPDATE ON public.financial_events
     FOR EACH ROW EXECUTE FUNCTION public.financial_events_deny_mutation();
 
+DROP TRIGGER IF EXISTS financial_events_deny_delete ON public.financial_events;
 CREATE TRIGGER financial_events_deny_delete
     BEFORE DELETE ON public.financial_events
     FOR EACH ROW EXECUTE FUNCTION public.financial_events_deny_mutation();
