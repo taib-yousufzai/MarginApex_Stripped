@@ -22,8 +22,7 @@ BEGIN
         'parent_id', parent_id,
         'balance', balance,
         'trading_mode', trading_mode,
-        'template_id', template_id,
-        'leverage', leverage
+        'template_id', template_id
     ) INTO v_profile
     FROM public.profiles
     WHERE id = p_user_id;
