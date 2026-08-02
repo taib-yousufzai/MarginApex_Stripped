@@ -117,7 +117,23 @@ export class TradeEngine {
     
     if (!profile) throw new Error('User profile not found.');
     if (!profile.active) throw new Error('Account is inactive');
-    if (!profile.segments?.includes(segmentId)) throw new Error('Segment is not enabled for this account');
+
+    // Database segments use format like 'NSE-EQ', 'MCX-FUT', 'CRYPTO'.
+    // TradeEngine segmentId uses short codes: 'nse', 'mcx', 'crypto', etc.
+    // Map each segmentId to the DB segment values that grant access to it.
+    const SEGMENT_MAP: Record<string, string[]> = {
+      nse:    ['NSE-EQ', 'NSE-FUT', 'INDEX-FUT', 'INDEX-OPT', 'STOCK-FUT', 'STOCK-OPT'],
+      mcx:    ['MCX-FUT', 'MCX-OPT'],
+      bse:    ['BSE-EQ', 'BSE-FUT', 'BFO-FUT', 'BFO-OPT'],
+      forex:  ['FOREX', 'CDS-FUT', 'CDS-OPT'],
+      crypto: ['CRYPTO'],
+      comex:  ['COMEX'],
+    };
+    const allowedDbSegments = SEGMENT_MAP[segmentId] ?? [segmentId.toUpperCase()];
+    const userSegments: string[] = profile.segments ?? [];
+    if (!allowedDbSegments.some((s: string) => userSegments.includes(s))) {
+      throw new Error('Segment is not enabled for this account');
+    }
 
     const openPositions = ctx.open_positions || [];
     const pendingOrders = ctx.pending_orders || [];
