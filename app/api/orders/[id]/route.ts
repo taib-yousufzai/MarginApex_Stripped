@@ -9,10 +9,11 @@ import { logAction, extractClientIp } from '@/lib/actionLogger';
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   const ipAddress = extractClientIp(request.headers);
   const clonedRequest = request.clone();
+  const { id } = await params;
   
   let payload: any = null;
   try {
@@ -21,7 +22,7 @@ export async function PATCH(
 
   const user = await getUserFromRequest(request);
 
-  const response = await handleCancelOrder(request, params, ipAddress, user, payload);
+  const response = await handleCancelOrder(request, { id }, ipAddress, user, payload);
 
   let errorMessage: string | null = null;
   if (!response.ok) {

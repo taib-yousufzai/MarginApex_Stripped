@@ -907,6 +907,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         handedOffToOrderFlow = true;
         window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
         handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
+
+        // Modify flow: cancel the original order first, then re-place with new params
+        if (isModify && modifyingOrderId && !modifyingOrderId.startsWith('pos-')) {
+          try {
+            await api.patch<unknown>(`/api/orders/${modifyingOrderId}`, { status: 'CANCELLED' });
+          } catch (err) {
+            window.dispatchEvent(new CustomEvent('toast_msg', { detail: 'Failed to cancel original order for modify.' }));
+            window.dispatchEvent(new Event('global-loader-end'));
+            isExecutingRef.current = false;
+            return;
+          }
+        }
+
         // Non-exit: optimistic fire-and-forget for snappy UX
         const optimisticPayload = {
           symbol: item.symbol,

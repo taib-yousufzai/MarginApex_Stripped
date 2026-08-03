@@ -223,17 +223,18 @@ async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: numbe
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const ipAddress = extractClientIp(request.headers);
   const clonedRequest = request.clone();
+  const { id } = await params;
   
   let payload: any = null;
   try {
     payload = await clonedRequest.json();
   } catch {}
 
-  const response = await handleClosePosition(request, params, ipAddress);
+  const response = await handleClosePosition(request, { id }, ipAddress);
 
   let errorMessage: string | null = null;
   if (!response.ok) {
