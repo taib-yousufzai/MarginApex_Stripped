@@ -180,8 +180,8 @@ async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: numbe
     else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
     else if (s.includes('BSE')) exchange = 'BSE';
 
-    // Resolve synthetic COMEX symbols (e.g. CRUDEOIL_FUT → MCX:CRUDEOIL25AUGFUT)
-    if (exchange === 'MCX') {
+    // Resolve synthetic COMEX/FOREX symbols (e.g. CRUDEOIL_FUT → MCX:CRUDEOIL25AUGFUT, JPYINR_FUT → CDS:JPYINR26AUGFUT)
+    if (exchange === 'MCX' || exchange === 'CDS') {
       let baseName = symbol.toUpperCase();
       if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
       const admin = getAdminClient();
@@ -195,9 +195,9 @@ async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: numbe
         .limit(1)
         .maybeSingle();
       if (nearestFut?.tradingsymbol) {
-        fullSymbol = `MCX:${nearestFut.tradingsymbol}`;
+        fullSymbol = `${exchange}:${nearestFut.tradingsymbol}`;
       } else {
-        fullSymbol = `MCX:${symbol}`;
+        fullSymbol = `${exchange}:${symbol}`;
       }
     } else {
       fullSymbol = `${exchange}:${symbol}`;

@@ -73,9 +73,10 @@ export class TradeEngine {
     // the quote fetch, otherwise the price lookup will fail.
     if (kiteInst && !kiteInst.includes(':')) {
       const kiUpper = kiteInst.toUpperCase();
-      if (segUpper.includes('MCX')) {
-        // COMEX synthetic symbols like CRUDEOIL_FUT → strip _FUT and resolve
-        // to the nearest active MCX futures contract
+      if (segUpper.includes('MCX') || segUpper.includes('CDS') || segUpper.includes('FOREX')) {
+        // COMEX/FOREX synthetic symbols like CRUDEOIL_FUT or JPYINR_FUT → strip _FUT and resolve
+        // to the nearest active futures contract
+        const prefix = segUpper.includes('MCX') ? 'MCX' : 'CDS';
         let baseName = kiUpper;
         if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
         const { data: nearestFut } = await admin
@@ -88,15 +89,13 @@ export class TradeEngine {
           .limit(1)
           .maybeSingle();
         if (nearestFut?.tradingsymbol) {
-          kiteInst = `MCX:${nearestFut.tradingsymbol}`;
+          kiteInst = `${prefix}:${nearestFut.tradingsymbol}`;
         } else {
-          kiteInst = `MCX:${kiteInst}`;
+          kiteInst = `${prefix}:${kiteInst}`;
         }
       } else if (segUpper.includes('BSE') || segUpper.includes('BFO')) {
         kiteInst = `BFO:${kiteInst}`;
         if (!kiteInst.match(/\d/)) kiteInst = `BSE:${kiUpper}`; // bare index
-      } else if (segUpper.includes('CDS') || segUpper.includes('FOREX')) {
-        kiteInst = `CDS:${kiteInst}`;
       } else if (segUpper.includes('OPT') || segUpper.includes('FUT') || segUpper.includes('NFO')) {
         kiteInst = `NFO:${kiteInst}`;
         if (!kiteInst.match(/\d/)) kiteInst = `NSE:${kiUpper}`; // bare index

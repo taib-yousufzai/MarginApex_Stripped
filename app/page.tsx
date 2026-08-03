@@ -348,7 +348,70 @@ export default function Page() {
     }
   }, [isNotifDrawerOpen, notifications]);
 
-  const allKiteInstruments = [...KITE_INSTRUMENTS_ROW1, ...KITE_INSTRUMENTS_ROW2];
+  const [marketRow1Keys, setMarketRow1Keys] = useState<string[]>(KITE_INSTRUMENTS_ROW1);
+  const [marketRow2Keys, setMarketRow2Keys] = useState<string[]>(KITE_INSTRUMENTS_ROW2);
+  const [displayMap, setDisplayMap] = useState<Record<string, { name: string; icon: string }>>(KITE_DISPLAY_MAP);
+
+  useEffect(() => {
+    async function resolveExpiredContracts() {
+      const bases = [
+        { name: 'USDINR', prefix: 'CDS', type: ['FUT'] },
+        { name: 'CRUDEOIL', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
+        { name: 'GOLD', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
+        { name: 'SILVER', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
+        { name: 'NATURALGAS', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] }
+      ];
+
+      const newMap = { ...KITE_DISPLAY_MAP };
+      const newRow1 = [...KITE_INSTRUMENTS_ROW1];
+      const newRow2 = [...KITE_INSTRUMENTS_ROW2];
+      let changed = false;
+
+      for (const base of bases) {
+        // If the base is in row1 or row2 and expired (or we just want to forcefully fetch the active one)
+        const row1Idx = newRow1.findIndex(k => k.includes(base.name));
+        const row2Idx = newRow2.findIndex(k => k.includes(base.name));
+        
+        if (row1Idx !== -1 || row2Idx !== -1) {
+          const { data } = await supabase
+            .from('instruments')
+            .select('tradingsymbol')
+            .eq('name', base.name)
+            .in('instrument_type', base.type)
+            .gte('expiry', new Date().toISOString().split('T')[0])
+            .order('expiry', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (data?.tradingsymbol) {
+            const resolvedKey = `${base.prefix}:${data.tradingsymbol}`;
+            if (row1Idx !== -1 && newRow1[row1Idx] !== resolvedKey) {
+              const oldKey = newRow1[row1Idx];
+              newRow1[row1Idx] = resolvedKey;
+              newMap[resolvedKey] = newMap[oldKey];
+              changed = true;
+            }
+            if (row2Idx !== -1 && newRow2[row2Idx] !== resolvedKey) {
+              const oldKey = newRow2[row2Idx];
+              newRow2[row2Idx] = resolvedKey;
+              newMap[resolvedKey] = newMap[oldKey];
+              changed = true;
+            }
+          }
+        }
+      }
+
+      if (changed) {
+        setDisplayMap(newMap);
+        setMarketRow1Keys(newRow1);
+        setMarketRow2Keys(newRow2);
+      }
+    }
+
+    resolveExpiredContracts();
+  }, []);
+
+  const allKiteInstruments = [...marketRow1Keys, ...marketRow2Keys];
   const { quotes } = useMarketQuotes(allKiteInstruments);
   const kiteConnected = true;
   const kiteLoading = false;
@@ -356,7 +419,7 @@ export default function Page() {
   const buildRow = (instruments: string[]): (MarketItem & { expired?: boolean })[] => {
     return instruments.map((key) => {
       const q = quotes[key];
-      const display = KITE_DISPLAY_MAP[key] ?? { name: key, icon: 'fas fa-chart-line' };
+      const display = displayMap[key] ?? { name: key, icon: 'fas fa-chart-line' };
       const expired = isContractExpired(key);
       if (expired) {
         // Don't show stale 0/0 values — surface expiry to the user instead
@@ -374,8 +437,8 @@ export default function Page() {
     });
   };
 
-  const marketRow1 = buildRow(KITE_INSTRUMENTS_ROW1);
-  const marketRow2 = buildRow(KITE_INSTRUMENTS_ROW2);
+  const marketRow1 = buildRow(marketRow1Keys);
+  const marketRow2 = buildRow(marketRow2Keys);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('marginApexTheme') as 'light' | 'dark' | 'black' | 'blue' | null;
@@ -559,7 +622,9 @@ export default function Page() {
                                   ) : (
                                     <>
                                       <div className="market-rect-price">
-                                        {market.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <TickFlash value={market.price}>
+                                          {market.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </TickFlash>
                                       </div>
                                       <div className={`market-rect-change ${market.type}`}>
                                         {market.change >= 0
