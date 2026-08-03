@@ -79,17 +79,32 @@ export class TradeEngine {
         const prefix = segUpper.includes('MCX') ? 'MCX' : 'CDS';
         let baseName = kiUpper;
         if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
-        const { data: nearestFut } = await admin
-          .from('instruments')
-          .select('tradingsymbol')
-          .eq('name', baseName)
-          .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
-          .gte('expiry', new Date().toISOString().split('T')[0])
-          .order('expiry', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (nearestFut?.tradingsymbol) {
-          kiteInst = `${prefix}:${nearestFut.tradingsymbol}`;
+        
+        const cacheKey = `nearest_fut_${prefix}_${baseName}`;
+        const { getRedisClient } = require('@/lib/redis');
+        const redis = getRedisClient();
+        
+        let resolvedSymbol = await redis.get(cacheKey);
+        
+        if (!resolvedSymbol) {
+          const { data: nearestFut } = await admin
+            .from('instruments')
+            .select('tradingsymbol')
+            .eq('name', baseName)
+            .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+            .gte('expiry', new Date().toISOString().split('T')[0])
+            .order('expiry', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+            
+          if (nearestFut?.tradingsymbol) {
+            resolvedSymbol = nearestFut.tradingsymbol;
+            await redis.setex(cacheKey, 3600, resolvedSymbol); // Cache for 1 hour
+          }
+        }
+        
+        if (resolvedSymbol) {
+          kiteInst = `${prefix}:${resolvedSymbol}`;
         } else {
           kiteInst = `${prefix}:${kiteInst}`;
         }

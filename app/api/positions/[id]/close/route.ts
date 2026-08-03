@@ -184,18 +184,33 @@ async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: numbe
     if (exchange === 'MCX' || exchange === 'CDS') {
       let baseName = symbol.toUpperCase();
       if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
-      const admin = getAdminClient();
-      const { data: nearestFut } = await admin
-        .from('instruments')
-        .select('tradingsymbol')
-        .eq('name', baseName)
-        .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
-        .gte('expiry', new Date().toISOString().split('T')[0])
-        .order('expiry', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (nearestFut?.tradingsymbol) {
-        fullSymbol = `${exchange}:${nearestFut.tradingsymbol}`;
+      
+      const cacheKey = `nearest_fut_${exchange}_${baseName}`;
+      const { getRedisClient } = require('@/lib/redis');
+      const redis = getRedisClient();
+      
+      let resolvedSymbol = await redis.get(cacheKey);
+      
+      if (!resolvedSymbol) {
+        const admin = getAdminClient();
+        const { data: nearestFut } = await admin
+          .from('instruments')
+          .select('tradingsymbol')
+          .eq('name', baseName)
+          .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+          .gte('expiry', new Date().toISOString().split('T')[0])
+          .order('expiry', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+          
+        if (nearestFut?.tradingsymbol) {
+          resolvedSymbol = nearestFut.tradingsymbol;
+          await redis.setex(cacheKey, 3600, resolvedSymbol);
+        }
+      }
+
+      if (resolvedSymbol) {
+        fullSymbol = `${exchange}:${resolvedSymbol}`;
       } else {
         fullSymbol = `${exchange}:${symbol}`;
       }
