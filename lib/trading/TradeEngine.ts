@@ -137,7 +137,18 @@ export class TradeEngine {
       (async () => {
         if (dbSegment === 'CRYPTO') {
           const q = await fetchBinanceQuote(symbol);
-          return q ? { [symbol]: q.bid, [`${symbol}_bid`]: q.bid, [`${symbol}_ask`]: q.ask } : {};
+          if (!q) return {};
+          // Store under both `symbol` (e.g. BTC) and `kiteInst` (e.g. BTCUSDT)
+          // so the price lookup at quotesMap[kiteInst] succeeds
+          const map: Record<string, number> = {
+            [symbol]: q.bid, [`${symbol}_bid`]: q.bid, [`${symbol}_ask`]: q.ask,
+          };
+          if (kiteInst && kiteInst !== symbol) {
+            map[kiteInst] = q.bid;
+            map[`${kiteInst}_bid`] = q.bid;
+            map[`${kiteInst}_ask`] = q.ask;
+          }
+          return map;
         }
         const instrumentsToFetch = [kiteInst];
         if (isOption && underlyingId !== kiteInst) instrumentsToFetch.push(underlyingId);
