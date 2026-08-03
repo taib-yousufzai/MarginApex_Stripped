@@ -77,7 +77,7 @@ export async function getLotSizeFromDB(symbol: string, supabase: SupabaseClient)
     } else if (instruments && instruments.length > 0) {
       // Sort by name length descending so more specific names match first
       // (e.g. CRUDEOILM before CRUDEOIL, GOLDM before GOLD)
-      const sorted = [...instruments].sort((a, b) => b.name.length - a.name.length);
+      const sorted = [...instruments].sort((a, b) => (b.name || '').length - (a.name || '').length);
       const match = sorted.find(s => s.name && n.startsWith(s.name.toUpperCase()));
       if (match && Number(match.lot_size) > 0) return Number(match.lot_size);
     }
