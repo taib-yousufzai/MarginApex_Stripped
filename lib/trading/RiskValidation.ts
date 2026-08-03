@@ -39,7 +39,7 @@ export class RiskValidation {
    * Handles overnight sessions correctly (e.g. 22:00 to 02:00).
    */
   static validateTradingHours(marketHours: MarketHours | null | undefined): boolean {
-    if (!marketHours) return true; // If no hours defined, assume 24/7 or crypto
+    if (!marketHours) return false; // No hours row = market is closed (fail-closed for safety)
     if (!marketHours.is_active) return false;
 
     const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -50,7 +50,7 @@ export class RiskValidation {
 
     if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) {
       console.warn('[validateTradingHours] Invalid trading hours config:', marketHours);
-      return true; // Fail open if DB config is broken
+      return false; // Fail closed if DB config is broken
     }
 
     const startMins = startH * 60 + startM;

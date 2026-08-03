@@ -366,10 +366,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     if (!isNaN(n) && n > 0) setOrderQty(n);
   };
 
-  // Stepper: lot mode steps by 0.1, qty mode steps by lotSize
+  // Stepper: lot mode steps by 1 lot, qty mode steps by lotSize
   const stepQty = (delta: number) => {
-    const step = orderUnit === 'lot' ? 0.1 : lotSize;
-    const next = Math.max(step, parseFloat((orderQty + delta * step).toFixed(2)));
+    const step = orderUnit === 'lot' ? 1 : lotSize;
+    const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 0;
+    const maxVal = maxOrderLot > 0
+      ? (orderUnit === 'lot' ? maxOrderLot : maxOrderLot * lotSize)
+      : Infinity;
+    const next = Math.min(maxVal, Math.max(step, parseFloat((orderQty + delta * step).toFixed(2))));
     setOrderQty(next);
     setQtyInput(String(next));
   };
@@ -547,6 +551,34 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       const placeSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === placeSide);
       const pTopLimit = placeSetting?.top_limit ?? 0;
       const pMinLimit = placeSetting?.min_limit ?? 0;
+
+      // ── Qty validation for entry orders ──────────────────────────────────
+      if (!exitMode) {
+        const rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
+
+        // Must be a multiple of lot size
+        if (lotSize > 1 && Math.round(rawQty) % lotSize !== 0) {
+          showToast(`Quantity must be a multiple of lot size (${lotSize}).`);
+          // Snap down to nearest valid multiple
+          const snapped = Math.max(lotSize, Math.floor(rawQty / lotSize) * lotSize);
+          setQtyInput(String(orderUnit === 'lot' ? snapped / lotSize : snapped));
+          setOrderQty(orderUnit === 'lot' ? snapped / lotSize : snapped);
+          return;
+        }
+
+        // Must not exceed max_order_lot × lotSize
+        const maxOrderLot = placeSetting?.max_order_lot ?? placeSetting?.max_lot ?? 0;
+        if (maxOrderLot > 0) {
+          const maxOrderQty = maxOrderLot * lotSize;
+          if (rawQty > maxOrderQty) {
+            showToast(`Order exceeds max allowed: ${maxOrderLot} lots (${maxOrderQty} qty).`);
+            setQtyInput(String(orderUnit === 'lot' ? maxOrderLot : maxOrderQty));
+            setOrderQty(orderUnit === 'lot' ? maxOrderLot : maxOrderQty);
+            return;
+          }
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       // Resolve order_type, trigger_price, stop_loss, target, client_price under the hood
       let resolvedOrderType = orderType;
@@ -1365,7 +1397,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     </div>
                     <div className="ts2-info-card">
                       <div className="ts2-ic-label">Max Lots</div>
-                      <div className="ts2-ic-val">{segSetting?.max_lot ?? '--'}</div>
+                      <div className="ts2-ic-val">
+                        {segSetting?.max_order_lot ?? segSetting?.max_lot ?? '--'}
+                        {(segSetting?.max_order_lot ?? segSetting?.max_lot) && lotSize > 1
+                          ? <span style={{ fontSize: '0.7em', color: 'var(--text-secondary)', marginLeft: 3 }}>({(segSetting.max_order_lot ?? segSetting.max_lot) * lotSize} qty)</span>
+                          : null}
+                      </div>
                     </div>
                     <div className="ts2-info-card">
                       <div className="ts2-ic-label">Order Lots</div>
