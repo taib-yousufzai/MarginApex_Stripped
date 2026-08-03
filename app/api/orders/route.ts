@@ -195,7 +195,7 @@ async function handleOrderPlacement(request: NextRequest, clientIp: string): Pro
     return NextResponse.json(responseData, { status: 201 });
     
   } catch (globalError: any) {
-    console.error('[POST /api/orders] FATAL ERROR:', globalError);
+    console.error('[POST /api/orders] FATAL ERROR:', globalError?.message, globalError?.stack);
     
     let status = 400;
     const msg = globalError.message || '';
