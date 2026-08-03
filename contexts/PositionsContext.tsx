@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { api } from '@/lib/api';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
 import { MyPosition } from '@/lib/types/order';
@@ -125,27 +126,24 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
   const staticPositionPropsRef = useRef<Record<string, { entryTimeMs: number; dbSeg: string; resolvedKiteSymbol: string; isCrypto: boolean; isComex: boolean; binanceSymbol: string }>>({});
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return;
+    (async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
         const { data: profile } = await supabase
           .from('profiles')
           .select('trading_mode')
-          .eq('id', session.user.id)
+          .eq('id', (await supabase.auth.getSession()).data.session?.user.id ?? '')
           .single();
         const mode = profile?.trading_mode || 'normal';
-        const res = await fetch(`/api/user/segments?mode=${mode}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (res.ok) {
-          const sData = await res.json();
-          setSegmentSettings(sData || []);
-          setSegmentSettingsLoaded(true);
-        }
+        const sData = await api.get<any[]>(`/api/user/segments?mode=${mode}`);
+        setSegmentSettings(sData || []);
+        setSegmentSettingsLoaded(true);
       } catch (err) {
         console.error('Failed to fetch segment settings in PositionsContext', err);
       }
-    });
+    })();
   }, []);
 
   const updatePositionLocally = useCallback((posId: string, updatedFields: Partial<MyPosition>) => {
@@ -178,6 +176,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
 
   const fetchPositions = useCallback(async () => {
     try {
+      // Don't fetch if there's no active session (e.g. on the login page)
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
@@ -187,14 +186,10 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const res = await fetch('/api/positions', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        cache: 'no-store',
+      const data = await api.get<{ positions: MyPosition[] }>('/api/positions', {
         signal: controller.signal,
       });
 
-      if (!res.ok) throw new Error('Failed to fetch positions');
-      const data = await res.json();
       let newPositions: MyPosition[] = data.positions || [];
 
       // v2 engine: each order creates a separate position lot in the DB.

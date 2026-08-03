@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import type { MyOrder } from '@/lib/types/order';
+import { api, ApiError } from '@/lib/api';
 
 export interface OrdersContextType {
   orders: MyOrder[];
@@ -14,15 +15,9 @@ export interface OrdersContextType {
 
 const OrdersDataContext = createContext<OrdersContextType | null>(null);
 
-async function getAuthHeader(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 let globalOrdersCache: MyOrder[] = [];
 
-export const OrdersDataProvider = ({ children, refreshInterval = 15000 }: { children: React.ReactNode; refreshInterval?: number }) => {
+export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { children: React.ReactNode; refreshInterval?: number }) => {
   const [orders, setOrders] = useState<MyOrder[]>(globalOrdersCache);
   const [loading, setLoading] = useState(globalOrdersCache.length === 0);
   const [error, setError] = useState<string | null>(null);
@@ -30,24 +25,16 @@ export const OrdersDataProvider = ({ children, refreshInterval = 15000 }: { chil
 
   const fetchOrders = useCallback(async () => {
     try {
-      const headers = await getAuthHeader();
-      const res = await fetch('/api/orders?limit=100', {
-        headers,
-        cache: 'no-store',
-      });
-
-      if (!res.ok) {
-        const body = (await res.json()) as { error?: string };
-        setError(body.error ?? 'Failed to fetch orders');
-        return;
-      }
-
-      const data = (await res.json()) as { orders: MyOrder[] };
+      const data = await api.get<{ orders: MyOrder[] }>('/api/orders?limit=100');
       globalOrdersCache = data.orders ?? [];
       setOrders(globalOrdersCache);
       setError(null);
-    } catch {
-      setError('Network error loading orders');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(`API error ${err.status}`);
+      } else {
+        setError('Network error loading orders');
+      }
     } finally {
       setLoading(false);
     }
@@ -71,6 +58,11 @@ export const OrdersDataProvider = ({ children, refreshInterval = 15000 }: { chil
       isSubscribed = status === 'SUBSCRIBED';
     });
 
+    // Refresh whenever any component places an order or closes a position
+    const handleOrderPlaced = () => fetchOrders();
+    window.addEventListener('order_placed', handleOrderPlaced);
+    window.addEventListener('position-closed', handleOrderPlaced);
+
     async function init() {
       await fetchOrders();
       if (cancelled) return;
@@ -85,23 +77,14 @@ export const OrdersDataProvider = ({ children, refreshInterval = 15000 }: { chil
       cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
       supabase.removeChannel(channel);
+      window.removeEventListener('order_placed', handleOrderPlaced);
+      window.removeEventListener('position-closed', handleOrderPlaced);
     };
   }, [fetchOrders, refreshInterval]);
 
   const cancelOrder = useCallback(async (id: string) => {
     try {
-      const headers = await getAuthHeader();
-      const res = await fetch(`/api/orders/${id}`, {
-        method: 'PATCH',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CANCELLED' }),
-      });
-
-      if (!res.ok) {
-        const body = (await res.json()) as { error?: string };
-        throw new Error(body.error ?? 'Failed to cancel order');
-      }
-
+      await api.patch(`/api/orders/${id}`, { status: 'CANCELLED' });
       await fetchOrders(); // Refresh list
       return { success: true };
     } catch (err) {

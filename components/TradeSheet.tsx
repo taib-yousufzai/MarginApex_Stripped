@@ -6,6 +6,7 @@ import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
 import AnimatedLoader from '@/components/AnimatedLoader';
 
 import { supabase } from '@/lib/supabaseClient';
+import { api, ApiError } from '@/lib/api';
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
@@ -447,42 +448,32 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   useEffect(() => {
     if (!isOpen) return;
     refreshPositions();
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const token = session?.access_token;
-      if (!token) return;
 
-      // Fetch balance
-      fetch('/api/pay/balance', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then(r => r.json())
-        .then(data => { if (typeof data.balance === 'number') setAvailableBalance(data.balance); })
-        .catch(() => { });
+    // Fetch balance
+    api.get<{ balance: number }>('/api/pay/balance')
+      .then(data => { if (typeof data.balance === 'number') setAvailableBalance(data.balance); })
+      .catch(() => { });
 
-      // Fetch segment settings and script settings in parallel
+    // Fetch segment settings and script settings in parallel
+    (async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
         const { data: profile } = await supabase
           .from('profiles')
           .select('trading_mode')
-          .eq('id', session.user.id)
+          .eq('id', session?.user.id)
           .single();
         const mode = profile?.trading_mode || 'normal';
-        const [segRes, scriptRes] = await Promise.all([
-          fetch(`/api/user/segments?mode=${mode}`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch('/api/user/script-settings', { headers: { Authorization: `Bearer ${token}` } }),
+        const [segData, ssData] = await Promise.all([
+          api.get<any[]>(`/api/user/segments?mode=${mode}`),
+          api.get<{ symbol: string; lot_size: number }[]>('/api/user/script-settings'),
         ]);
-        if (segRes.ok) {
-          const sData = await segRes.json();
-          setSegmentSettings(sData || []);
-        }
-        if (scriptRes.ok) {
-          const ssData = await scriptRes.json();
-          setScriptSettings(ssData || []);
-        }
+        setSegmentSettings(segData || []);
+        setScriptSettings(ssData || []);
       } catch (err) {
         console.error(err);
       }
-    });
+    })();
   }, [isOpen, refreshPositions]);
 
   const showToast = (msg: string) => {
@@ -517,6 +508,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const handlePlace = async (placeSide: 'BUY' | 'SELL') => {
     if (isExecutingRef.current) return;
     isExecutingRef.current = true;
+    // Track whether we've handed off to an async order flow that manages its own reset.
+    // If we exit via a validation return, we must reset here so the button isn't stuck.
+    let handedOffToOrderFlow = false;
     try {
       showToast('Executing handlePlace');
       if (!item) return;
@@ -526,6 +520,27 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       if (isNaN(parsedInputQty) || parsedInputQty <= 0) {
         showToast('Please enter a valid quantity.');
         return;
+      }
+
+      // Exit mode: hard-cap qty to the open position size to prevent over-exit
+      // (sending more qty than held would close the position AND open a new opposite order)
+      if (exitMode) {
+        let maxExitQty = 0;
+        if (linkedPosId) {
+          const exactPos = activePositionsRef.current?.find(p => p.id === linkedPosId);
+          maxExitQty = exactPos?.qty_open ?? 0;
+        } else if (existingPos) {
+          maxExitQty = existingPos.qty_open;
+        }
+        if (maxExitQty > 0) {
+          const rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
+          if (rawQty > maxExitQty) {
+            showToast(`Exit quantity cannot exceed open position (${maxExitQty} qty).`);
+            setQtyInput(String(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty));
+            setOrderQty(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty);
+            return;
+          }
+        }
       }
 
       // Load setting specific to the side being placed
@@ -769,50 +784,30 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
               : { stop_loss: resolvedStopLoss || null, target: resolvedTarget || null };
 
           try {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData.session?.access_token;
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (token) headers.Authorization = `Bearer ${token}`;
-
-            const patchRes = await fetch(`/api/positions/${positionId}`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify(updateData),
-            });
-
-            if (!patchRes.ok) {
-              const body = await patchRes.json();
-              showToast(body.error || 'Failed to update position stop loss/target.');
-              return;
-            }
+            await api.patch<unknown>(`/api/positions/${positionId}`, updateData);
 
             showToast('Stop loss/target updated successfully');
             onSuccess?.();
             onClose();
             return;
           } catch (err) {
-            showToast('Failed to update position stop loss/target.');
+            if (err instanceof ApiError) {
+              showToast((err.details as any)?.error || 'Failed to update position stop loss/target.');
+            } else {
+              showToast('Failed to update position stop loss/target.');
+            }
             return;
           }
         } else {
           // User changed the order type (e.g. from Target to Market or SL)
           // Clear the old target or stop loss first so it doesn't linger
           try {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData.session?.access_token;
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (token) headers.Authorization = `Bearer ${token}`;
-
             let clearData: any = {};
             if (isSl) clearData = { stop_loss: null };
             else if (isTarget) clearData = { target: null };
             else if (isGtt) clearData = { stop_loss: null, target: null };
 
-            await fetch(`/api/positions/${positionId}`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify(clearData),
-            });
+            await api.patch<unknown>(`/api/positions/${positionId}`, clearData);
           } catch (e) {
             console.error('[DEBUG TradeSheet handlePlace] Error clearing old target/SL:', e);
           }
@@ -838,25 +833,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         console.log('[DEBUG TradeSheet handlePlace] Sending PATCH payload:', updateData, 'to /api/positions/', existingPos.id);
 
         try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData.session?.access_token;
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (token) headers.Authorization = `Bearer ${token}`;
-
-          const patchRes = await fetch(`/api/positions/${existingPos.id}`, {
-            method: 'PATCH',
-            headers,
-            body: JSON.stringify(updateData),
-          });
-
-          console.log('[DEBUG TradeSheet handlePlace] PATCH response status:', patchRes.status);
-
-          if (!patchRes.ok) {
-            const body = await patchRes.json();
-            console.error('[DEBUG TradeSheet handlePlace] PATCH failed:', body);
-            showToast(body.error || 'Failed to update position stop loss/target.');
-            return;
-          }
+          await api.patch<unknown>(`/api/positions/${existingPos.id}`, updateData);
 
           console.log('[DEBUG TradeSheet handlePlace] PATCH successful');
           showToast('Stop loss/target updated successfully');
@@ -865,13 +842,18 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           return;
         } catch (err) {
           console.error('[DEBUG TradeSheet handlePlace] PATCH exception:', err);
-          showToast('Failed to update position stop loss/target.');
+          if (err instanceof ApiError) {
+            showToast((err.details as any)?.error || 'Failed to update position stop loss/target.');
+          } else {
+            showToast('Failed to update position stop loss/target.');
+          }
           return;
         }
       }
 
       if (exitMode) {
         // Exit mode: show the full-screen overlay and await the order
+        handedOffToOrderFlow = true;
         window.dispatchEvent(new Event('exit-overlay-start'));
         handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
 
@@ -922,6 +904,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       } else {
         // Buy/Sell flow: show the global loader overlay
+        handedOffToOrderFlow = true;
         window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
         handleCloseAnimation(); // Close the TradeSheet immediately so the overlay is visible
         // Non-exit: optimistic fire-and-forget for snappy UX
@@ -978,6 +961,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       }
     } catch (e) {
       isExecutingRef.current = false;
+    } finally {
+      // Reset the ref for any early validation returns that didn't hand off to an order flow
+      if (!handedOffToOrderFlow) {
+        isExecutingRef.current = false;
+      }
     }
   };
 
