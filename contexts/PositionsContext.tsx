@@ -197,31 +197,9 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       const data = await res.json();
       let newPositions: MyPosition[] = data.positions || [];
 
-      // Client-side reconciliation to prevent duplicate positions flashing during exit
-      const posGroups = new Map<string, MyPosition[]>();
-      for (const p of newPositions) {
-        const key = `${p.symbol}_${p.product_type}_${p.settlement}`;
-        if (!posGroups.has(key)) posGroups.set(key, []);
-        posGroups.get(key)!.push(p);
-      }
-      
-      newPositions = [];
-      for (const group of posGroups.values()) {
-        const buys = group.filter(p => p.side === 'BUY');
-        const sells = group.filter(p => p.side === 'SELL');
-        if (buys.length > 0 && sells.length > 0) {
-          let buyQty = buys.reduce((sum, p) => sum + p.qty_open, 0);
-          let sellQty = sells.reduce((sum, p) => sum + p.qty_open, 0);
-          if (buyQty > sellQty) {
-            newPositions.push({ ...buys[0], qty_open: buyQty - sellQty });
-          } else if (sellQty > buyQty) {
-            newPositions.push({ ...sells[0], qty_open: sellQty - buyQty });
-          }
-        } else {
-          newPositions.push(...group);
-        }
-      }
-
+      // v2 engine: each order creates a separate position lot in the DB.
+      // Trust the API response — do not attempt client-side netting.
+      // The DB is the single source of truth for open qty and sides.
       newPositions = newPositions.filter(p => !optimisticallyRemovedIds.current.has(p.id));
 
       const now = Date.now();
