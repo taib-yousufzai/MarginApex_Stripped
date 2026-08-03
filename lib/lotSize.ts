@@ -57,8 +57,8 @@ export async function getLotSizeFromDB(symbol: string, supabase: SupabaseClient)
       .gt('lot_size', 0);
 
     if (scriptSettings && scriptSettings.length > 0) {
-      const sorted = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
-      const match = sorted.find(s => n.includes(s.symbol.toUpperCase()));
+      const sorted = [...scriptSettings].sort((a, b) => (b.symbol || '').length - (a.symbol || '').length);
+      const match = sorted.find(s => s.symbol && n.includes(s.symbol.toUpperCase()));
       if (match && Number(match.lot_size) > 0) return Number(match.lot_size);
     }
   } catch { /* fall through */ }
@@ -100,11 +100,11 @@ export function getLotSizeFallback(
 
   // 1. script_settings override
   if (dbSettings && dbSettings.length > 0) {
-    const sorted = [...dbSettings].sort((a, b) => b.symbol.length - a.symbol.length);
-    const exactMatch = sorted.find(s => n === s.symbol.toUpperCase());
+    const sorted = [...dbSettings].sort((a, b) => (b.symbol || '').length - (a.symbol || '').length);
+    const exactMatch = sorted.find(s => s.symbol && n === s.symbol.toUpperCase());
     if (exactMatch && Number(exactMatch.lot_size) > 0) return Number(exactMatch.lot_size);
 
-    const prefixMatch = sorted.find(s => n.startsWith(s.symbol.toUpperCase()));
+    const prefixMatch = sorted.find(s => s.symbol && n.startsWith(s.symbol.toUpperCase()));
     if (prefixMatch && Number(prefixMatch.lot_size) > 0) return Number(prefixMatch.lot_size);
   }
 

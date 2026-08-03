@@ -165,6 +165,7 @@ async function fetchBinanceLtp(symbol: string): Promise<{ltp: number, bid: numbe
 
 /**
  * Fetch LTP for any instrument — routes to Binance for CRYPTO, Kite for everything else.
+ * Resolves synthetic COMEX symbols (e.g. CRUDEOIL_FUT) to the nearest active MCX contract.
  */
 async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: number, bid: number, ask: number} | null> {
   if ((settlement || '').toUpperCase().includes('CRYPTO')) {
@@ -178,7 +179,29 @@ async function fetchLtp(symbol: string, settlement: string): Promise<{ltp: numbe
     else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
     else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
     else if (s.includes('BSE')) exchange = 'BSE';
-    fullSymbol = `${exchange}:${symbol}`;
+
+    // Resolve synthetic COMEX symbols (e.g. CRUDEOIL_FUT → MCX:CRUDEOIL25AUGFUT)
+    if (exchange === 'MCX') {
+      let baseName = symbol.toUpperCase();
+      if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
+      const admin = getAdminClient();
+      const { data: nearestFut } = await admin
+        .from('instruments')
+        .select('tradingsymbol')
+        .eq('name', baseName)
+        .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+        .gte('expiry', new Date().toISOString().split('T')[0])
+        .order('expiry', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (nearestFut?.tradingsymbol) {
+        fullSymbol = `MCX:${nearestFut.tradingsymbol}`;
+      } else {
+        fullSymbol = `MCX:${symbol}`;
+      }
+    } else {
+      fullSymbol = `${exchange}:${symbol}`;
+    }
   }
   return fetchKiteLtp(fullSymbol);
 }

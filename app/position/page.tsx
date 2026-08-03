@@ -48,7 +48,7 @@ export default function PositionPage() {
   // Listen for position-closed events fired by TradingChart so we eventually
   // refresh without waiting for the next 5-second poll cycle
   useEffect(() => {
-    const handler = () => { setTimeout(() => { refresh(); fetchClosed(); }, 1500); };
+    const handler = () => { setTimeout(() => { refresh(); fetchClosed(); }, 200); };
     window.addEventListener('position-closed', handler);
     return () => window.removeEventListener('position-closed', handler);
   }, [refresh]);
@@ -98,7 +98,7 @@ export default function PositionPage() {
     fetchClosed();
     // Closed positions don't need rapid polling — refresh on events + slow fallback
     const iv = setInterval(fetchClosed, 30000);
-    const onOrderPlaced = () => setTimeout(() => fetchClosed(), 1500);
+    const onOrderPlaced = () => setTimeout(() => fetchClosed(), 200);
     window.addEventListener('order_placed', onOrderPlaced);
     return () => {
       clearInterval(iv);
@@ -129,7 +129,7 @@ export default function PositionPage() {
     fetchOrders();
     // Orders don't need rapid polling — refresh on events + slow fallback
     const orderTimer = setInterval(fetchOrders, 30000);
-    const onOrderPlaced = () => setTimeout(() => fetchOrders(), 1500);
+    const onOrderPlaced = () => setTimeout(() => fetchOrders(), 200);
     window.addEventListener('order_placed', onOrderPlaced);
 
     return () => { cancelled = true; clearInterval(orderTimer); window.removeEventListener('order_placed', onOrderPlaced); };
@@ -796,11 +796,10 @@ export default function PositionPage() {
     }
     setIsExitingAll(false);
     refresh();
-    // Delayed re-fetch to catch Supabase propagation delay
     setTimeout(() => {
       refresh();
       window.dispatchEvent(new Event('position-closed'));
-    }, 1500);
+    }, 200);
   };
 
   const totalPnl = useMemo(() => positions.reduce((acc, p) => acc + (p.total_pnl || 0), 0), [positions]);

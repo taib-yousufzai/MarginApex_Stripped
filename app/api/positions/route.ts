@@ -25,15 +25,25 @@ export async function GET(request: NextRequest) {
       if (statusParam === 'open') {
         // 'open' shorthand — include both 'open' and 'active' statuses (case-insensitive)
         positionsQuery = positionsQuery
-        .in('status', ['open', 'OPEN', 'active', 'ACTIVE'])
-        .order('created_at', { ascending: false });
+          .in('status', ['open', 'OPEN', 'active', 'ACTIVE'])
+          .order('created_at', { ascending: false });
       } else {
-        positionsQuery = positionsQuery.eq('status', statusParam).order('updated_at', { ascending: false });
+        // Case-insensitive matching for other status values (like 'closed')
+        const lowerStatus = statusParam.toLowerCase();
+        const upperStatus = statusParam.toUpperCase();
+        positionsQuery = positionsQuery
+          .in('status', [lowerStatus, upperStatus])
+          .order('updated_at', { ascending: false });
 
         // For closed positions, default to today-only unless 'all' param is passed
-        if (statusParam === 'closed' && !searchParams.get('all')) {
-          const targetDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-          const utcMidnight = new Date(`${targetDateStr}T00:00:00+05:30`);
+        if (lowerStatus === 'closed' && !searchParams.get('all')) {
+          const now = new Date();
+          // Kolkata offset is +5:30 (330 minutes)
+          const kolkataTime = new Date(now.getTime() + (330 * 60 * 1000));
+          const yyyy = kolkataTime.getUTCFullYear();
+          const mm = String(kolkataTime.getUTCMonth() + 1).padStart(2, '0');
+          const dd = String(kolkataTime.getUTCDate()).padStart(2, '0');
+          const utcMidnight = new Date(`${yyyy}-${mm}-${dd}T00:00:00+05:30`);
           positionsQuery = positionsQuery.gte('updated_at', utcMidnight.toISOString());
         }
       }
@@ -47,9 +57,11 @@ export async function GET(request: NextRequest) {
 
     if (posResult.error) throw posResult.error;
 
-    // Attach product_type to each position, using 'INTRADAY' as a safe ultimate fallback
+    // Attach product_type to each position, using 'INTRADAY' as a safe ultimate fallback.
+    // Also normalize the status field to lowercase so the frontend context can match it reliably.
     const positions = (posResult.data ?? []).map(p => ({
       ...p,
+      status: p.status ? p.status.toLowerCase() : 'open',
       product_type: p.product_type || 'INTRADAY',
       kite_instrument: p.kite_instrument || p.symbol,
     }));

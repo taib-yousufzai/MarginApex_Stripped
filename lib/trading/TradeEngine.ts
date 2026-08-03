@@ -52,7 +52,7 @@ export class TradeEngine {
        // Keep `symbol` in the same format as stored in DB (e.g. BTCUSDT or BTC)
     } else if (dbSegment !== 'COMEX' && (symUp.includes('GOLD') || symUp.includes('SILVER') || symUp.includes('CRUDE') || symUp.includes('NATGAS') || symUp.includes('NATURALGAS'))) {
        dbSegment = (symUp.endsWith('CE') || symUp.endsWith('PE')) ? 'MCX-OPT' : 'MCX-FUT';
-    } else if (!dbSegment) {
+     } else if (!dbSegment) {
        // Only fallback if not mapped from UI segment
        dbSegment = mapSymbolToSegment(symbol);
     }
@@ -65,6 +65,43 @@ export class TradeEngine {
     else if (segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
     else if (segUpper.includes('COMEX')) segmentId = 'comex';
     else if (segUpper.includes('CRYPTO')) segmentId = 'crypto';
+
+    // ── Resolve kiteInst to a fully-qualified Kite key (EXCHANGE:TRADINGSYMBOL) ──
+    // When exiting from the positions page, the positions table has no
+    // kite_instrument column, so kiteInst falls back to the raw `symbol`
+    // (e.g. "CRUDEOIL_FUT"). We must resolve it to a valid Kite key before
+    // the quote fetch, otherwise the price lookup will fail.
+    if (kiteInst && !kiteInst.includes(':')) {
+      const kiUpper = kiteInst.toUpperCase();
+      if (segUpper.includes('MCX')) {
+        // COMEX synthetic symbols like CRUDEOIL_FUT → strip _FUT and resolve
+        // to the nearest active MCX futures contract
+        let baseName = kiUpper;
+        if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
+        const { data: nearestFut } = await admin
+          .from('instruments')
+          .select('tradingsymbol')
+          .eq('name', baseName)
+          .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+          .gte('expiry', new Date().toISOString().split('T')[0])
+          .order('expiry', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (nearestFut?.tradingsymbol) {
+          kiteInst = `MCX:${nearestFut.tradingsymbol}`;
+        } else {
+          kiteInst = `MCX:${kiteInst}`;
+        }
+      } else if (segUpper.includes('BSE') || segUpper.includes('BFO')) {
+        kiteInst = `BFO:${kiteInst}`;
+        if (!kiteInst.match(/\d/)) kiteInst = `BSE:${kiUpper}`; // bare index
+      } else if (segUpper.includes('CDS') || segUpper.includes('FOREX')) {
+        kiteInst = `CDS:${kiteInst}`;
+      } else if (segUpper.includes('OPT') || segUpper.includes('FUT') || segUpper.includes('NFO')) {
+        kiteInst = `NFO:${kiteInst}`;
+        if (!kiteInst.match(/\d/)) kiteInst = `NSE:${kiUpper}`; // bare index
+      }
+    }
 
     const isOption = dbSegment.includes('OPT');
     let underlyingId = 'NSE:NIFTY 50';

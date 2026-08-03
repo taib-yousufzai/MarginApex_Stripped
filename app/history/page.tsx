@@ -93,7 +93,7 @@ export default function HistoryPage() {
           fetch('/api/orders?status=executed,rejected,cancelled', {
             headers: { Authorization: `Bearer ${session.access_token}` }
           }),
-          fetch('/api/positions?status=closed', {
+          fetch('/api/positions?status=closed&all=true', {
             headers: { Authorization: `Bearer ${session.access_token}` }
           })
         ]);
