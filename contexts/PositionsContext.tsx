@@ -200,6 +200,15 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       // v2 engine: each order creates a separate position lot in the DB.
       // Trust the API response — do not attempt client-side netting.
       // The DB is the single source of truth for open qty and sides.
+      // Clear any stale optimistic removals now that we have a fresh DB snapshot.
+      const stillPendingRemoval = new Set<string>();
+      for (const id of optimisticallyRemovedIds.current) {
+        // Keep it in the set only if the DB still shows it as open (shouldn't happen, but guard anyway)
+        if (newPositions.some(p => p.id === id)) {
+          stillPendingRemoval.add(id);
+        }
+      }
+      optimisticallyRemovedIds.current = stillPendingRemoval;
       newPositions = newPositions.filter(p => !optimisticallyRemovedIds.current.has(p.id));
 
       const now = Date.now();
@@ -307,79 +316,12 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       isSubscribed = status === 'SUBSCRIBED';
     });
 
-    const handleOrderPlacedWithData = (e: Event) => {
-      const customEvt = e as CustomEvent;
-      if (customEvt.detail?.symbol && customEvt.detail?.side) {
-        const d = customEvt.detail;
-        
-        const eventId = d.eventId || `${d.symbol}_${d.side}_${d.qty}_${Date.now()}`;
-        if (processedOptimisticKeys.current.has(eventId)) return;
-        processedOptimisticKeys.current.add(eventId);
-        setTimeout(() => processedOptimisticKeys.current.delete(eventId), 5000);
-
-        const fillPrice = d.result?.fill_price || d.client_price || 0;
-        const newPos: MyPosition = {
-          id: `temp-${Date.now()}`,
-          user_id: '',
-          symbol: d.symbol,
-          kite_instrument: d.kite_instrument || d.symbol,
-          side: d.side,
-          status: 'open',
-          qty_open: d.qty || 1,
-          qty_total: d.qty || 1,
-          entry_price: fillPrice,
-          avg_price: fillPrice,
-          exit_price: null,
-          ltp: fillPrice,
-          pnl: 0,
-          total_pnl: 0,
-          settlement: d.segment || '',
-          product_type: d.product_type || 'INTRADAY',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          entry_time: new Date().toISOString(),
-        } as any;
-
-        setRawPositions(prev => {
-          const oppositeSide = d.side === 'BUY' ? 'SELL' : 'BUY';
-          const oppositePositions = prev.filter(p => p.symbol === d.symbol && p.side === oppositeSide && p.product_type === (d.product_type || 'INTRADAY'));
-          const totalOppositeQty = oppositePositions.reduce((sum, p) => sum + p.qty_open, 0);
-          
-          let nextState;
-          if (oppositePositions.length > 0 && d.qty <= totalOppositeQty) {
-            let qtyToDeduct = d.qty || 1;
-            nextState = prev.map(p => {
-              if (p.symbol === d.symbol && p.side === oppositeSide && p.product_type === (d.product_type || 'INTRADAY')) {
-                if (qtyToDeduct <= 0) return p;
-                const closedQty = Math.min(qtyToDeduct, p.qty_open);
-                qtyToDeduct -= closedQty;
-                if (p.qty_open === closedQty) {
-                  optimisticallyRemovedIds.current.add(p.id);
-                }
-                return { ...p, qty_open: p.qty_open - closedQty, is_closing: true };
-              }
-              return p;
-            }).filter(p => p.qty_open > 0);
-          } else {
-            const exists = prev.some(p => p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY'));
-            if (exists) {
-              nextState = prev.map(p => {
-                if (p.symbol === d.symbol && p.side === d.side && p.product_type === (d.product_type || 'INTRADAY')) {
-                  const totalQty = p.qty_open + (d.qty || 1);
-                  const avgPrice = ((p.avg_price * p.qty_open) + (fillPrice * (d.qty || 1))) / totalQty;
-                  return { ...p, qty_open: totalQty, qty_total: totalQty, avg_price: avgPrice, entry_price: avgPrice };
-                }
-                return p;
-              });
-            } else {
-              nextState = [newPos, ...prev];
-            }
-          }
-          
-          localCacheRef.current = nextState;
-          return nextState;
-        });
-      }
+    const handleOrderPlacedWithData = (_e: Event) => {
+      // v2 engine: all position state transitions happen atomically in the DB.
+      // Optimistic UI manipulation is not needed and causes incorrect state
+      // (e.g. removing unrelated positions, incorrect averaging across multiple lots).
+      // A fast DB fetch is sufficient — the real state arrives within ~100ms.
+      debouncedFetch(100);
     };
 
     const handleOrderPlaced = () => {
