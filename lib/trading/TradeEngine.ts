@@ -359,12 +359,13 @@ export class TradeEngine {
         baseExposure: exposure
       });
 
-      // Calculate brokerage using the real per-user commission settings
+      // Calculate brokerage using the real per-user commission settings.
+      // Only charge the entry leg upfront — the exit leg brokerage is charged
+      // when the position is closed. This matches how the DB ledger works.
       const commType = segSetting.intraday_commission_type || segSetting.commission_type || 'Per Crore';
       const commVal = Number(segSetting.intraday_commission_value ?? segSetting.commission_value ?? 0);
       const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
-      // New positions charge both entry and exit legs up front
-      brokerage = Math.round(singleLeg * 2 * 100) / 100;
+      brokerage = Math.round(singleLeg * 100) / 100;
     } else {
       // Exit: single leg only
       const commType = segSetting.carry_commission_type || segSetting.commission_type || 'Per Crore';

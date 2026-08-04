@@ -7,6 +7,7 @@ import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
 import { MyPosition } from '@/lib/types/order';
 import { isContractExpired } from '@/lib/contractExpiry';
+import { useTradeConfig } from '@/contexts/TradeConfigContext';
 
 export interface EnrichedPosition extends MyPosition {
   current_ltp: number;
@@ -114,37 +115,16 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
   const [loading, setLoading] = useState(globalPositionsCache.length === 0);
   const [error, setError] = useState<string | null>(null);
   const [inFlightConversions, setInFlightConversions] = useState<Record<string, string>>({});
-  const [segmentSettings, setSegmentSettings] = useState<any[]>([]);
+  // segmentSettings now comes from TradeConfigProvider — no local fetch needed
+  const { segmentSettings } = useTradeConfig();
   const localCacheRef = useRef<MyPosition[]>(globalPositionsCache.slice());
   const optimisticallyRemovedIds = useRef<Set<string>>(new Set());
-  const [segmentSettingsLoaded, setSegmentSettingsLoaded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const processedOptimisticKeys = useRef<Set<string>>(new Set());
 
   // Static properties map to cache computations that never change per position lifecycle
   const staticPositionPropsRef = useRef<Record<string, { entryTimeMs: number; dbSeg: string; resolvedKiteSymbol: string; isCrypto: boolean; isComex: boolean; binanceSymbol: string }>>({});
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('trading_mode')
-          .eq('id', (await supabase.auth.getSession()).data.session?.user.id ?? '')
-          .single();
-        const mode = profile?.trading_mode || 'normal';
-        const sData = await api.get<any[]>(`/api/user/segments?mode=${mode}`);
-        setSegmentSettings(sData || []);
-        setSegmentSettingsLoaded(true);
-      } catch (err) {
-        console.error('Failed to fetch segment settings in PositionsContext', err);
-      }
-    })();
-  }, []);
 
   const updatePositionLocally = useCallback((posId: string, updatedFields: Partial<MyPosition>) => {
     setRawPositions(prev =>
@@ -433,8 +413,11 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       const elapsedSec = Math.floor((Date.now() - entryTimeMs) / 1000);
 
       const isInProfit = unrealised > 0;
-      const isLocked = segmentSettingsLoaded
-        && !contractExpired
+      // Lock when in profit and within hold window.
+      // When segmentSettings haven't loaded yet (segmentSettingsLoaded = false) we
+      // still apply the lock using the 120s default — this prevents a flash of
+      // "exit allowed" on first render while settings are still fetching.
+      const isLocked = !contractExpired
         && (p.status === 'open' || p.status === 'active')
         && elapsedSec < profitHoldSec
         && isInProfit;
@@ -456,7 +439,6 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     rawPositions,
     marketQuotes,
     comexQuotes,
-    segmentSettingsLoaded,
     segmentSettings,
     inFlightConversions
   ]);
