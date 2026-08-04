@@ -1254,10 +1254,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }
     const isScalper = tradingMode === 'scalper';
     const effectiveUseLots = isScalper ? true : useLots;
-    const finalQty = effectiveUseLots ? (isCrypto ? qVal * lotSize : Math.round(qVal * lotSize)) : (isCrypto ? qVal : Math.round(qVal));
 
+    // In scalp mode qtyValue is always in lots. Guard against a stale exit-qty
+    // (e.g. 1500 units from a previous exit flow) being treated as lot count,
+    // which would multiply by lotSize again and blow past max_order_lot.
+    // Cap at max_order_lot (defaults to 50) before the multiplication.
     const dbSeg = mapSegmentToDbSegment(segment);
     const segSetting = getSegment(dbSeg, side);
+    const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 50;
+    const safeQVal = effectiveUseLots ? Math.min(qVal, maxOrderLot) : qVal;
+
+    const finalQty = effectiveUseLots ? (isCrypto ? safeQVal * lotSize : Math.round(safeQVal * lotSize)) : (isCrypto ? safeQVal : Math.round(safeQVal));
     const intradayLeverage = segSetting?.intraday_leverage ?? 10;
     const intradayType = segSetting?.intraday_type ?? 'Multiplier';
     const required = Math.round(intradayType === '%' ? (currentPrice * finalQty) * (intradayLeverage / 100) : (intradayType === 'Fixed' ? (finalQty / lotSize) * intradayLeverage : (currentPrice * finalQty) / intradayLeverage));
@@ -1276,7 +1283,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       segment: segment,
       side: side,
       qty: finalQty,
-      lots: effectiveUseLots ? qVal : (finalQty / lotSize),
+      lots: effectiveUseLots ? safeQVal : (finalQty / lotSize),
       order_type: 'MARKET',
       product_type: 'INTRADAY',
       client_price: currentPrice,
@@ -2443,7 +2450,13 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     <div className="close-order-block" onClick={() => {
                       setIsOrderBlockVisible(false);
                       setChainContract(null);
-                      if (isExitFlow || isAddMoreFlow) setIsPanelExpanded(true);
+                      if (isExitFlow || isAddMoreFlow) {
+                        setIsPanelExpanded(true);
+                        // Reset qty to 1 lot so stale exit-qty doesn't carry over
+                        // into the next scalp buy/sell tap
+                        setQtyValue(1);
+                        setUseLots(true);
+                      }
                       setIsExitFlow(false);
                       setIsAddMoreFlow(false);
                       setExitPositionId(null);
