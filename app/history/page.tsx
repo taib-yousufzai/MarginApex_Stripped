@@ -430,7 +430,19 @@ export default function HistoryPage() {
                                 return `Intraday: ₹${intraday}\nCarry: ₹${carry}\nGTT: ₹${gtt}`;
                               }
                             })()} style={{ position: 'relative' }}>
-                              <i className="fas fa-receipt"></i> {formatPrice(item.brokerage || 0)}
+                              <i className="fas fa-receipt"></i> {(() => {
+                                // Use brokerage field directly; fall back to sum of breakdown columns
+                                // for positions that predate the brokerage column being populated
+                                const direct = item.brokerage || 0;
+                                if (direct > 0) return formatPrice(direct);
+                                if (currentTab === 'position') {
+                                  const computed = (item.entry_intraday_brokerage || 0) + (item.entry_carry_brokerage || 0) +
+                                    (item.exit_intraday_brokerage || 0) + (item.exit_carry_brokerage || 0);
+                                  return formatPrice(computed);
+                                }
+                                const computed = (item.intraday_brokerage || 0) + (item.carry_brokerage || 0) + (item.gtt_brokerage || 0);
+                                return formatPrice(computed);
+                              })()}
                             </span>
                             {currentTab === 'position' && (
                               <span className="detail-item" style={{ color: '#64748b', fontSize: '0.7rem' }}>
