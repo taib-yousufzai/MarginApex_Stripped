@@ -1626,16 +1626,18 @@ export default function PositionPage() {
             <div className={`pos-modal-overlay${convertConfirmPos ? ' open' : ''}`} onClick={() => setConvertConfirmPos(null)}>
               <div className="pos-modal-card" onClick={e => e.stopPropagation()}>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '12px 16px', background: 'var(--card-alt-bg)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
-                  <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Brokerage</span>
-                  {isFetchingPreview ? (
-                    <AnimatedLoader size="small" />
-                  ) : (
-                    <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                      ₹{convertPreviewBrokerage != null ? convertPreviewBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
-                    </span>
-                  )}
-                </div>
+                {convertConfirmPos?.product_type === 'INTRADAY' && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '12px 16px', background: 'var(--card-alt-bg)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Carry Brokerage</span>
+                    {isFetchingPreview ? (
+                      <AnimatedLoader size="small" />
+                    ) : (
+                      <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                        ₹{convertPreviewBrokerage != null ? convertPreviewBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '0.00'}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className="pos-modal-title">Convert to {convertConfirmPos?.product_type === 'INTRADAY' ? 'CARRY' : 'INTRADAY'}</div>
                 <div className="pos-modal-desc" style={{ color: 'var(--text-secondary)' }}>

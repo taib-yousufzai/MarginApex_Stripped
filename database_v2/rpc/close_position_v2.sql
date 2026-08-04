@@ -85,6 +85,7 @@ BEGIN
     UPDATE public.positions
     SET qty_open = qty_open - p_close_qty,
         pnl = pnl + v_pnl,
+        brokerage = brokerage + p_expected_brokerage,
         exit_price = p_close_price,
         locked_margin = locked_margin - v_margin_released,
         margin_required = margin_required - v_margin_released,

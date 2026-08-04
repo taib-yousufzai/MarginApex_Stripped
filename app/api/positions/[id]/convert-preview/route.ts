@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
-
+import { getLotSizeFromDB } from '@/lib/lotSize';
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -59,11 +59,14 @@ export async function GET(
 
     let carryBrokerage = 0;
     if (product_type === 'CARRY') {
+      const symbolLotSize = await getLotSizeFromDB(pos.symbol || '', admin);
+      const calculatedLots = Number(pos.qty_open) / symbolLotSize;
+
       carryBrokerage = calculateCarryBrokerage({
         productType: 'CARRY',
         qty: Number(pos.qty_open),
         entryPrice: Number(pos.entry_price),
-        lots: Number(pos.lots || 0) || undefined,
+        lots: Number(pos.lots || 0) || calculatedLots || undefined,
         carryCommissionType: segSetting?.carry_commission_type,
         carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
         commissionType: segSetting?.commission_type,

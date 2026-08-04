@@ -392,6 +392,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       }
 
       if (initialExitQty > 0 && !userHasEditedQty.current) {
+        setOrderUnit('qty');
         setOrderQty(initialExitQty);
         setQtyInput(String(initialExitQty));
       }
@@ -420,7 +421,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let maxAllowedPrice = topLimit > 0 ? currentLtp * (1 + topLimit / 100) : Infinity;
   let minAllowedPrice = minLimit > 0 ? currentLtp * (1 - minLimit / 100) : 0;
 
-  if (orderType === 'LIMIT' || (orderType === 'GTT' && !exitMode)) {
+  if (orderType === 'LIMIT' || orderType === 'TARGET' || (orderType === 'GTT' && !exitMode)) {
     if (side === 'BUY') {
       maxAllowedPrice = Math.min(maxAllowedPrice, currentLtp);
     } else if (side === 'SELL') {
@@ -436,6 +437,17 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       maxAllowedPrice = Math.min(maxAllowedPrice, currentLtp);
     } else if (side === 'SELL') {
       minAllowedPrice = Math.max(minAllowedPrice, currentLtp);
+    }
+  }
+
+  // Exit mode specific logic for Stop Loss (SL)
+  // Exiting a long (SELL SL): stop loss must be placed BELOW market
+  // Exiting a short (BUY SL): stop loss must be placed ABOVE market
+  if ((orderType === 'SL' || orderType === 'SLM') && exitMode) {
+    if (side === 'BUY') {
+      minAllowedPrice = Math.max(minAllowedPrice, currentLtp);
+    } else if (side === 'SELL') {
+      maxAllowedPrice = Math.min(maxAllowedPrice, currentLtp);
     }
   }
 
@@ -1590,13 +1602,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     <>
                       <div className="ts2-margin-row" style={{ paddingTop: '8px' }}>
                         <span className="ts2-ml">
-                          {isExitTrade ? 'Entry+Exit Brokerage' : 'Entry+Exit Brokerage'}
-                          {!isExitTrade && targetPT !== 'CARRY' && (
-                            <span style={{ fontSize: '0.7em', color: 'var(--text-secondary)', marginLeft: 4 }}>(×2 upfront)</span>
-                          )}
+                          Intraday Carry
                         </span>
                         <span className="ts2-mv" style={displayIntraday > 0 ? {} : { opacity: 0.4 }}>
-                          ₹ {displayIntraday.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ₹ {(displayIntraday > 0 ? rawIntradayCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
@@ -1648,7 +1657,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                       <button
                         className="ts2-btn ts2-btn-sell"
                         disabled={placingOrder || isExpired}
-                        style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                        style={(placingOrder || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('SELL')}
                       >
                         {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${actionText}`}
@@ -1658,7 +1667,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                       <button
                         className={`ts2-btn${(exitMode || hasSellPos) ? ' ts2-btn-buy' : ' ts2-btn-buy'}`}
                         disabled={placingOrder || isExpired}
-                        style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                        style={(placingOrder || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('BUY')}
                       >
                         {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${actionText}`}

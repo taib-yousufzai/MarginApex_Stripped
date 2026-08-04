@@ -1098,7 +1098,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     exitingPosIds.current.add(pos.id);
     setForceRender(prev => prev + 1);
 
-    const finalQty = pos.qty_open;
+    const posLotSize = getLotSize(pos.symbol);
+    const selectedQtyRaw = parseFloat(String(qtyValue)) || 0;
+    const selectedQty = useLots ? selectedQtyRaw * posLotSize : selectedQtyRaw;
+    const finalQty = selectedQty > 0 ? Math.min(pos.qty_open, selectedQty) : pos.qty_open;
+
     if (finalQty <= 0) {
       quickExitLock.current = false;
       exitingPosIds.current.delete(pos.id);
@@ -1106,7 +1110,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       return;
     }
 
-    const posLotSize = getLotSize(pos.symbol);
     const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
     const effectiveLots = finalQty / posLotSize;
 
@@ -2249,10 +2252,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                   {currentInstrumentPosition.side === 'BUY' ? (
                     <>
                       <button 
-                        className={`trade-btn exit-position-chart-btn${isSubmitting && (addingPosId || orderSide !== 'SELL') ? ' submitting-inactive' : ''}`} 
+                        className={`trade-btn exit-position-chart-btn${(isSubmitting || exitingPosIds.current.size > 0) && !exitingPosIds.current.has(currentInstrumentPosition.id) ? ' submitting-inactive' : ''}`} 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
-                        disabled={isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)}
-                        style={{ opacity: (isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
+                        disabled={isSubmitting || exitingPosIds.current.size > 0}
+                        style={{ opacity: ((isSubmitting || exitingPosIds.current.size > 0) && !exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
                       >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
@@ -2261,7 +2264,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                           {exitingPosIds.current.has(currentInstrumentPosition.id) ? 'EXITING...' : 'EXIT LONG'}
                         </span>
                       </button>
-                      <button id="buyButton" className={`trade-btn buy${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'BUY' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
+                      <button id="buyButton" className={`trade-btn buy${(isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'BUY') ? ' submitting-inactive' : ''}`} disabled={isSubmitting || exitingPosIds.current.size > 0} style={{ opacity: ((isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'BUY')) ? 0.5 : 1 }} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('BUY');
                         } else {
@@ -2284,7 +2287,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     </>
                   ) : (
                     <>
-                      <button id="sellButton" className={`trade-btn sell${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'SELL' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
+                      <button id="sellButton" className={`trade-btn sell${(isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'SELL') ? ' submitting-inactive' : ''}`} disabled={isSubmitting || exitingPosIds.current.size > 0} style={{ opacity: ((isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'SELL')) ? 0.5 : 1 }} onClick={() => {
                         if (isTradeOnChartActive) {
                           handleQuickMarketOrder('SELL');
                         } else {
@@ -2305,10 +2308,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                         </span>
                       </button>
                       <button 
-                        className={`trade-btn exit-position-chart-btn${isSubmitting && (addingPosId || orderSide !== 'BUY') ? ' submitting-inactive' : ''}`} 
+                        className={`trade-btn exit-position-chart-btn${(isSubmitting || exitingPosIds.current.size > 0) && !exitingPosIds.current.has(currentInstrumentPosition.id) ? ' submitting-inactive' : ''}`} 
                         onClick={() => handleExitPosition(currentInstrumentPosition)}
-                        disabled={isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)}
-                        style={{ opacity: (isSubmitting || exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
+                        disabled={isSubmitting || exitingPosIds.current.size > 0}
+                        style={{ opacity: ((isSubmitting || exitingPosIds.current.size > 0) && !exitingPosIds.current.has(currentInstrumentPosition.id)) ? 0.5 : 1, pointerEvents: 'auto' }}
                       >
                         <span className="btn-label">
                           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
@@ -2322,7 +2325,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                 </div>
               ) : (
                 <div className="trade-buttons" id="tradeButtons" style={(isLandscape || isCssLandscape) && !isInfoPanelCollapsed ? { display: 'none' } : {}}>
-                  <button id="sellButton" className={`trade-btn sell${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'SELL' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
+                  <button id="sellButton" className={`trade-btn sell${(isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'SELL') ? ' submitting-inactive' : ''}`} disabled={isSubmitting || exitingPosIds.current.size > 0} style={{ opacity: ((isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'SELL')) ? 0.5 : 1 }} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('SELL');
                     } else {
@@ -2342,7 +2345,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                       SELL
                     </span>
                   </button>
-                  <button id="buyButton" className={`trade-btn buy${isSubmitting ? (addingPosId ? ' submitting-inactive' : (orderSide !== 'BUY' ? ' submitting-inactive' : '')) : ''}`} disabled={isSubmitting} onClick={() => {
+                  <button id="buyButton" className={`trade-btn buy${(isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'BUY') ? ' submitting-inactive' : ''}`} disabled={isSubmitting || exitingPosIds.current.size > 0} style={{ opacity: ((isSubmitting || exitingPosIds.current.size > 0) && !(isSubmitting && !addingPosId && orderSide === 'BUY')) ? 0.5 : 1 }} onClick={() => {
                     if (isTradeOnChartActive) {
                       handleQuickMarketOrder('BUY');
                     } else {

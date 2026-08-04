@@ -99,45 +99,44 @@ export async function POST(
     const currentPositionMargin = Number(pos.margin_required || 0);
     const marginDifference = newMarginRequired - currentPositionMargin;
 
-    // 3. If converting requires more margin, perform a free margin check
-    if (marginDifference > 0) {
-      const { data: allOpenPos } = await admin.from('positions')
-        .select('locked_margin, margin_required, pnl')
-        .eq('user_id', user.id)
-        .eq('status', 'open');
+    // 3. Fetch free margin once (needed for both margin diff check and brokerage check)
+    const { data: allOpenPos } = await admin.from('positions')
+      .select('locked_margin, margin_required, pnl')
+      .eq('user_id', user.id)
+      .eq('status', 'open');
 
-      const totalUsedMargin = (allOpenPos || []).reduce((acc, p) => acc + Number(p.locked_margin || p.margin_required || 0), 0);
-      const balance = Number(profile.balance || 0);
-      const freeMargin = calculateFreeMarginFromPositions(balance, allOpenPos || []);
+    const balance = Number(profile.balance || 0);
+    const freeMargin = calculateFreeMarginFromPositions(balance, allOpenPos || []);
 
-      if (freeMargin < marginDifference) {
-        return NextResponse.json({
-          error: `Insufficient margin. Available free margin: ₹${freeMargin.toFixed(2)}, Required additional margin: ₹${marginDifference.toFixed(2)}`
-        }, { status: 400 });
-      }
+    // If converting requires more margin, check availability
+    if (marginDifference > 0 && freeMargin < marginDifference) {
+      return NextResponse.json({
+        error: `Insufficient margin. Available free margin: ₹${freeMargin.toFixed(2)}, Required additional margin: ₹${marginDifference.toFixed(2)}`
+      }, { status: 400 });
     }
 
     // 3.5 Calculate carry brokerage if converting to CARRY and not yet paid
     let carryBrokerageToCharge = 0;
     if (product_type === 'CARRY' && !pos.carry_brokerage_paid) {
+      const adminClient = getAdminClient();
+      const lotSize = await getLotSizeFromDB(pos.symbol || '', adminClient);
+      const calculatedLots = Number(pos.qty_open) / lotSize;
+
       carryBrokerageToCharge = calculateCarryBrokerage({
         productType: 'CARRY',
         qty: Number(pos.qty_open),
         entryPrice: Number(pos.entry_price),
-        lots: Number(pos.lots || 0) || undefined,
+        lots: Number(pos.lots || 0) || calculatedLots || undefined,
         carryCommissionType: segSetting?.carry_commission_type,
         commissionType: segSetting?.commission_type,
         carryCommissionValue: segSetting?.carry_commission_value != null ? Number(segSetting.carry_commission_value) : null,
         commissionValue: segSetting?.commission_value != null ? Number(segSetting.commission_value) : null,
       });
 
-      if (carryBrokerageToCharge > 0) {
-        // Free margin check must include the brokerage fee
-        if (freeMargin < (marginDifference + carryBrokerageToCharge)) {
-          return NextResponse.json({
-            error: `Insufficient margin. Free margin: ₹${freeMargin.toFixed(2)}, Required: ₹${(marginDifference + carryBrokerageToCharge).toFixed(2)} (including ₹${carryBrokerageToCharge.toFixed(2)} carry brokerage)`
-          }, { status: 400 });
-        }
+      if (carryBrokerageToCharge > 0 && freeMargin < (marginDifference + carryBrokerageToCharge)) {
+        return NextResponse.json({
+          error: `Insufficient margin. Free margin: ₹${freeMargin.toFixed(2)}, Required: ₹${(marginDifference + carryBrokerageToCharge).toFixed(2)} (including ₹${carryBrokerageToCharge.toFixed(2)} carry brokerage)`
+        }, { status: 400 });
       }
     }
 
