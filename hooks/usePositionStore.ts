@@ -26,6 +26,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
 import { positionKeyString } from '@/lib/positionValidator';
 import { computeDelta, isFullSnapshotNeeded } from '@/lib/positionDelta';
+import { api } from '@/lib/api';
 import type { PositionState, PositionKeyString, PositionSide } from '@/lib/positionValidator';
 
 // Shape of a raw row from /api/positions or a Realtime payload
@@ -112,19 +113,7 @@ export function usePositionStore(): UsePositionStoreResult {
 
   const fetchSnapshot = useCallback(async () => {
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const res = await fetch('/api/positions', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        cache: 'no-store',
-      });
-
-      if (!res.ok) throw new Error(`Position snapshot returned ${res.status}`);
-
-      const data = (await res.json()) as { positions: PositionRow[] };
+      const data = await api.get<{ positions: PositionRow[] }>('/api/positions');
       const rows: PositionRow[] = data.positions ?? [];
 
       // Rebuild cache from scratch so deleted positions are evicted

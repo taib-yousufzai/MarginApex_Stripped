@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { pageCache } from '@/lib/pageCache';
 import { kiteRestore, kiteStatus } from '@/lib/kiteClient';
+import { api, ApiError } from '@/lib/api';
 
 type PositionsCache = { net: KitePosition[]; day: KitePosition[] };
 
@@ -69,23 +70,7 @@ export function useKitePositions(refreshInterval = 10000): UseKitePositionsResul
 
   const fetchPositions = useCallback(async () => {
     try {
-      const response = await fetch('/api/kite/positions', { cache: 'no-store' });
-
-      if (response.status === 401 || response.status === 403) {
-        setConnected(false);
-        pageCache.set('kite:connected', false);
-        setLoading(false);
-        return;
-      }
-
-      if (!response.ok) {
-        const body = await response.json() as { error?: string };
-        setError(body.error ?? 'Failed to fetch positions');
-        setLoading(false);
-        return;
-      }
-
-      const data = await response.json() as { net: KitePosition[]; day: KitePosition[] };
+      const data = await api.get<{ net: KitePosition[]; day: KitePosition[] }>('/api/kite/positions');
       const net = data.net ?? [];
       const day = data.day ?? [];
       setNetPositions(net);
@@ -94,8 +79,16 @@ export function useKitePositions(refreshInterval = 10000): UseKitePositionsResul
       setConnected(true);
       pageCache.set('kite:connected', true);
       setError(null);
-    } catch {
-      setError('Network error fetching positions');
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        setConnected(false);
+        pageCache.set('kite:connected', false);
+        setLoading(false);
+        return;
+      }
+      setError(err instanceof ApiError
+        ? ((err.details as { error?: string } | null)?.error ?? 'Failed to fetch positions')
+        : 'Network error fetching positions');
     } finally {
       setLoading(false);
     }

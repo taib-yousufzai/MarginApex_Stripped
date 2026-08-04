@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { api, ApiError } from '@/lib/api';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import './page.css';
 
@@ -31,20 +31,10 @@ export default function ReferAndEarnPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const s = await getSession();
-      if (!s) {
-        router.push('/login');
-        return;
-      }
-      const res = await fetch('/api/referral/info', {
-        headers: { Authorization: `Bearer ${s.access_token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setBalance(data.balance || 0);
-        setReferralCode(data.code || '');
-        setEarnings(data.earnings || []);
-      }
+      const data = await api.get<{ balance?: number; code?: string; earnings?: ReferralEarning[] }>('/api/referral/info');
+      setBalance(data.balance || 0);
+      setReferralCode(data.code || '');
+      setEarnings(data.earnings || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -57,19 +47,12 @@ export default function ReferAndEarnPage() {
     setClaiming(true);
     setClaimMsg(null);
     try {
-      const s = await getSession();
-      if (!s) return;
-      const res = await fetch('/api/referral/claim', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${s.access_token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to claim');
-      
+      const data = await api.post<{ claimed_amount: number }>('/api/referral/claim', {});
       setClaimMsg({ type: 'success', text: `Successfully claimed ₹${data.claimed_amount.toLocaleString('en-IN')}` });
       setBalance(0);
     } catch (e: any) {
-      setClaimMsg({ type: 'error', text: e.message || 'Error claiming balance' });
+      const msg = e instanceof ApiError ? (e.details as any)?.error || `Error ${e.status}` : e.message || 'Error claiming balance';
+      setClaimMsg({ type: 'error', text: msg });
     } finally {
       setClaiming(false);
     }

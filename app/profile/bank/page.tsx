@@ -5,8 +5,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { useRouter } from 'next/navigation';
-import { getSession } from '@/lib/auth';
-import type { Session } from '@supabase/supabase-js';
+import { api, ApiError } from '@/lib/api';
 import './page.css';
 
 interface BankAccount {
@@ -36,7 +35,6 @@ export default function BankDetailsPage() {
     if (saved === 'dark' || saved === 'black' || saved === 'blue') document.body.classList.add(saved);
   }, []);
 
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalError, setModalError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -88,16 +86,10 @@ export default function BankDetailsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getSession().then(async (s) => {
-      if (cancelled) return;
-      if (!s) { setLoading(false); return; }
-      setSession(s);
+    (async () => {
       try {
-        const res = await fetch('/api/pay/bank-accounts', {
-          headers: { Authorization: `Bearer ${s.access_token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const data = await api.get<any[]>('/api/pay/bank-accounts');
+        if (!cancelled) {
           const mapped: BankAccount[] = data.map((acc: any) => ({
             id: acc.id,
             bankName: acc.bank_name || '',
@@ -111,7 +103,7 @@ export default function BankDetailsPage() {
         }
       } catch (e) {}
       if (!cancelled) setLoading(false);
-    });
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -142,9 +134,6 @@ export default function BankDetailsPage() {
     if (!inlineEditId) return;
     setInlineSaving(true);
     try {
-      const s = await getSession();
-      if (!s) throw new Error('No session');
-
       const payload = {
         id: inlineEditId,
         account_name: inlineForm.accountHolderName,
@@ -154,14 +143,7 @@ export default function BankDetailsPage() {
         upi_id: inlineForm.upiId,
       };
 
-      const res = await fetch('/api/pay/bank-accounts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error('Failed');
-      const saved = await res.json();
+      const saved = await api.patch<any>('/api/pay/bank-accounts', payload);
 
       const updated: BankAccount = {
         id: saved.id,
@@ -212,9 +194,6 @@ export default function BankDetailsPage() {
   const handleAddSave = async () => {
     setAddSaving(true);
     try {
-      const s = await getSession();
-      if (!s) throw new Error('No session');
-
       const payload = {
         account_name: addForm.accountHolderName,
         account_no: addForm.accountNumber,
@@ -224,14 +203,7 @@ export default function BankDetailsPage() {
         is_primary: accounts.length === 0 || undefined,
       };
 
-      const res = await fetch('/api/pay/bank-accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error('Failed');
-      const saved = await res.json();
+      const saved = await api.post<any>('/api/pay/bank-accounts', payload);
 
       const newAcc: BankAccount = {
         id: saved.id,
@@ -270,14 +242,8 @@ export default function BankDetailsPage() {
   const executeSetPrimary = async (id: string) => {
     closeConfirm();
     try {
-      const s = await getSession();
-      if (!s) return;
-      const res = await fetch('/api/pay/bank-accounts', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
-        body: JSON.stringify({ id, is_primary: true }),
-      });
-      if (res.ok) setAccounts(sortAccounts(accounts.map(a => ({ ...a, isPrimary: a.id === id }))));
+      await api.patch('/api/pay/bank-accounts', { id, is_primary: true });
+      setAccounts(sortAccounts(accounts.map(a => ({ ...a, isPrimary: a.id === id }))));
     } catch { setModalError('Failed to update primary account.'); }
   };
 
@@ -303,9 +269,6 @@ export default function BankDetailsPage() {
     closeConfirm();
     setDeleting(true);
     try {
-      const s = await getSession();
-      if (!s) return;
-
       const accToDelete = accounts.find(a => a.id === id);
       let primaryToSet = newPrimaryId;
       if (accToDelete?.isPrimary && !newPrimaryId && accounts.length === 2) {
@@ -314,28 +277,19 @@ export default function BankDetailsPage() {
       }
 
       if (primaryToSet) {
-        await fetch('/api/pay/bank-accounts', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
-          body: JSON.stringify({ id: primaryToSet, is_primary: true }),
-        });
+        await api.patch('/api/pay/bank-accounts', { id: primaryToSet, is_primary: true });
       }
 
-      const res = await fetch(`/api/pay/bank-accounts?id=${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${s.access_token}` },
-      });
+      await api.delete(`/api/pay/bank-accounts?id=${id}`);
 
-      if (res.ok) {
-        setAccounts(prev => {
-          let next = prev.filter(a => a.id !== id);
-          if (primaryToSet) next = next.map(a => ({ ...a, isPrimary: a.id === primaryToSet }));
-          return sortAccounts(next);
-        });
-        setSelectPrimaryModal({ isOpen: false, deleteId: null });
-        if (expandedId === id) setExpandedId(null);
-        if (inlineEditId === id) setInlineEditId(null);
-      } else throw new Error();
+      setAccounts(prev => {
+        let next = prev.filter(a => a.id !== id);
+        if (primaryToSet) next = next.map(a => ({ ...a, isPrimary: a.id === primaryToSet }));
+        return sortAccounts(next);
+      });
+      setSelectPrimaryModal({ isOpen: false, deleteId: null });
+      if (expandedId === id) setExpandedId(null);
+      if (inlineEditId === id) setInlineEditId(null);
     } catch { setModalError('Failed to delete bank account.'); }
     finally { setDeleting(false); }
   };

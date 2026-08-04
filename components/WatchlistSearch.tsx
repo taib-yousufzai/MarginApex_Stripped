@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WatchlistItem, TabLabel, getTabForItem, getDefaultWatchlistItems } from '@/app/watchlist/page';
 import AnimatedLoader from '@/components/AnimatedLoader';
+import { api, ApiError } from '@/lib/api';
 
 interface WatchlistSearchProps {
   activeTab: TabLabel;
@@ -42,12 +43,10 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
 
   const fetchLiveResults = async (q: string, tab: string, signal: AbortSignal) => {
     try {
-      const res = await fetch(`/api/market/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(tab)}`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        signal
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
+      const data = await api.get<WatchlistItem[]>(
+        `/api/market/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(tab)}`,
+        { signal }
+      );
       return Array.isArray(data) ? data : [];
     } catch (err: any) {
       if (err.name !== 'AbortError') console.error('Search API error:', err);

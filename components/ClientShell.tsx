@@ -31,6 +31,11 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   const [isGlobalLoading, setIsGlobalLoading] = React.useState(false);
   const [loadingText, setLoadingText] = React.useState('Processing Order...');
 
+  // ── Global toast for async order errors ──────────────────────────────
+  const [toastMsg, setToastMsg] = React.useState('');
+  const [toastVisible, setToastVisible] = React.useState(false);
+  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   React.useEffect(() => {
     const onStart = (e: any) => {
       setLoadingText(e.detail || 'Processing Order...');
@@ -44,15 +49,27 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     };
     const onExitEnd = () => setIsGlobalLoading(false);
 
+    const onToast = (e: any) => {
+      const msg = (e as CustomEvent).detail;
+      if (!msg) return;
+      setToastMsg(String(msg));
+      setToastVisible(true);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToastVisible(false), 4000);
+    };
+
     window.addEventListener('global-loader-start', onStart);
     window.addEventListener('global-loader-end', onEnd);
     window.addEventListener('exit-overlay-start', onExitStart);
     window.addEventListener('exit-overlay-end', onExitEnd);
+    window.addEventListener('toast_msg', onToast);
     return () => {
       window.removeEventListener('global-loader-start', onStart);
       window.removeEventListener('global-loader-end', onEnd);
       window.removeEventListener('exit-overlay-start', onExitStart);
       window.removeEventListener('exit-overlay-end', onExitEnd);
+      window.removeEventListener('toast_msg', onToast);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
@@ -72,6 +89,34 @@ export default function ClientShell({ children }: { children: React.ReactNode })
         </div>
         <Footer activeTab={activeTab as any} />
       </main>
+
+      {/* Global toast for async order failure messages */}
+      <div
+        className={`global-toast${toastVisible ? ' show' : ''}`}
+        style={{
+          position: 'fixed',
+          bottom: 90,
+          left: '50%',
+          transform: `translateX(-50%) translateY(${toastVisible ? 0 : 20}px)`,
+          background: '#B91C1C',
+          color: '#fff',
+          padding: '10px 22px',
+          borderRadius: 30,
+          fontSize: '0.84rem',
+          fontWeight: 600,
+          zIndex: 200000,
+          opacity: toastVisible ? 1 : 0,
+          transition: 'opacity 0.3s, transform 0.3s',
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+          maxWidth: '90vw',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          boxShadow: '0 4px 16px rgba(185,28,28,0.4)',
+        }}
+      >
+        {toastMsg}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { getSession } from '@/lib/auth';
+import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import './page.css';
 
@@ -83,27 +83,24 @@ export default function ReportsPage() {
         setFromDate(sevenAgo);
         setToDate(today);
 
-        getSession().then((session) => {
-            const role = session?.user?.user_metadata?.role;
+        api.get<{ user_metadata?: { role?: string } }>('/api/user/profile').then((data: any) => {
+            const role = data?.role;
             if (role === 'admin' || role === 'super_admin') {
                 setIsAdmin(true);
             }
-        });
+        }).catch(() => {});
     }, []);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const s = await getSession();
-            if (!s) return;
-            const h = { Authorization: `Bearer ${s.access_token}` };
-            const [oRes, pRes] = await Promise.all([
-                fetch('/api/orders?limit=500', { headers: h }),
-                fetch('/api/positions?status=closed', { headers: h }), // Explicity request closed positions for P&L
+            const [ordersData, positionsData] = await Promise.all([
+                api.get<{ orders?: Order[] }>('/api/orders?limit=500'),
+                api.get<{ positions?: Position[] }>('/api/positions?status=closed'),
             ]);
-            if (oRes.ok) { const d = await oRes.json(); setOrders(d.orders ?? []); }
-            if (pRes.ok) { const d = await pRes.json(); setPositions(d.positions ?? []); }
+            setOrders(ordersData.orders ?? []);
+            setPositions(positionsData.positions ?? []);
         } catch {
             setError('Failed to load. Please try again.');
         } finally {

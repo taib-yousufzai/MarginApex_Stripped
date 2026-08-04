@@ -4,8 +4,10 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { getSession } from '@/lib/auth';
+import { api, ApiError } from '@/lib/api';
 import './page.css';
+
+
 
 interface SegmentSetting {
   id: string;
@@ -65,25 +67,20 @@ export default function UnifiedSettingsPage() {
   // Fetch current user trading mode on mount
   useEffect(() => {
     let cancelled = false;
-    getSession().then(async (session) => {
-      if (cancelled || !session) return;
 
+    (async () => {
       try {
-        const res = await fetch('/api/user/trading-mode', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) {
-            setActualMode(data.trading_mode);
-            setActiveTab(data.trading_mode);
-            setModeLockedUntil(data.mode_locked_until);
-          }
+        const data = await api.get<{ trading_mode: 'normal' | 'scalper'; mode_locked_until: string | null }>('/api/user/trading-mode');
+        if (!cancelled) {
+          setActualMode(data.trading_mode);
+          setActiveTab(data.trading_mode);
+          setModeLockedUntil(data.mode_locked_until);
         }
       } catch (err) {
-        console.error('Error fetching trading mode:', err);
+        if (!cancelled) console.error('Error fetching trading mode:', err);
       }
-    });
+    })();
+
     return () => {
       cancelled = true;
     };
@@ -94,34 +91,23 @@ export default function UnifiedSettingsPage() {
     let cancelled = false;
     setLoading(true);
 
-    getSession().then(async (session) => {
-      if (cancelled) return;
-      if (!session) {
-        setLoading(false);
-        return;
-      }
-
+    (async () => {
       try {
-        const res = await fetch(`/api/user/segments?mode=${activeTab}`, {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const data = await api.get<SegmentSetting[]>(`/api/user/segments?mode=${activeTab}`);
+        if (!cancelled) {
           const sorted = (data || []).sort((a: SegmentSetting, b: SegmentSetting) => {
             const segCompare = a.segment.localeCompare(b.segment);
             if (segCompare !== 0) return segCompare;
             return a.side.localeCompare(b.side);
           });
-          if (!cancelled) setSegments(sorted);
+          setSegments(sorted);
         }
       } catch (err) {
-        console.error('Error fetching user segments:', err);
+        if (!cancelled) console.error('Error fetching user segments:', err);
       } finally {
         if (!cancelled) setLoading(false);
       }
-    });
+    })();
 
     return () => {
       cancelled = true;
@@ -167,29 +153,20 @@ export default function UnifiedSettingsPage() {
     setIsGoToScalperModalOpen(false);
     setLoading(true);
     try {
-      const session = await getSession();
-      if (!session) throw new Error('Not logged in');
-
-      const res = await fetch('/api/user/trading-mode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ trading_mode: 'scalper' }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to activate Scalper Mode');
-      }
+      const data = await api.post<{ trading_mode: string; mode_locked_until: string | null }>(
+        '/api/user/trading-mode',
+        { trading_mode: 'scalper' },
+      );
 
       setActualMode('scalper');
       setActiveTab('scalper');
       setModeLockedUntil(data.mode_locked_until);
       showAlert("Scalper Mode Activated!", "Slightly Higher Brokerage\nLow Profit Hold Trade Time\nPerfect For Scalper");
     } catch (err: any) {
-      showAlert("Activation Failed", err.message || "An unexpected error occurred");
+      const message = err instanceof ApiError
+        ? (err.details as any)?.error ?? `API error ${err.status}`
+        : err.message ?? "An unexpected error occurred";
+      showAlert("Activation Failed", message);
     } finally {
       setLoading(false);
     }
@@ -199,29 +176,20 @@ export default function UnifiedSettingsPage() {
     setIsGoToNormalModalOpen(false);
     setLoading(true);
     try {
-      const session = await getSession();
-      if (!session) throw new Error('Not logged in');
-
-      const res = await fetch('/api/user/trading-mode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ trading_mode: 'normal' }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to activate Normal Mode');
-      }
+      await api.post<{ trading_mode: string; mode_locked_until: string | null }>(
+        '/api/user/trading-mode',
+        { trading_mode: 'normal' },
+      );
 
       setActualMode('normal');
       setActiveTab('normal');
       setModeLockedUntil(null);
       showAlert("Normal Mode Activated!", "Slightly Low Brokerage\nHigher Profit Hold Trade Timer\nScalping Banned");
     } catch (err: any) {
-      showAlert("Switch Failed", err.message || "An unexpected error occurred");
+      const message = err instanceof ApiError
+        ? (err.details as any)?.error ?? `API error ${err.status}`
+        : err.message ?? "An unexpected error occurred";
+      showAlert("Switch Failed", message);
     } finally {
       setLoading(false);
     }

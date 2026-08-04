@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { pageCache } from '@/lib/pageCache';
 import { kiteRestore, kiteStatus } from '@/lib/kiteClient';
+import { api, ApiError } from '@/lib/api';
 
 export interface KiteOrder {
   order_id: string;
@@ -60,31 +61,23 @@ export function useKiteOrders(refreshInterval = 10000): UseKiteOrdersResult {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const response = await fetch('/api/kite/orders', { cache: 'no-store' });
-
-      if (response.status === 401 || response.status === 403) {
-        setConnected(false);
-        pageCache.set('kite:connected', false);
-        setLoading(false);
-        return;
-      }
-
-      if (!response.ok) {
-        const body = await response.json() as { error?: string };
-        setError(body.error ?? 'Failed to fetch orders');
-        setLoading(false);
-        return;
-      }
-
-      const data = await response.json() as { orders: KiteOrder[] };
+      const data = await api.get<{ orders: KiteOrder[] }>('/api/kite/orders');
       const freshOrders = data.orders ?? [];
       setOrders(freshOrders);
       pageCache.set('kite:orders', freshOrders);
       setConnected(true);
       pageCache.set('kite:connected', true);
       setError(null);
-    } catch {
-      setError('Network error fetching orders');
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        setConnected(false);
+        pageCache.set('kite:connected', false);
+        setLoading(false);
+        return;
+      }
+      setError(err instanceof ApiError
+        ? ((err.details as { error?: string } | null)?.error ?? 'Failed to fetch orders')
+        : 'Network error fetching orders');
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { api, ApiError } from '@/lib/api';
 import './page.css';
 
 interface HistoryItem {
@@ -85,21 +86,11 @@ export default function HistoryPage() {
 
     async function fetchHistory() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-
         // Fetch both orders and positions history
-        const [ordersRes, posRes] = await Promise.all([
-          fetch('/api/orders?status=executed,rejected,cancelled', {
-            headers: { Authorization: `Bearer ${session.access_token}` }
-          }),
-          fetch('/api/positions?status=closed&all=true', {
-            headers: { Authorization: `Bearer ${session.access_token}` }
-          })
+        const [ordersData, posData] = await Promise.all([
+          api.get<{ orders: any[] }>('/api/orders?status=executed,rejected,cancelled').catch(() => ({ orders: [] })),
+          api.get<{ positions: any[] }>('/api/positions?status=closed&all=true').catch(() => ({ positions: [] })),
         ]);
-
-        const ordersData = ordersRes.ok ? await ordersRes.json() : { orders: [] };
-        const posData = posRes.ok ? await posRes.json() : { positions: [] };
 
         const formattedOrders = (ordersData.orders || []).map((o: any) => ({
           id: o.id,

@@ -1,19 +1,15 @@
 /**
  * useBalance
  *
- * Wallet balance data hook, refactored to consume the global BalanceContext.
+ * Thin hook over BalanceDataProvider. All balance state lives in the provider —
+ * no component should fetch /api/pay/balance directly.
  */
-
 'use client';
 
 import { useBalanceData } from '@/contexts/BalanceContext';
 
-interface BalanceState {
-  balance: number;
-  settlementAmount: number;
-  loading: boolean;
-}
+export type { BalanceContextType as BalanceState } from '@/contexts/BalanceContext';
 
-export function useBalance(): BalanceState {
+export function useBalance() {
   return useBalanceData();
 }

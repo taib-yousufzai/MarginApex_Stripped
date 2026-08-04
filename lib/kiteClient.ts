@@ -1,26 +1,16 @@
 /**
  * Shared helper for Kite API calls from the client.
- * Attaches the Supabase Bearer token so server-side routes can
- * reliably identify the user without relying on cookie parsing.
+ * Authentication is injected automatically by the `api` transport layer.
  */
 
-import { supabase } from './supabaseClient';
-
-async function getAuthHeader(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+import { api } from '@/lib/api';
 
 export async function kiteRestore(): Promise<void> {
-  const headers = await getAuthHeader();
-  await fetch('/api/kite/restore', { method: 'POST', headers }).catch(() => {});
+  await api.post<void>('/api/kite/restore', {}).catch(() => {});
 }
 
 export async function kiteStatus(): Promise<{ connected: boolean; userName?: string }> {
-  const headers = await getAuthHeader();
-  const res = await fetch('/api/kite/status', { cache: 'no-store', headers });
-  return res.json();
+  return api.get<{ connected: boolean; userName?: string }>('/api/kite/status');
 }
 
 export async function kiteLogin(): Promise<void> {

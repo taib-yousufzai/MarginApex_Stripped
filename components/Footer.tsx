@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import TickFlash from '@/components/TickFlash';
 import { useMyPositions, EnrichedPosition } from '@/hooks/useMyPositions';
+import { useBalance } from '@/hooks/useBalance';
 import './Footer.css';
 
 const mapSegmentToDbSegment = (s: string): string => {
@@ -45,33 +46,18 @@ const Footer: React.FC<FooterProps> = ({ activeTab, hideDrawer = false, position
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const [balance, setBalance] = useState(0);
-  const [settlementAmount, setSettlementAmount] = useState(0);
+  // Balance and settlement from the global BalanceDataProvider
+  const { balance, settlementAmount } = useBalance();
   const [autoSqoffPercent, setAutoSqoffPercent] = useState(90);
 
   useEffect(() => {
     let cancelled = false;
     let channel: any = null;
 
-    const initProfile = async () => {
+    const initAutoSqoff = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session || cancelled) return;
 
-      // Initial fetch of balance and settlement_amount
-      try {
-        const res = await fetch('/api/pay/balance', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        if (res.ok && !cancelled) {
-          const { balance, settlementAmount } = await res.json();
-          setBalance(balance);
-          setSettlementAmount(settlementAmount || 0);
-        }
-      } catch (err) {
-        console.error('Failed to fetch balance in Footer', err);
-      }
-
-      // Initial fetch of auto_sqoff
       try {
         const { data: profile } = await supabase
           .from('profiles')
@@ -85,9 +71,10 @@ const Footer: React.FC<FooterProps> = ({ activeTab, hideDrawer = false, position
         console.error('Failed to fetch profile settings in Footer', err);
       }
 
-      // Subscribe to realtime profile changes for user balance and settlement_amount
+      // Subscribe to realtime profile changes for auto_sqoff only
+      // (balance and settlement are handled by BalanceDataProvider)
       channel = supabase
-        .channel(`profile-realtime-footer-${Date.now()}`)
+        .channel(`profile-realtime-footer-sqoff-${Date.now()}`)
         .on(
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${session.user.id}` },
@@ -95,8 +82,6 @@ const Footer: React.FC<FooterProps> = ({ activeTab, hideDrawer = false, position
             if (cancelled) return;
             const updated = payload.new as any;
             if (updated) {
-              setBalance(Number(updated.balance ?? 0));
-              setSettlementAmount(Math.abs(Number(updated.settlement_amount ?? 0)));
               setAutoSqoffPercent(Number(updated.showcase_auto_sqoff ?? 85));
             }
           }
@@ -104,17 +89,11 @@ const Footer: React.FC<FooterProps> = ({ activeTab, hideDrawer = false, position
         .subscribe();
     };
 
-    initProfile();
-    
-    const handleOrderPlaced = () => {
-      initProfile();
-    };
-    window.addEventListener('order_placed', handleOrderPlaced);
+    initAutoSqoff();
 
     return () => {
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
-      window.removeEventListener('order_placed', handleOrderPlaced);
     };
   }, []);
 

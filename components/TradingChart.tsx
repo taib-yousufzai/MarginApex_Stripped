@@ -10,13 +10,17 @@ import type { MyOrder } from '@/lib/types/order';
 import { useMyPositions, EnrichedPosition } from '@/hooks/useMyPositions';
 import { useOrderEntry } from '@/hooks/useOrderEntry';
 import { supabase } from '@/lib/supabaseClient';
+import { api, ApiError } from '@/lib/api';
 import OptionChainTable from '@/app/option-chain/OptionChainTable';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
+import { mapSegmentToDbSegment } from '@/lib/trading/SymbolMapping';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
 import AnimatedLoader from '@/components/AnimatedLoader';
+import { useTradeConfig } from '@/contexts/TradeConfigContext';
+import { useBalance } from '@/hooks/useBalance';
 import './trading-chart.css';
 
 const fetcher = (url: string) => fetch(url).then(res => res.json());
@@ -52,51 +56,6 @@ interface TradingChartProps {
 }
 
 type Timeframe = '1m' | '5m' | '15m' | '60m' | 'day';
-
-function getLotSize(name: string, scriptSettings?: { symbol: string; lot_size: number }[]): number {
-  const n = name.toUpperCase();
-  if (scriptSettings && scriptSettings.length > 0) {
-    const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
-    const match = sortedSettings.find(s => n.includes(s.symbol.toUpperCase()));
-    if (match) return Number(match.lot_size);
-  }
-  if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 30;
-  if (n.includes('FINNIFTY')) return 60;
-  if (n.includes('MIDCP') || n.includes('MIDCAP')) return 120;
-  if (n.includes('SENSEX')) return 20;
-  if (n.includes('NIFTY')) return 65;
-  if (n.includes('GOLDM')) return 10;
-  if (n.includes('GOLD')) return 100;
-  if (n.includes('SILVERM')) return 5;
-  if (n.includes('SILVER')) return 30;
-  if (n.includes('CRUDEOILM')) return 10;
-  if (n.includes('CRUDEOIL')) return 100;
-  if (n.includes('NATGASMINI')) return 250;
-  if (n.includes('NATURALGAS')) return 1250;
-  return 1;
-}
-
-function mapSegmentToDbSegment(s: string): string {
-  if (!s) return '';
-  const trimmed = s.trim();
-  if (['NSE - Futures', 'BSE - Futures', 'NFO - Futures', 'BFO - Futures'].includes(trimmed)) return 'INDEX-FUT';
-  if (['NSE - Options', 'BSE - Options', 'NFO - Options', 'BFO - Options'].includes(trimmed)) return 'INDEX-OPT';
-  if (['NSE - Stock Futures', 'BSE - Stock Futures', 'NFO - Stock Futures', 'BFO - Stock Futures'].includes(trimmed)) return 'STOCK-FUT';
-  if (['NSE - Stock Options', 'BSE - Stock Options', 'NFO - Stock Options', 'BFO - Stock Options'].includes(trimmed)) return 'STOCK-OPT';
-  if (trimmed === 'MCX - Futures') return 'MCX-FUT';
-  if (trimmed === 'MCX - Options') return 'MCX-OPT';
-  if (['NSE - Equity', 'BSE - Equity'].includes(trimmed)) return 'NSE-EQ';
-  if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
-  if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options') return 'FOREX';
-  if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
-  // Already-mapped DB keys — pass through directly
-  if (['INDEX-FUT', 'INDEX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'MCX-FUT', 'MCX-OPT', 'NSE-EQ', 'CRYPTO', 'FOREX', 'COMEX'].includes(trimmed)) return trimmed;
-  // Legacy alias used by older code paths
-  if (trimmed === 'NFO-OPT') return 'INDEX-OPT';
-  if (trimmed === 'BFO-OPT') return 'INDEX-OPT';
-  if (trimmed === 'NFO-FUT') return 'INDEX-FUT';
-  return trimmed;
-}
 
 const SwipeableItem = ({ children, onDelete }: { children: React.ReactNode, onDelete: () => void }) => {
   const [translateX, setTranslateX] = useState(0);
@@ -572,11 +531,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const [isInfoPanelCollapsed, setIsInfoPanelCollapsed] = useState<boolean>(true);
   const [isBottomSectionVisible, setIsBottomSectionVisible] = useState<boolean>(true);
   const [positionViewMode, setPositionViewMode] = useState<'cumulative' | 'detailed'>('cumulative');
-  const [balance, setBalance] = useState<number>(50000);
   const [toast, setToast] = useState<{ visible: boolean; msg: string; isError?: boolean }>({ visible: false, msg: '' });
-  const [segmentSettings, setSegmentSettings] = useState<any[]>([]);
-  const [scriptSettings, setScriptSettings] = useState<{ symbol: string; lot_size: number }[]>([]);
-  const [profile, setProfile] = useState<{ trading_mode?: string } | null>(null);
+  // Config from the shared TradeConfigProvider — no local fetches needed
+  const { tradingMode, getLotSize, getSegment } = useTradeConfig();
+  // Balance from the global BalanceDataProvider — no local fetch needed
+  const { balance, refresh: refreshBalance } = useBalance();
 
   // ── CHARTINH Integration States ──
   const [activeOrderTab, setActiveOrderTab] = useState<'open' | 'executed'>('open');
@@ -682,11 +641,11 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   };
 
   // Get lot size of instrument
-  const lotSize = useMemo(() => getLotSize(symbol, scriptSettings), [symbol, scriptSettings]);
+  const lotSize = useMemo(() => getLotSize(symbol), [symbol, getLotSize]);
 
   // Update qtyValue when lotSize changes (if user hasn't typed a custom qty yet)
   useEffect(() => {
-    if (!useLots && qtyValue === getLotSize(symbol, [])) {
+    if (!useLots && qtyValue === getLotSize(symbol)) {
       setQtyValue(lotSize);
     }
   }, [lotSize]);
@@ -720,67 +679,19 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }
   };
 
-  const fetchBalance = async () => {
-    let token = '';
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      token = sessionData.session?.access_token || '';
-      if (!token) return;
+  // Get user's actual funds balance is now handled by BalanceDataProvider
 
-      const res = await fetch('/api/pay/balance', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (typeof data.balance === 'number') {
-        setBalance(data.balance);
-      }
-    } catch (err) {
-      console.warn('Failed to fetch balance:', err);
-    }
-
-    if (!token) return;
-
-    // Fetch profile trading_mode
-    let mode = 'normal';
-    try {
-      const profileRes = await supabase.from('profiles').select('trading_mode').single();
-      mode = profileRes.data?.trading_mode || 'normal';
-      console.log('[TradingChart] Profile trading_mode:', mode, 'error:', profileRes.error?.message);
-      setProfile({ trading_mode: mode });
-      // Initialize Scalp toggle based on user's saved preference or default trading mode
-      const savedMode = localStorage.getItem('isTradeOnChartActive');
-      if (savedMode !== null) {
-        setIsTradeOnChartActive(savedMode === 'true');
-      } else {
-        setIsTradeOnChartActive(mode === 'scalper');
-      }
-    } catch (err) {
-      console.warn('Failed to fetch profile:', err);
-    }
-
-    // Fetch segment + script settings
-    try {
-      const [settingsRes, scriptRes] = await Promise.all([
-        fetch(`/api/user/segments?mode=${mode}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/user/script-settings', { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-      if (settingsRes.ok) {
-        const settingsData = await settingsRes.json();
-        setSegmentSettings(settingsData || []);
-      }
-      if (scriptRes.ok) {
-        const ssData = await scriptRes.json();
-        setScriptSettings(ssData || []);
-      }
-    } catch (err) {
-      console.warn('Failed to fetch segment or script settings:', err);
-    }
-  };
-
-  // Get user's actual funds balance
+  // Initialize Scalp toggle based on saved preference or trading mode from context
   useEffect(() => {
-    fetchBalance();
-  }, []);
+    const savedMode = localStorage.getItem('isTradeOnChartActive');
+    if (savedMode !== null) {
+      setIsTradeOnChartActive(savedMode === 'true');
+    } else {
+      setIsTradeOnChartActive(tradingMode === 'scalper');
+    }
+  // Only run once when tradingMode first becomes available
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradingMode]);
 
   // Ensure default quantity is reset to 1 when the symbol changes
   useEffect(() => {
@@ -802,9 +713,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
         if (isCrypto) {
           const interval = getIntervalString();
-          const res = await fetch(`/api/market/historical-crypto?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=500`);
-          const json = await res.json();
-          if (!Array.isArray(json)) throw new Error(json.error || json.msg || 'Failed to fetch');
+          const json = await api.get<any[]>(`/api/market/historical-crypto?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=500`);
+          if (!Array.isArray(json)) throw new Error('Failed to fetch');
           data = json.map((k: any) => ({
             timestamp: parseInt(k[0]),
             open: parseFloat(k[1]),
@@ -831,10 +741,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           const to = toDate.toISOString().split('T')[0];
           const interval = getIntervalString();
 
-          const res = await fetch(`/api/market/historical?symbol=${encodeURIComponent(symbol)}&interval=${interval}&from=${from}&to=${to}`);
-          const json = await res.json();
+          const json = await api.get<{ candles?: any[]; error?: string }>(`/api/market/historical?symbol=${encodeURIComponent(symbol)}&interval=${interval}&from=${from}&to=${to}`);
 
-          if (res.ok && json.candles) {
+          if (json.candles) {
             data = json.candles.map((c: any) => {
               const dt = new Date(c[0]);
               return {
@@ -982,8 +891,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       }
       return mapSegmentToDbSegment(segment);
     })();
-    const buySetting = segmentSettings.find(s => s.segment === submitDbSeg && s.side === 'BUY');
-    const sellSetting = segmentSettings.find(s => s.segment === submitDbSeg && s.side === 'SELL');
+    const buySetting = getSegment(submitDbSeg, 'BUY');
+    const sellSetting = getSegment(submitDbSeg, 'SELL');
     const segSetting = orderSide === 'SELL' ? sellSetting : buySetting;
 
     const intradayLeverage = segSetting?.intraday_leverage ?? 10;
@@ -1090,7 +999,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       if (res.success) {
         showToast(modifyOrderId ? 'Order Modified Successfully!' : `${orderSide} Order Placed Successfully!`);
         refreshOrders();
-        fetchBalance();
+        refreshBalance();
         window.dispatchEvent(new CustomEvent('position-closed'));
         // isSubmitting stays true — cleared by useEffect when positions refresh
         // Safety fallback in case positions never update
@@ -1114,7 +1023,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     if (res.success) {
       showToast('Order cancelled');
       refreshOrders();
-      fetchBalance();
+      refreshBalance();
       if (modifyOrderId === id) {
         setModifyOrderId(null);
         setIsOrderBlockVisible(false);
@@ -1197,7 +1106,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       return;
     }
 
-    const posLotSize = getLotSize(pos.symbol, scriptSettings);
+    const posLotSize = getLotSize(pos.symbol);
     const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
     const effectiveLots = finalQty / posLotSize;
 
@@ -1220,8 +1129,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       showToast(`Quick exit order placed`);
       refreshOrders();
       setTimeout(() => {
-        fetchBalance();
-        fetchBalance();
+        refreshBalance();
+        refreshBalance();
         quickExitLock.current = false;
       }, 1000); // Give DB time to match
       // Safety: unlock the exit button after 5s in case the position didn't actually close
@@ -1259,10 +1168,10 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     
     // Direct Execution for Scalping Mode (directly placing order, showing bm-loader)
     if (isTradeOnChartActive) {
-      const posLotSize = getLotSize(pos.symbol, scriptSettings);
+      const posLotSize = getLotSize(pos.symbol);
       const qVal = posLotSize;
       const dbSeg = mapSegmentToDbSegment(segment);
-      const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === pos.side);
+      const segSetting = getSegment(dbSeg, pos.side);
       const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
       const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
       const required = Math.round(levType === '%' ? (currentPrice * qVal) * (leverage / 100) : (levType === 'Fixed' ? (qVal / posLotSize) * leverage : (currentPrice * qVal) / leverage));
@@ -1293,8 +1202,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
           showToast(`Successfully added ${qVal} to position!`);
           refreshOrders();
           refreshPositions();
-          fetchBalance();
-          fetchBalance();
+          refreshBalance();
+          refreshBalance();
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new CustomEvent('position-closed'));
           
@@ -1343,12 +1252,12 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       setIsSubmitting(false);
       return;
     }
-    const isScalper = profile?.trading_mode === 'scalper';
+    const isScalper = tradingMode === 'scalper';
     const effectiveUseLots = isScalper ? true : useLots;
     const finalQty = effectiveUseLots ? (isCrypto ? qVal * lotSize : Math.round(qVal * lotSize)) : (isCrypto ? qVal : Math.round(qVal));
 
     const dbSeg = mapSegmentToDbSegment(segment);
-    const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === side);
+    const segSetting = getSegment(dbSeg, side);
     const intradayLeverage = segSetting?.intraday_leverage ?? 10;
     const intradayType = segSetting?.intraday_type ?? 'Multiplier';
     const required = Math.round(intradayType === '%' ? (currentPrice * finalQty) * (intradayLeverage / 100) : (intradayType === 'Fixed' ? (finalQty / lotSize) * intradayLeverage : (currentPrice * finalQty) / intradayLeverage));
@@ -1384,8 +1293,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         btn.classList.add('quick-flash');
       }
       refreshOrders();
-      fetchBalance();
-      fetchBalance();
+      refreshBalance();
+      refreshBalance();
       window.dispatchEvent(new CustomEvent('position-closed'));
     } else {
       showToast(res.error || 'Failed to place quick order', true);
@@ -1409,7 +1318,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
 
     const addQty = pos.qty_open;
     const dbSeg = mapSegmentToDbSegment(segment);
-    const segSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === pos.side);
+    const segSetting = getSegment(dbSeg, pos.side);
     const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
     const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
     const required = Math.round(levType === '%' ? (currentPrice * addQty) * (leverage / 100) : (levType === 'Fixed' ? (addQty / lotSize) * leverage : (currentPrice * addQty) / leverage));
@@ -1437,8 +1346,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     if (res.success) {
       showToast(`Successfully added ${addQty} to position!`);
       refreshOrders();
-      fetchBalance();
-      fetchBalance();
+      refreshBalance();
+      refreshBalance();
       window.dispatchEvent(new CustomEvent('position-closed'));
     } else {
       showToast(res.error || 'Failed to add to position', true);
@@ -1567,8 +1476,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   })();
 
   const dbSeg = effectiveDbSeg;
-  const buySetting = segmentSettings.find(s => s.segment === dbSeg && s.side === 'BUY');
-  const sellSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === 'SELL');
+  const buySetting = getSegment(dbSeg, 'BUY');
+  const sellSetting = getSegment(dbSeg, 'SELL');
   const segSetting = orderSide === 'SELL' ? sellSetting : buySetting;
 
   const intradayLeverage = segSetting?.intraday_leverage ?? 10;

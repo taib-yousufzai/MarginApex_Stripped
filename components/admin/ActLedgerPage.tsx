@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 import { signOut } from '@/lib/auth';
+import { api } from '@/lib/api';
 import { apiCall, Toast, ToastState, ActLogItem, LOG_ROWS } from './AdminUtils';
 import TransactionsPage from './TransactionsPage';
 
@@ -481,26 +481,16 @@ export default function ActLedgerPage({ selectedUser, onOpenUserPanel, isDemoMod
     params.set('export', 'csv');
     params.set('demo', String(isDemoMode));
 
-    supabase.auth.getSession().then(({ data: sessionData }) => {
-      const token = sessionData.session?.access_token ?? '';
-      fetch(`/api/admin/actlogs?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
+    api.get<Blob>(`/api/admin/actlogs?${params.toString()}`)
+      .then(blob => {
+        const url = URL.createObjectURL(blob as unknown as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'actlogs.csv';
+        a.click();
+        URL.revokeObjectURL(url);
       })
-        .then(res => {
-          if (!res.ok) { setToast({ message: 'Export failed', type: 'error' }); return null; }
-          return res.blob();
-        })
-        .then(blob => {
-          if (!blob) return;
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'actlogs.csv';
-          a.click();
-          URL.revokeObjectURL(url);
-        })
-        .catch(() => setToast({ message: 'Export failed', type: 'error' }));
-    });
+      .catch(() => setToast({ message: 'Export failed', type: 'error' }));
   };
 
   return (

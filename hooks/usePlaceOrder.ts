@@ -8,7 +8,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { api, ApiError } from '@/lib/api';
 import type { PlaceOrderRequest, PlaceOrderResponse } from '@/lib/types/order';
 
 interface UsePlaceOrderResult {
@@ -25,29 +25,15 @@ export function usePlaceOrder(): UsePlaceOrderResult {
     setLoading(true);
     setError(null);
 
-    // Attach Supabase Bearer token
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token ?? '';
-
     try {
-      const res = await fetch('/api/orders', {
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(req),
-      });
-
-      const data = await res.json() as PlaceOrderResponse & { error?: string };
-
-      if (!res.ok) {
-        const msg = data.error ?? 'Order failed. Please try again.';
+      return await api.post<PlaceOrderResponse>('/api/orders', req);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const msg = (err.details as { error?: string } | null)?.error ?? 'Order failed. Please try again.';
         setError(msg);
-        throw new Error(msg);
+        throw err;
       }
-
-      return data;
+      throw err;
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import { useKitePositions } from '@/hooks/useKitePositions';
 import { useMobileBack } from '@/hooks/useMobileBack';
+import { api } from '@/lib/api';
 
 import type { TradeSheetItem } from '@/components/TradeSheet';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
@@ -583,11 +584,7 @@ export default function OrderPage() {
                     else if (isTarget) clearData = { target: null };
                     else if (isGtt) clearData = { stop_loss: null, target: null };
 
-                    fetch(`/api/positions/${positionId}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(clearData)
-                    }).then(() => {
+                    api.patch(`/api/positions/${positionId}`, clearData).then(() => {
                       refresh();
                     });
                   }

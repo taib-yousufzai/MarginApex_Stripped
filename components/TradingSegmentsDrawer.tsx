@@ -186,24 +186,17 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
   React.useEffect(() => {
     setMounted(true);
-    async function fetchAllowedSegments() {
+    const fetchAllowedSegments = async () => {
       try {
-        const { supabase: sb } = await import('@/lib/supabaseClient');
-        const { data: { session } } = await sb.auth.getSession();
-        if (!session) return;
-        const res = await fetch('/api/user/profile', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-        if (res.ok) {
-          const profile = await res.json();
-          if (profile && profile.segments) {
-            setAllowedSegments(profile.segments);
-          }
+        const { api } = await import('@/lib/api');
+        const profile = await api.get<{ segments?: string[] }>('/api/user/profile');
+        if (profile && profile.segments) {
+          setAllowedSegments(profile.segments);
         }
       } catch (err) {
         console.error('Failed to fetch allowed segments', err);
       }
-    }
+    };
     fetchAllowedSegments();
   }, []);
 

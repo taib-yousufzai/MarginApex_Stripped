@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
+import { api, ApiError } from '@/lib/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useMarketQuotes, QuoteData } from '@/hooks/useMarketQuotes';
@@ -11,6 +12,8 @@ import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import dynamic from 'next/dynamic';
+import { useTradeConfig } from '@/contexts/TradeConfigContext';
+import { mapSegmentToDbSegment } from '@/lib/trading/SymbolMapping';
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
@@ -33,29 +36,6 @@ export interface WatchlistItem {
   close: number;
   category?: string;
   lotSize?: number;
-}
-
-function getLotSize(name: string, scriptSettings?: { symbol: string; lot_size: number }[]): number {
-  const n = name.toUpperCase();
-  if (scriptSettings && scriptSettings.length > 0) {
-    const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
-    const match = sortedSettings.find(s => n.includes(s.symbol.toUpperCase()));
-    if (match) return Number(match.lot_size);
-  }
-  if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 30;
-  if (n.includes('FINNIFTY')) return 60;
-  if (n.includes('MIDCP') || n.includes('MIDCAP')) return 120;
-  if (n.includes('SENSEX')) return 20;
-  if (n.includes('NIFTY')) return 65;
-  if (n.includes('GOLDM')) return 10;
-  if (n.includes('GOLD')) return 100;
-  if (n.includes('SILVERM')) return 5;
-  if (n.includes('SILVER')) return 30;
-  if (n.includes('CRUDEOILM')) return 10;
-  if (n.includes('CRUDEOIL')) return 100;
-  if (n.includes('NATGASMINI')) return 250;
-  if (n.includes('NATURALGAS')) return 1250;
-  return 1;
 }
 
 declare global {
@@ -513,8 +493,7 @@ function WatchlistContent() {
       tradingSegmentsRef.current = (window as any).__initialTradingSegments;
     }
 
-    fetch('/api/market/instruments/library')
-      .then(res => res.ok ? res.json() : Promise.reject('fetch failed'))
+    api.get<{ segments: TradingSegment[] }>('/api/market/instruments/library')
       .then(data => {
         if (data.segments) {
           setTradingSegments(data.segments);
@@ -546,8 +525,8 @@ function WatchlistContent() {
   const [isFolderDrawerOpen, setIsFolderDrawerOpen] = useState(false);
   const [expandedSegments, setExpandedSegments] = useState<Record<string, boolean>>({});
   const [allowedSegments, setAllowedSegments] = useState<string[] | null>(null);
-  const [segmentSettings, setSegmentSettings] = useState<any[]>([]);
-  const [scriptSettings, setScriptSettings] = useState<{ symbol: string; lot_size: number }[]>([]);
+  // segmentSettings, getSegment, and getLotSize come from the shared TradeConfigProvider
+  const { segmentSettings, getSegment, getLotSize } = useTradeConfig();
   const [blockedSymbols, setBlockedSymbols] = useState<Set<string>>(new Set());
   const [userId, setUserId] = useState<string>('');
   const [tradingHours, setTradingHours] = useState<any[]>([]);
@@ -596,28 +575,8 @@ function WatchlistContent() {
     const rawLotSize = Number(item?.lotSize || 0);
     const isOption = item?.symbol ? (item.symbol.endsWith('CE') || item.symbol.endsWith('PE')) : false;
     if (item && rawLotSize > 0 && !(isOption && rawLotSize === 1)) return rawLotSize;
-    const n = (item.name || '').toUpperCase();
-    const s = (item.symbol || '').toUpperCase();
-    const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
-    const dbMatch = sortedSettings.find(set =>
-      n.includes(set.symbol.toUpperCase()) ||
-      s.includes(set.symbol.toUpperCase())
-    );
-    if (dbMatch) return Number(dbMatch.lot_size);
-    if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 30;
-    if (n.includes('FINNIFTY')) return 60;
-    if (n.includes('MIDCP') || n.includes('MIDCAP')) return 120;
-    if (n.includes('SENSEX')) return 20;
-    if (n.includes('NIFTY')) return 65;
-    if (n.includes('GOLDM')) return 10;
-    if (n.includes('GOLD')) return 100;
-    if (n.includes('SILVERM')) return 5;
-    if (n.includes('SILVER')) return 30;
-    if (n.includes('CRUDEOILM')) return 10;
-    if (n.includes('CRUDEOIL')) return 100;
-    if (n.includes('NATGASMINI')) return 250;
-    if (n.includes('NATURALGAS')) return 1250;
-    return 1;
+    // Use the context-provided getLotSize which handles script settings + hardcoded fallbacks
+    return getLotSize(item?.symbol || item?.name || '');
   };
 
   useEffect(() => {
@@ -633,50 +592,30 @@ function WatchlistContent() {
         (window as any).__accessToken = session.access_token;
 
         const controller1 = new AbortController();
-        const t1 = setTimeout(() => controller1.abort('Timeout'), 5000);
-        const res = await fetch('/api/user/profile', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          signal: controller1.signal
-        });
-        clearTimeout(t1);
+        const t1 = setTimeout(() => controller1.abort(), 5000);
+        let profile: any;
+        try {
+          profile = await api.get<any>('/api/user/profile', { signal: controller1.signal });
+        } finally {
+          clearTimeout(t1);
+        }
 
-        if (res.ok) {
-          const profile = await res.json();
+        if (profile) {
           // Use profile.segments if set, otherwise empty array means all allowed
           setAllowedSegments(profile?.segments ?? []);
 
-          // Fetch segment settings and script settings in parallel
-          const mode = profile?.trading_mode || 'normal';
+          // Fetch block-scripts and trading hours in parallel
+          // segmentSettings and scriptSettings are handled by TradeConfigProvider
           const controller2 = new AbortController();
-          const t2 = setTimeout(() => controller2.abort('Timeout'), 5000);
+          const t2 = setTimeout(() => controller2.abort(), 5000);
 
-          const [resSettings, resScript, resBlocked] = await Promise.all([
-            fetch(`/api/user/segments?mode=${mode}`, {
-              headers: { Authorization: `Bearer ${session.access_token}` },
-              signal: controller2.signal
-            }),
-            fetch('/api/user/script-settings', {
-              headers: { Authorization: `Bearer ${session.access_token}` },
-              signal: controller2.signal
-            }),
-            fetch(`/api/admin/users/${session.user.id}/block-scripts`, {
-              headers: { Authorization: `Bearer ${session.access_token}` },
-              signal: controller2.signal
-            }),
+          const [blockedData] = await Promise.allSettled([
+            api.get<any>(`/api/admin/users/${session.user.id}/block-scripts`, { signal: controller2.signal }),
           ]);
           clearTimeout(t2);
 
-          if (resSettings.ok) {
-            const settingsData = await resSettings.json();
-            setSegmentSettings(settingsData || []);
-          }
-          if (resScript.ok) {
-            const scriptData = await resScript.json();
-            setScriptSettings(scriptData || []);
-          }
-          if (resBlocked.ok) {
-            const blockedData = await resBlocked.json();
-            const symbols: string[] = blockedData?.symbols || [];
+          if (blockedData.status === 'fulfilled') {
+            const symbols: string[] = (blockedData.value as any)?.symbols || [];
             setBlockedSymbols(new Set(symbols.map((s: string) => s.toUpperCase())));
           }
 
@@ -689,7 +628,7 @@ function WatchlistContent() {
           setAllowedSegments([]);
         }
       } catch (err) {
-        if (err !== 'Timeout' && (err as Error)?.name !== 'AbortError') {
+        if ((err as Error)?.name !== 'AbortError') {
           console.warn('Failed to fetch allowed segments', err);
         }
         // On error, fall back to allowing all
@@ -801,8 +740,8 @@ function WatchlistContent() {
   };
 
   const dbSeg = selectedItem ? mapSegmentToDbSegment(selectedItem.segment) : '';
-  const buySetting = segmentSettings.find(s => s.segment === dbSeg && s.side === 'BUY');
-  const sellSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === 'SELL');
+  const buySetting = dbSeg ? getSegment(dbSeg, 'BUY') : undefined;
+  const sellSetting = dbSeg ? getSegment(dbSeg, 'SELL') : undefined;
 
   const buyEntryBuffer = buySetting ? buySetting.entry_buffer : 0.003;
   const sellEntryBuffer = sellSetting ? sellSetting.entry_buffer : 0.003;
@@ -924,22 +863,8 @@ function WatchlistContent() {
     }
   }, [basketMode]);
 
-  // Map a segment label to DB key segment
-  function mapSegmentToDbSegment(s: string): string {
-    if (!s) return '';
-    const trimmed = s.trim();
-    if (['NSE - Futures', 'BSE - Futures', 'NFO - Futures', 'BFO - Futures'].includes(trimmed)) return 'INDEX-FUT';
-    if (['NSE - Options', 'BSE - Options', 'NFO - Options', 'BFO - Options'].includes(trimmed)) return 'INDEX-OPT';
-    if (['NSE - Stock Futures', 'BSE - Stock Futures', 'NFO - Stock Futures', 'BFO - Stock Futures'].includes(trimmed)) return 'STOCK-FUT';
-    if (['NSE - Stock Options', 'BSE - Stock Options', 'NFO - Stock Options', 'BFO - Stock Options'].includes(trimmed)) return 'STOCK-OPT';
-    if (trimmed === 'MCX - Futures') return 'MCX-FUT';
-    if (trimmed === 'MCX - Options') return 'MCX-OPT';
-    if (['NSE - Equity', 'BSE - Equity'].includes(trimmed)) return 'NSE-EQ';
-    if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
-    if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options') return 'FOREX';
-    if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
-    return trimmed;
-  };
+  // Map a segment label to DB key segment — imported from lib/trading/SymbolMapping
+  // (local copy removed)
 
   const filteredItems = filterBySearch(filterByTab(watchlistItems, activeTab), searchText);
   const scriptMountedRef = useRef(false);
@@ -1431,6 +1356,12 @@ function WatchlistContent() {
     window.__kiteQuotes = window.__kiteQuotes || {};
     window.__watchlistItems = window.__watchlistItems || [];
     (window as any).__reactSetSelectionActive = setIsSelectionActive;
+
+    // Expose api helpers for inline script use (avoids raw fetch in the injected script)
+    (window as any).__apiPostKiteQuotes = (instruments: string[]) =>
+      api.post<{ data: Record<string, any> }>('/api/kite/quotes', { instruments });
+    (window as any).__apiSearchInstruments = (path: string, signal: AbortSignal) =>
+      api.get<any[]>(path, { signal });
 
     // Reset any stale search state from previous mount
     if (typeof (window as any).__triggerSearch === 'function') {
@@ -1930,11 +1861,11 @@ function WatchlistContent() {
                     <div className="margin-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>Required Margin</span><span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#C62E2E' }}>₹{basketLegs.reduce((acc, leg) => {
                       const price = getLegPrice(leg.item);
                       const seg = mapSegmentToDbSegment(leg.item.segment);
-                      const setting = segmentSettings.find(s => s.segment === seg && s.side === leg.side);
+                      const setting = getSegment(seg, leg.side);
                       const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
                       const lev = Number(isIntra ? (setting?.intraday_leverage ?? 10) : (setting?.normal_leverage ?? 10));
                       const levType = (isIntra ? setting?.intraday_type : setting?.normal_type) ?? 'Multiplier';
-                      const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
+                      const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
                       const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                       const exposure = qty * price;
                       let portion = 0;
@@ -1949,8 +1880,8 @@ function WatchlistContent() {
                       basketLegs.forEach((leg) => {
                         const price = getLegPrice(leg.item);
                         const seg = mapSegmentToDbSegment(leg.item.segment);
-                        const setting = segmentSettings.find(s => s.segment === seg && s.side === leg.side);
-                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
+                        const setting = getSegment(seg, leg.side);
+                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
                         const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                         const exposure = qty * price;
 
@@ -2053,8 +1984,8 @@ function WatchlistContent() {
                       basketLegs.forEach((leg) => {
                         const price = getLegPrice(leg.item);
                         const seg = mapSegmentToDbSegment(leg.item.segment);
-                        const setting = segmentSettings.find(s => s.segment === seg && s.side === leg.side);
-                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
+                        const setting = getSegment(seg, leg.side);
+                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
                         const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                         const exposure = qty * price;
 
@@ -2101,7 +2032,7 @@ function WatchlistContent() {
                       try {
                         for (const leg of basketLegs) {
                           const ltp = getLegPrice(leg.item);
-                          const lotSz = getLotSize(leg.item.symbol || leg.item.name || '', scriptSettings);
+                          const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
                           const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                           await placeOrder({
                             symbol: leg.item.symbol,
@@ -2800,12 +2731,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
 
           // 2. For any still missing — fetch from Kite REST via our API
           if (stillMissing.length > 0) {
-            fetch('/api/kite/quotes', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ instruments: stillMissing })
-            })
-              .then(function(r) { return r.ok ? r.json() : { data: {} }; })
+            (window.__apiPostKiteQuotes ? window.__apiPostKiteQuotes(stillMissing) : Promise.resolve({ data: {} }))
               .then(function(json) {
                 var quoteData = (json && json.data) || {};
                 Object.entries(quoteData).forEach(function(entry) {
@@ -2880,17 +2806,10 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           var signal = currentSearchController.signal;
           var timestamp = new Date().getTime();
 
-          fetch('/api/market/instruments/search?q=' + encodeURIComponent(query) + '&tab=' + encodeURIComponent(activeTab) + '&_t=' + timestamp, {
-            headers: { 'Authorization': 'Bearer ' + (window.__accessToken || '') },
-            signal: signal
-          })
-            .then(function(res) {
-              var ct = res.headers.get('content-type');
-              if (res.ok && ct && ct.indexOf('application/json') !== -1) {
-                return res.json();
-              }
-              return [];
-            })
+          (window.__apiSearchInstruments
+            ? window.__apiSearchInstruments('/api/market/instruments/search?q=' + encodeURIComponent(query) + '&tab=' + encodeURIComponent(activeTab) + '&_t=' + timestamp, signal)
+            : Promise.resolve([])
+          )
             .then(function(liveResults) {
               if (!liveResults || !Array.isArray(liveResults)) return;
               // Check query is still current (guard against tab changes mid-flight)

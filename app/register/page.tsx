@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { api, ApiError } from '@/lib/api';
 import RiskRulesPopup from '@/components/RiskRulesPopup';
 import '../login/page.css';
 
@@ -134,20 +135,23 @@ function RegisterForm() {
     setIsLoading(true);
     setFormError('');
 
-    const res = await fetch('/api/register/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), fullName: fullName.trim(), phone: phone.trim(), brokerRef }),
-    });
-    const data = await res.json();
-
-    setIsLoading(false);
-    if (!res.ok) {
-      setFormError(data.error || 'Failed to send OTP');
-    } else {
+    try {
+      const data = await api.post<{ emailSent: boolean; smsSent: boolean }>(
+        '/api/register/send-otp',
+        { email: email.trim(), fullName: fullName.trim(), phone: phone.trim(), brokerRef },
+      );
       setDeliveryStatus({ emailSent: data.emailSent, smsSent: data.smsSent });
       setStep('otp');
       setResendCooldown(60);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.details as Record<string, unknown> | undefined;
+        setFormError((body?.error as string) || 'Failed to send OTP');
+      } else {
+        setFormError('Failed to send OTP');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -159,21 +163,23 @@ function RegisterForm() {
     setIsLoading(true);
     setFormError('');
 
-    const res = await fetch('/api/register/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), otp, password }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      setIsLoading(false);
-      setFormError(data.error || 'Verification failed');
-    } else {
+    try {
+      await api.post<unknown>(
+        '/api/register/verify-otp',
+        { email: email.trim(), otp, password },
+      );
       // Sign in the newly created user
       await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      setIsLoading(false);
       setIsSuccess(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.details as Record<string, unknown> | undefined;
+        setFormError((body?.error as string) || 'Verification failed');
+      } else {
+        setFormError('Verification failed');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -182,14 +188,14 @@ function RegisterForm() {
     if (resendCooldown > 0) return;
     setFormError('');
     setOtp('');
-    const res = await fetch('/api/register/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), fullName: fullName.trim(), phone: phone.trim(), brokerRef }),
-    });
-    const data = await res.json();
-    if (res.ok) {
+    try {
+      const data = await api.post<{ emailSent: boolean; smsSent: boolean }>(
+        '/api/register/send-otp',
+        { email: email.trim(), fullName: fullName.trim(), phone: phone.trim(), brokerRef },
+      );
       setDeliveryStatus({ emailSent: data.emailSent, smsSent: data.smsSent });
+    } catch {
+      // Resend failures are silent — cooldown still applies
     }
     setResendCooldown(60);
   };

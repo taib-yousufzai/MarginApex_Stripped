@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { ErrorModal } from '@/components/ErrorModal';
 import { useAuth } from '@/hooks/useAuth';
 import { getSession } from '@/lib/auth';
+import { api } from '@/lib/api';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import './page.css';
 
@@ -127,11 +128,8 @@ export default function LearningPage() {
       if (maxPriceFilter) params.append('maxPrice', maxPriceFilter);
       if (minVolFilter) params.append('minVolume', minVolFilter);
 
-      const res = await fetch(`/api/market/scanner?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setScannerResults(data || []);
-      }
+      const data = await api.get<ScannerResult[]>(`/api/market/scanner?${params.toString()}`);
+      setScannerResults(data || []);
     } catch (err) {
       console.error('Scanner run failed:', err);
     } finally {

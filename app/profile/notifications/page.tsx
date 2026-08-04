@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import AnimatedLoader from '@/components/AnimatedLoader';
-import { getSession } from '@/lib/auth';
+import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import './page.css';
 
@@ -93,27 +93,12 @@ export default function NotificationsPage() {
     const fetchNotifications = useCallback(async () => {
         setLoading(true);
         try {
-            const s = await getSession();
-            if (!s) {
-                setNotifications(FAKE_NOTIFICATIONS);
-                setIsFake(true);
-                return;
-            }
-            const res = await fetch('/api/notifications?limit=50', {
-                headers: { Authorization: `Bearer ${s.access_token}` },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const real = data.notifications ?? [];
-                if (real.length > 0) {
-                    setNotifications(real);
-                    setIsFake(false);
-                } else {
-                    setNotifications(FAKE_NOTIFICATIONS);
-                    setIsFake(true);
-                }
+            const data = await api.get<{ notifications?: Notification[] }>('/api/notifications?limit=50');
+            const real = data.notifications ?? [];
+            if (real.length > 0) {
+                setNotifications(real);
+                setIsFake(false);
             } else {
-                // API error — show fake preview
                 setNotifications(FAKE_NOTIFICATIONS);
                 setIsFake(true);
             }
@@ -130,25 +115,17 @@ export default function NotificationsPage() {
     const markRead = async (id: string) => {
         // Optimistic update
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-        const s = await getSession();
-        if (!s) return;
-        await fetch(`/api/notifications/${id}`, {
-            method: 'PATCH',
-            headers: { Authorization: `Bearer ${s.access_token}` },
-        });
+        try {
+            await api.patch(`/api/notifications/${id}`, {});
+        } catch {}
     };
 
     const markAllRead = async () => {
         setMarking(true);
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
         try {
-            const s = await getSession();
-            if (!s) return;
-            await fetch('/api/notifications/all', {
-                method: 'PATCH',
-                headers: { Authorization: `Bearer ${s.access_token}` },
-            });
-        } finally {
+            await api.patch('/api/notifications/all', {});
+        } catch {} finally {
             setMarking(false);
         }
     };

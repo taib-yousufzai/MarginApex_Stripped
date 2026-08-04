@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/hooks/useAuth';
+import { api, ApiError } from '@/lib/api';
 import './diagnostics.css';
 
 interface AlertItem {
@@ -84,46 +85,30 @@ export default function DiagnosticsPage() {
 
     async function fetchMetrics() {
       try {
-        const { supabase } = await import('@/lib/supabaseClient');
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          setError('Unauthorized');
+        const data = await api.get<MetricsSummary>('/api/admin/metrics');
+        if (active) {
+          setMetrics(data);
           setLoading(false);
-          return;
+          setError(null);
         }
-
-        const res = await fetch('/api/admin/metrics', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (active) {
-            setMetrics(data);
-            setLoading(false);
-            setError(null);
-          }
-        } else {
-          if (active) {
-            if (res.status === 401) {
+      } catch (err) {
+        if (active) {
+          if (err instanceof ApiError) {
+            if (err.status === 401) {
               setError('Unauthorized access. Redirecting...');
               setTimeout(() => {
                 window.location.href = '/login';
               }, 2000);
             } else {
-              try {
-                const errData = await res.json();
-                setError(`Failed to fetch diagnostics: ${errData.details || errData.error || res.statusText}`);
-              } catch (e) {
-                setError(`Failed to fetch diagnostics: Status ${res.status}`);
-              }
+              const errData = err.details as Record<string, unknown> | null;
+              const msg = errData
+                ? String(errData.details ?? errData.error ?? err.status)
+                : String(err.status);
+              setError(`Failed to fetch diagnostics: ${msg}`);
             }
-            setLoading(false);
+          } else {
+            setError('Connection error');
           }
-        }
-      } catch (err) {
-        if (active) {
-          setError('Connection error');
           setLoading(false);
         }
       }

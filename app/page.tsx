@@ -5,8 +5,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 import { getSession, getRole } from '@/lib/auth';
+import { api, ApiError } from '@/lib/api';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { isContractExpired } from '@/lib/contractExpiry';
+import { useTradeConfig } from '@/contexts/TradeConfigContext';
 
 import AnimatedLoader from '@/components/AnimatedLoader';
 import TickFlash from '@/components/TickFlash';
@@ -175,7 +177,8 @@ export default function Page() {
   const pathname = usePathname();
   const router = useRouter();
   const [allowedSegments, setAllowedSegments] = useState<string[]>([]);
-  const [scriptSettings, setScriptSettings] = useState<{ symbol: string; lot_size: number }[]>([]);
+  // scriptSettings comes from the shared TradeConfigProvider
+  const { scriptSettings } = useTradeConfig();
 
   useEffect(() => {
     getSession().then((session) => {
@@ -193,28 +196,16 @@ export default function Page() {
   useEffect(() => {
     async function fetchAllowedSegments() {
       try {
-        const { supabase } = await import('@/lib/supabaseClient');
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-        const res = await fetch('/api/user/profile', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-        if (res.ok) {
-          const profile = await res.json();
-          if (profile && profile.segments) {
-            setAllowedSegments(profile.segments);
-          }
-          // Fetch script settings for dynamic lot sizes
-          const resScript = await fetch('/api/user/script-settings', {
-            headers: { Authorization: `Bearer ${session.access_token}` }
-          });
-          if (resScript.ok) {
-            const ssData = await resScript.json();
-            setScriptSettings(ssData || []);
-          }
+        const profile = await api.get<{ segments?: string[] }>('/api/user/profile');
+        if (profile && profile.segments) {
+          setAllowedSegments(profile.segments);
         }
       } catch (err) {
-        console.error('Failed to fetch allowed segments', err);
+        if (err instanceof ApiError) {
+          console.error('Failed to fetch allowed segments', err.status, err.details);
+        } else {
+          console.error('Failed to fetch allowed segments', err);
+        }
       }
     }
     fetchAllowedSegments();
@@ -232,12 +223,9 @@ export default function Page() {
   useEffect(() => {
     async function fetchExpiries() {
       try {
-        const res = await fetch('/api/market/expiries');
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.expiries) {
-            setDbExpiries(json.expiries);
-          }
+        const json = await api.get<{ success: boolean; expiries?: Record<string, string> }>('/api/market/expiries');
+        if (json.success && json.expiries) {
+          setDbExpiries(json.expiries);
         }
       } catch (err) {
         console.error('Failed to fetch expiries', err);
@@ -307,20 +295,17 @@ export default function Page() {
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-        const res = await fetch('/api/notifications?limit=20', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        });
-        if (res.ok) {
-          const result = await res.json();
-          if (result && result.notifications) {
-            const list = result.notifications ?? [];
-            setNotifications(list);
-          }
+        const result = await api.get<{ notifications?: { id: string; title: string; message: string; read?: boolean }[] }>('/api/notifications?limit=20');
+        if (result && result.notifications) {
+          const list = result.notifications ?? [];
+          setNotifications(list);
         }
       } catch (err) {
-        console.error('Failed to fetch notifications', err);
+        if (err instanceof ApiError) {
+          console.error('Failed to fetch notifications', err.status, err.details);
+        } else {
+          console.error('Failed to fetch notifications', err);
+        }
       }
     };
     fetchNotifications();
@@ -331,17 +316,14 @@ export default function Page() {
     if (isNotifDrawerOpen && notifications.some(n => !n.read)) {
       const markAllRead = async () => {
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) return;
-          const res = await fetch('/api/notifications/all', {
-            method: 'PATCH',
-            headers: { Authorization: `Bearer ${session.access_token}` }
-          });
-          if (res.ok) {
-            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-          }
+          await api.patch<void>('/api/notifications/all', {});
+          setNotifications(prev => prev.map(n => ({ ...n, read: true })));
         } catch (err) {
-          console.error('Failed to mark notifications as read', err);
+          if (err instanceof ApiError) {
+            console.error('Failed to mark notifications as read', err.status, err.details);
+          } else {
+            console.error('Failed to mark notifications as read', err);
+          }
         }
       };
       markAllRead();

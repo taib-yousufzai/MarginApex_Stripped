@@ -4,6 +4,7 @@ import InstallPrompt from '@/components/InstallPrompt';
 import { MarketDataProvider } from '@/contexts/MarketDataContext';
 import { BinanceDataProvider } from '@/contexts/BinanceDataContext';
 import { ComexDataProvider } from '@/contexts/ComexDataContext';
+import { TradeConfigProvider } from '@/contexts/TradeConfigContext';
 import { PositionsDataProvider } from '@/contexts/PositionsContext';
 import { OrdersDataProvider } from '@/contexts/OrdersContext';
 import { BalanceDataProvider } from '@/contexts/BalanceContext';
@@ -55,16 +56,18 @@ export default function RootLayout({
         <MarketDataProvider>
           <BinanceDataProvider>
             <ComexDataProvider>
-              <PositionsDataProvider>
-                <OrdersDataProvider>
-                  <BalanceDataProvider>
-                    <ClientShell>
-                      {children}
-                    </ClientShell>
-                    <InstallPrompt />
-                  </BalanceDataProvider>
-                </OrdersDataProvider>
-              </PositionsDataProvider>
+              <TradeConfigProvider>
+                <PositionsDataProvider>
+                  <OrdersDataProvider>
+                    <BalanceDataProvider>
+                      <ClientShell>
+                        {children}
+                      </ClientShell>
+                      <InstallPrompt />
+                    </BalanceDataProvider>
+                  </OrdersDataProvider>
+                </PositionsDataProvider>
+              </TradeConfigProvider>
             </ComexDataProvider>
           </BinanceDataProvider>
         </MarketDataProvider>

@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getSession } from '@/lib/auth';
 import AnimatedLoader from '@/components/AnimatedLoader';
-import type { Session } from '@supabase/supabase-js';
+import { api, ApiError } from '@/lib/api';
 import './page.css';
 
 interface Transaction {
@@ -33,7 +32,6 @@ interface EditForm {
 }
 
 export default function TransactionHistoryPage() {
-  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL' | 'PENDING'>('ALL');
@@ -50,24 +48,13 @@ export default function TransactionHistoryPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getSession().then(async (s) => {
-      if (cancelled) return;
-      if (!s) {
-        setLoading(false);
-        return;
-      }
-      setSession(s);
+    (async () => {
       try {
-        const res = await fetch('/api/pay/history', { 
-            headers: { Authorization: `Bearer ${s.access_token}` } 
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setTransactions(data);
-        }
+        const data = await api.get<Transaction[]>('/api/pay/history');
+        if (!cancelled) setTransactions(data);
       } catch (e) {}
       if (!cancelled) setLoading(false);
-    });
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -127,9 +114,6 @@ export default function TransactionHistoryPage() {
     setEditSaving(true);
     setEditError(null);
     try {
-      const s = await getSession();
-      if (!s) throw new Error('No session');
-
       const payload: Record<string, unknown> = {
         id: editingTx.id,
         type: editingTx.type,
@@ -144,14 +128,7 @@ export default function TransactionHistoryPage() {
         if (editForm.ifsc)         payload.ifsc          = editForm.ifsc;
       }
 
-      const res = await fetch('/api/pay/request', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update request');
+      const data = await api.patch<{ id: string }>('/api/pay/request', payload);
 
       // Update local state — old row becomes CANCELLED_BY_USER, new row appears as PENDING
       setTransactions(prev => {
@@ -174,7 +151,7 @@ export default function TransactionHistoryPage() {
       });
       closeEdit();
     } catch (e: any) {
-      setEditError(e.message || 'Something went wrong');
+      setEditError(e instanceof ApiError ? (e.details as any)?.error || `Error ${e.status}` : e.message || 'Something went wrong');
     } finally {
       setEditSaving(false);
     }

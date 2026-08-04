@@ -1,6 +1,5 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { pageCache } from '@/lib/pageCache';
@@ -9,6 +8,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import QRCode from 'react-qr-code';
 import { useBalance } from '@/hooks/useBalance';
+import { api, ApiError } from '@/lib/api';
 
 type ActiveAccountResponse = {
   id: string;
@@ -31,7 +31,6 @@ type SavedAccount = {
 };
 
 export default function FundsPage() {
-  const router = useRouter();
   useAuth();
   const [isDemo, setIsDemo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,37 +105,23 @@ export default function FundsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    getSession().then((session) => {
-      if (cancelled) return;
-      if (session) {
-        fetchSavedAccounts(session.access_token);
-        fetch('/api/user/profile', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }).then(res => res.ok ? res.json() : null).then(data => {
-          if (!cancelled && data) setIsDemo(data.demo_user === true);
-        }).catch(() => { });
-        fetch('/api/pay/rules', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        }).then(res => res.ok ? res.json() : null).then(data => {
-          if (!cancelled && data) setRules(data);
-        }).catch(() => { });
-      }
-    });
+    fetchSavedAccounts();
+    api.get<{ demo_user?: boolean }>('/api/user/profile')
+      .then(data => { if (!cancelled) setIsDemo(data.demo_user === true); })
+      .catch(() => { });
+    api.get<any>('/api/pay/rules')
+      .then(data => { if (!cancelled) setRules(data); })
+      .catch(() => { });
     return () => { cancelled = true; };
   }, []);
 
-  const fetchSavedAccounts = async (accessToken: string) => {
+  const fetchSavedAccounts = async () => {
     try {
-      const res = await fetch('/api/pay/bank-accounts', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (res.ok) {
-        const data: SavedAccount[] = await res.json();
-        setSavedAccounts(data);
-        const primary = data.find(a => a.is_primary);
-        if (primary) setSelectedAccountId(primary.id);
-        else if (data.length > 0) setSelectedAccountId(data[0].id);
-      }
+      const data = await api.get<SavedAccount[]>('/api/pay/bank-accounts');
+      setSavedAccounts(data);
+      const primary = data.find(a => a.is_primary);
+      if (primary) setSelectedAccountId(primary.id);
+      else if (data.length > 0) setSelectedAccountId(data[0].id);
     } catch (err) {
       console.error('Failed to fetch bank accounts:', err);
     }
@@ -164,27 +149,17 @@ export default function FundsPage() {
 
     setActiveAccountLoading(true);
     try {
-      const session = await getSession();
-      if (!session) {
-        router.replace('/login');
-        return;
-      }
-
-      const accountRes = await fetch('/api/pay/active-account', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (!accountRes.ok) {
-        const accountData = await accountRes.json();
-        setActiveAccountError(accountData.error ?? 'Failed to fetch payment account.');
-        setActiveAccountLoading(false);
-        return;
-      }
-      const account: ActiveAccountResponse = await accountRes.json();
+      const account = await api.get<ActiveAccountResponse>('/api/pay/active-account');
       setActiveAccount(account);
       setActiveAccountLoading(false);
       setDepositStep(2);
-    } catch {
-      setActiveAccountError('Network error. Please try again.');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const details = err.details as Record<string, unknown> | undefined;
+        setActiveAccountError((details?.error as string) ?? 'Failed to fetch payment account.');
+      } else {
+        setActiveAccountError('Network error. Please try again.');
+      }
       setActiveAccountLoading(false);
     }
   };
@@ -222,29 +197,22 @@ export default function FundsPage() {
         .from('payments')
         .getPublicUrl(filePath);
 
-      const res = await fetch('/api/pay/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          type: 'DEPOSIT',
-          amount: numAmount,
-          payment_account_id: activeAccount.id,
-          utr: utr || undefined,
-          screenshot_url: publicUrl,
-        }),
+      await api.post('/api/pay/request', {
+        type: 'DEPOSIT',
+        amount: numAmount,
+        payment_account_id: activeAccount.id,
+        utr: utr || undefined,
+        screenshot_url: publicUrl,
       });
-      if (res.status === 201) {
-        setSubmitted(true);
-        setScreenshot(null);
-      } else {
-        const data = await res.json();
-        setSubmitError(data.error ?? 'Something went wrong.');
-      }
+      setSubmitted(true);
+      setScreenshot(null);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Network error.');
+      if (err instanceof ApiError) {
+        const details = err.details as Record<string, unknown> | undefined;
+        setSubmitError((details?.error as string) ?? 'Something went wrong.');
+      } else {
+        setSubmitError(err instanceof Error ? err.message : 'Network error.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -257,31 +225,19 @@ export default function FundsPage() {
     }
     setSubmitting(true);
     try {
-      const session = await getSession();
-      if (!session) return;
-      const res = await fetch('/api/pay/bank-accounts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          account_name: accountName,
-          bank_name: bankName,
-          account_no: accountNo,
-          ifsc,
-          upi_id: upi || undefined,
-          is_primary: savedAccounts.length === 0
-        }),
+      const newAcc = await api.post<SavedAccount>('/api/pay/bank-accounts', {
+        account_name: accountName,
+        bank_name: bankName,
+        account_no: accountNo,
+        ifsc,
+        upi_id: upi || undefined,
+        is_primary: savedAccounts.length === 0
       });
-      if (res.ok) {
-        const newAcc = await res.json();
-        setSavedAccounts([newAcc, ...savedAccounts]);
-        setSelectedAccountId(newAcc.id);
-        setIsAddingAccount(false);
-        setAccountName(''); setBankName(''); setAccountNo(''); setIfsc(''); setUpi('');
-        setToast({ message: 'Bank account saved!', type: 'success' });
-      }
+      setSavedAccounts([newAcc, ...savedAccounts]);
+      setSelectedAccountId(newAcc.id);
+      setIsAddingAccount(false);
+      setAccountName(''); setBankName(''); setAccountNo(''); setIfsc(''); setUpi('');
+      setToast({ message: 'Bank account saved!', type: 'success' });
     } finally {
       setSubmitting(false);
     }
@@ -305,29 +261,22 @@ export default function FundsPage() {
 
     setSubmitting(true);
     try {
-      const session = await getSession();
-      if (!session) return;
-      const res = await fetch('/api/pay/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          type: 'WITHDRAWAL',
-          amount: numAmount,
-          account_name: acc.account_name,
-          account_no: acc.account_no,
-          ifsc: acc.ifsc,
-          upi: acc.upi_id || undefined,
-        }),
+      await api.post('/api/pay/request', {
+        type: 'WITHDRAWAL',
+        amount: numAmount,
+        account_name: acc.account_name,
+        account_no: acc.account_no,
+        ifsc: acc.ifsc,
+        upi: acc.upi_id || undefined,
       });
-      if (res.status === 201) {
-        setSubmitted(true);
-        setToast({ message: 'Withdrawal request submitted!', type: 'success' });
+      setSubmitted(true);
+      setToast({ message: 'Withdrawal request submitted!', type: 'success' });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const details = err.details as Record<string, unknown> | undefined;
+        setSubmitError((details?.error as string) ?? 'Something went wrong.');
       } else {
-        const data = await res.json();
-        setSubmitError(data.error ?? 'Something went wrong.');
+        setSubmitError('Network error.');
       }
     } finally {
       setSubmitting(false);

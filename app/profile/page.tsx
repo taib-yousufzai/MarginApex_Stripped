@@ -1,19 +1,20 @@
 'use client';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { getSession, signOut } from '@/lib/auth';
+import { signOut } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { pageCache } from '@/lib/pageCache';
 import AnimatedLoader from '@/components/AnimatedLoader';
-import type { Session } from '@supabase/supabase-js';
+import { api, ApiError } from '@/lib/api';
+import { useBalance } from '@/hooks/useBalance';
 import './page.css';
 
 export default function ProfilePage() {
     useAuth();
     const [isDemo, setIsDemo] = useState(false);
     const [themeName, setThemeName] = useState<'light' | 'dark' | 'black' | 'blue'>('light');
-    const [session, setSession] = useState<Session | null>(null);
-    const [balance, setBalance] = useState<number | null>(() => pageCache.get<number>('profile:balance'));
+    // Balance comes from the global BalanceDataProvider
+    const { balance, loading: balanceLoading } = useBalance();
     const [unreadCount, setUnreadCount] = useState<number>(() => pageCache.get<number>('profile:unread') || 0);
 
     // Quick-edit modal state
@@ -27,6 +28,7 @@ export default function ProfilePage() {
     const [profileName, setProfileName] = useState<string>(() => pageCache.get<string>('profile:name') || '');
     const [profilePhone, setProfilePhone] = useState<string>(() => pageCache.get<string>('profile:phone') || '');
     const [profileClientId, setProfileClientId] = useState<string>(() => pageCache.get<string>('profile:client_id') || '');
+    const [profileEmail, setProfileEmail] = useState<string>(() => pageCache.get<string>('profile:email') || '');
 
     const overlayRef = useRef<HTMLDivElement>(null);
     const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
@@ -42,49 +44,36 @@ export default function ProfilePage() {
 
     useEffect(() => {
         let cancelled = false;
-        getSession().then(async (s) => {
+        (async () => {
             if (cancelled) return;
-            if (!s) return;
-            setSession(s);
 
             // Fetch profile data
-            const profileRes = await fetch('/api/user/profile', {
-                headers: { Authorization: `Bearer ${s.access_token}` },
-            });
-            if (!cancelled && profileRes.ok) {
-                const data = await profileRes.json();
-                pageCache.set('profile:name', data.full_name ?? '');
-                pageCache.set('profile:phone', data.phone ?? '');
-                pageCache.set('profile:client_id', data.client_id ?? '');
-                setProfileName(data.full_name ?? '');
-                setProfilePhone(data.phone ?? '');
-                setProfileClientId(data.client_id ?? '');
-                setIsDemo(data.demo_user === true);
-            }
-
-            // Fetch balance
-            const balanceRes = await fetch('/api/pay/balance', {
-                headers: { Authorization: `Bearer ${s.access_token}` },
-            });
-            if (!cancelled && balanceRes.ok) {
-                const data = await balanceRes.json();
-                pageCache.set('profile:balance', data.balance ?? 0);
-                setBalance(data.balance ?? 0);
-            } else if (!cancelled) {
-                pageCache.set('profile:balance', 0);
-                setBalance(0);
-            }
+            try {
+                const data = await api.get<{
+                    full_name?: string; phone?: string; client_id?: string; demo_user?: boolean; email?: string;
+                }>('/api/user/profile');
+                if (!cancelled) {
+                    pageCache.set('profile:name', data.full_name ?? '');
+                    pageCache.set('profile:phone', data.phone ?? '');
+                    pageCache.set('profile:client_id', data.client_id ?? '');
+                    pageCache.set('profile:email', data.email ?? '');
+                    setProfileName(data.full_name ?? '');
+                    setProfilePhone(data.phone ?? '');
+                    setProfileClientId(data.client_id ?? '');
+                    setProfileEmail(data.email ?? '');
+                    setIsDemo(data.demo_user === true);
+                }
+            } catch {}
 
             // Fetch unread count
-            const notifRes = await fetch('/api/notifications?unread_only=true&limit=50', {
-                headers: { Authorization: `Bearer ${s.access_token}` },
-            });
-            if (!cancelled && notifRes.ok) {
-                const data = await notifRes.json();
-                pageCache.set('profile:unread', data.unread_count ?? 0);
-                setUnreadCount(data.unread_count ?? 0);
-            }
-        });
+            try {
+                const data = await api.get<{ unread_count?: number }>('/api/notifications?unread_only=true&limit=50');
+                if (!cancelled) {
+                    pageCache.set('profile:unread', data.unread_count ?? 0);
+                    setUnreadCount(data.unread_count ?? 0);
+                }
+            } catch {}
+        })();
         return () => { cancelled = true; };
     }, []);
 
@@ -118,14 +107,7 @@ export default function ProfilePage() {
         setSaving(true);
         setSaveMsg(null);
         try {
-            const s = await getSession();
-            if (!s) throw new Error('Not authenticated');
-            const res = await fetch('/api/user/profile', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.access_token}` },
-                body: JSON.stringify({ full_name: editName.trim(), phone: editPhone.trim() }),
-            });
-            if (!res.ok) throw new Error('Failed');
+            await api.patch('/api/user/profile', { full_name: editName.trim(), phone: editPhone.trim() });
             setProfileName(editName.trim());
             setProfilePhone(editPhone.trim());
             setSaveMsg({ type: 'success', text: 'Saved!' });
@@ -137,14 +119,11 @@ export default function ProfilePage() {
         }
     };
 
-    const email = session?.user?.email ?? '';
-    const userId = session?.user?.id ?? '';
-    const clientId = profileClientId || (userId ? userId.replace(/-/g, '').slice(0, 8).toUpperCase() : '—');
+    const email = profileEmail;
+    const clientId = profileClientId || '—';
     const displayName = profileName
         || (email ? email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'User');
-    const formattedBalance = balance !== null
-        ? '₹' + balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : '—';
+    const formattedBalance = '₹' + balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const setTheme = useCallback((newTheme: 'light' | 'dark' | 'black' | 'blue') => {
         setThemeName(newTheme);
@@ -209,7 +188,7 @@ export default function ProfilePage() {
                             <div className="margin-text">
                                 <span className="margin-label">Available Margin</span>
                                 <span className="margin-amount">
-                                    {balance === null ? <span style={{ opacity: 0.5, fontSize: '1.4rem' }}>Loading…</span> : formattedBalance}
+                                    {balanceLoading ? <span style={{ opacity: 0.5, fontSize: '1.4rem' }}>Loading…</span> : formattedBalance}
                                 </span>
                             </div>
                         </div>

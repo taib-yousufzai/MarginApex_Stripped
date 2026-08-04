@@ -10,19 +10,15 @@ import { useOrderEntry } from '@/hooks/useOrderEntry';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
+import { api, ApiError } from '@/lib/api';
 import type { TradeSheetItem } from '@/components/TradeSheet';
+import HoldLockCountdown from '@/components/HoldLockCountdown';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import dynamic from 'next/dynamic';
 import './page.css';
 
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 
-
-const formatHoldTime = (sec: number) => {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
-};
 
 export default function PositionPage() {
   const router = useRouter();
@@ -60,14 +56,7 @@ export default function PositionPage() {
   const fetchClosed = async () => {
     setClosedLoading(true);
     try {
-      const session = await getSession();
-      if (!session) return;
-      const res = await fetch('/api/positions?status=closed', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        cache: 'no-store',
-      });
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await api.get<{ positions: any[] }>('/api/positions?status=closed');
       // Enrich closed positions with the computed fields expected by the UI.
       // Closed positions from the raw API don't go through useMyPositions enrichment,
       // so we derive the missing EnrichedPosition fields here.
@@ -114,17 +103,14 @@ export default function PositionPage() {
     let cancelled = false;
 
     const fetchOrders = () => {
-      getSession().then((session) => {
-        if (cancelled || !session) return;
-        fetch('/api/orders?status=executed', { headers: { Authorization: `Bearer ${session.access_token}` } })
-          .then(res => res.ok ? res.json() : { orders: [] })
-          .then(data => {
-            if (!cancelled && data.orders) {
-              setRawOrders(data.orders);
-            }
-          })
-          .catch(() => { });
-      });
+      if (cancelled) return;
+      api.get<{ orders: any[] }>('/api/orders?status=executed')
+        .then(data => {
+          if (!cancelled && data.orders) {
+            setRawOrders(data.orders);
+          }
+        })
+        .catch(() => { });
     };
     fetchOrders();
     // Orders don't need rapid polling — refresh on events + slow fallback
@@ -331,23 +317,6 @@ export default function PositionPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Tick every second so hold-timer countdown rerenders live without waiting
-  // for the next position poll cycle.
-  const [, setTickCount] = useState(0);
-  useEffect(() => {
-    const interval = setInterval(() => setTickCount(c => c + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Compute live remaining hold seconds directly from entry_time so the
-  // countdown is accurate to the second regardless of the hook poll interval.
-  const computeRemaining = (pos: EnrichedPosition): number => {
-    if (!pos.hold_lock_active) return 0;
-    const elapsed = Math.floor((Date.now() - new Date(pos.entry_time).getTime()) / 1000);
-    const remaining = pos.required_hold_seconds - elapsed;
-    return remaining > 0 ? remaining : 0;
-  };
-
   const toggleProductType = async (pos: EnrichedPosition) => {
     // Prevent double-tap: if this position is already mid-conversion, ignore
     if (convertingIdsRef.current.has(pos.id)) return;
@@ -365,13 +334,7 @@ export default function PositionPage() {
       setIsFetchingPreview(true);
       setConvertPreviewBrokerage(null);
       try {
-        const session = await getSession();
-        const res = await fetch(`/api/positions/${pos.id}/convert-preview?product_type=${newType}`, {
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`
-          }
-        });
-        const data = await res.json();
+        const data = await api.get<{ carryBrokerage?: number }>(`/api/positions/${pos.id}/convert-preview?product_type=${newType}`);
         if (data.carryBrokerage !== undefined) {
           setConvertPreviewBrokerage(data.carryBrokerage);
         }
@@ -410,38 +373,23 @@ export default function PositionPage() {
     }
 
     try {
-      const session = await getSession();
-      if (!session) {
-        showToast('Unauthorized. Please login again.');
-        // Revert on auth error
-        if (endConversion) {
-          endConversion(pos.id);
-        }
-        if (selectedPos && selectedPos.id === pos.id) {
-          setSelectedPos(prev => prev ? { ...prev, product_type: originalType } : null);
-        }
-        return;
-      }
-
-      const res = await fetch(`/api/positions/${pos.id}/convert`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ product_type: newType })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Failed to convert position product type');
-      }
+      await api.post<void>(`/api/positions/${pos.id}/convert`, { product_type: newType });
 
       showToast(`Position converted to ${newType} successfully`);
       // Await refresh to guarantee that rawPositions contains the updated DB value before we clear in-flight state
       await refresh();
     } catch (err: any) {
       console.error('Failed to convert position:', err);
+      // Handle session-less / auth error feedback gracefully
+      if (err instanceof ApiError && err.status === 401) {
+        showToast('Unauthorized. Please login again.');
+        if (endConversion) endConversion(pos.id);
+        if (selectedPos && selectedPos.id === pos.id) {
+          setSelectedPos(prev => prev ? { ...prev, product_type: originalType } : null);
+        }
+        convertingIdsRef.current.delete(pos.id);
+        return;
+      }
       showToast(`Conversion failed: ${err.message}`);
 
       // Revert bottom sheet state on server/network failure
@@ -1618,7 +1566,9 @@ export default function PositionPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '12px 16px', background: 'var(--card-alt-bg)', borderRadius: '12px', border: '1px solid var(--border-light)' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Time Remaining</span>
                   <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                    {lockModalPos ? formatHoldTime(computeRemaining(lockModalPos)) : '00m 00s'}
+                    {lockModalPos
+                      ? <HoldLockCountdown pos={lockModalPos} style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }} />
+                      : '00m 00s'}
                   </span>
                 </div>
 
