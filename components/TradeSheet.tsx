@@ -1605,9 +1605,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
               ) : null}
               
               {!isSpotIndex && (() => {
-                const numLots = orderUnit === 'lot' ? orderQty : (lotSize > 0 ? (orderQty / lotSize) : orderQty);
-                const formattedLots = Number.isInteger(numLots) ? numLots : numLots.toFixed(2);
-                const lotText = `${formattedLots} LOT${numLots !== 1 ? 'S' : ''}`;
+                // Button label: show lots when in LOT mode, qty when in QTY mode
+                let actionText: string;
+                if (orderUnit === 'lot') {
+                  const formattedLots = Number.isInteger(orderQty) ? orderQty : orderQty.toFixed(2);
+                  actionText = `${formattedLots} LOT${orderQty !== 1 ? 'S' : ''}`;
+                } else {
+                  actionText = `${orderQty} QTY`;
+                }
                 
                 return (
                   <div className="ts2-btn-row">
@@ -1618,7 +1623,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('SELL')}
                       >
-                        {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${lotText}`}
+                        {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${actionText}`}
                       </button>
                     )}
                     {(side === 'BUY' || side === 'BOTH') && (
@@ -1628,7 +1633,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         style={isExpired ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('BUY')}
                       >
-                        {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${lotText}`}
+                        {placingOrder ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${actionText}`}
                       </button>
                     )}
                   </div>
