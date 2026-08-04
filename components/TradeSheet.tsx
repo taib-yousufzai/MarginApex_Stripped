@@ -251,16 +251,30 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     segSetting.gtt_commission_value ?? 10
   ) : (orderType === 'GTT' ? computeCharge('Per Trade', 15) : 0));
 
+  // Brokerage model (matches TradeEngine):
+  //   INTRADAY open: entry + exit charged upfront = rawIntradayCharge × 2
+  //   CARRY open:    entry + exit + carry conversion = rawIntradayCharge × 2 + rawCarryCharge
+  //   Exit order:    0 (already collected at open)
+  //   GTT:           shows both legs breakdown
+
   let displayIntraday = 0;
   let displayCarry = 0;
 
-  if (orderType === 'GTT') {
+  if (isExitTrade) {
+    // Exit: brokerage was already collected at position open — show ₹0
+    displayIntraday = 0;
+    displayCarry = 0;
+  } else if (orderType === 'GTT') {
     displayIntraday = rawIntradayCharge;
     displayCarry = rawCarryCharge;
   } else if (targetPT === 'CARRY') {
+    // CARRY open: entry+exit (×2) + carry conversion fee
+    displayIntraday = rawIntradayCharge * 2;
     displayCarry = rawCarryCharge;
   } else {
-    displayIntraday = rawIntradayCharge;
+    // INTRADAY open: entry+exit both charged upfront (×2)
+    displayIntraday = rawIntradayCharge * 2;
+    displayCarry = 0;
   }
 
   const calculatedBrokerage = displayIntraday + displayCarry + gttCharge;
@@ -1547,20 +1561,25 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   {showCharges && (
                     <>
                       <div className="ts2-margin-row" style={{ paddingTop: '8px' }}>
-                        <span className="ts2-ml">Intraday Brokerage</span>
-                        <span className="ts2-mv">
+                        <span className="ts2-ml">
+                          {isExitTrade ? 'Entry+Exit Brokerage' : 'Entry+Exit Brokerage'}
+                          {!isExitTrade && targetPT !== 'CARRY' && (
+                            <span style={{ fontSize: '0.7em', color: 'var(--text-secondary)', marginLeft: 4 }}>(×2 upfront)</span>
+                          )}
+                        </span>
+                        <span className="ts2-mv" style={displayIntraday > 0 ? {} : { opacity: 0.4 }}>
                           ₹ {displayIntraday.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">Carry Charges</span>
-                        <span className="ts2-mv" style={(targetPT === 'CARRY' || displayCarry > 0) ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.45 }}>
+                        <span className="ts2-mv" style={targetPT === 'CARRY' && !isExitTrade ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
                           ₹ {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">GTT Charges</span>
-                        <span className="ts2-mv" style={orderType === 'GTT' ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.45 }}>
+                        <span className="ts2-mv" style={orderType === 'GTT' ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
                           ₹ {(orderType === 'GTT' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
