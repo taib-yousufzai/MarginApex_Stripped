@@ -18,10 +18,12 @@ export class RiskValidation {
 
   /**
    * Validate if the requested quantity matches the lot size multiple.
+   * For lotSize === 1 (equity, fractional crypto), decimals are allowed.
    */
   static validateLotSize(qty: number, lotSize: number): boolean {
     if (lotSize <= 0) return false;
-    return qty % lotSize === 0;
+    if (lotSize === 1) return qty > 0; // allow fractional qty for equity / crypto
+    return Math.round(qty * 1000) % Math.round(lotSize * 1000) === 0;
   }
 
   /**

@@ -211,9 +211,26 @@ export class TradeEngine {
       throw new Error('Trading Not Allowed In This Script. Please Contact Admin.');
     }
     const isCarry = product_type === 'CARRY';
-    // Provide sensible fallbacks if missing (simulating logic from route.ts)
-    let buySetting = { side: 'BUY', trade_allowed: true, max_lot: 50, max_order_lot: 50, intraday_leverage: 10, holding_leverage: 10, intraday_type: 'Multiplier', holding_type: 'Multiplier', commission_type: 'Per Crore', commission_value: 0, ...segmentSettingsResult };
-    let sellSetting = { side: 'SELL', trade_allowed: true, max_lot: 50, max_order_lot: 50, intraday_leverage: 10, holding_leverage: 10, intraday_type: 'Multiplier', holding_type: 'Multiplier', commission_type: 'Per Crore', commission_value: 0, ...segmentSettingsResult };
+
+    // Fetch per-user segment settings to get actual commission_type/commission_value.
+    // The global ConfigurationService.getSegmentSettings() returns a different table
+    // (segment-level admin config) and has commission_value = 0.
+    // The real per-user settings are in segment_settings / scalper_segment_settings
+    // filtered by user_id and segment.
+    const tradingMode = profile.trading_mode || 'normal';
+    const settingsTable = tradingMode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
+    const { data: userSegRows } = await admin
+      .from(settingsTable)
+      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit, intraday_commission_type, intraday_commission_value')
+      .eq('user_id', user.id)
+      .eq('segment', dbSegment);
+
+    const userBuySetting  = userSegRows?.find((s: any) => s.side === 'BUY')  ?? null;
+    const userSellSetting = userSegRows?.find((s: any) => s.side === 'SELL') ?? null;
+
+    // Merge: user-specific settings take priority over global fallback defaults
+    let buySetting = { side: 'BUY', trade_allowed: true, max_lot: 50, max_order_lot: 50, intraday_leverage: 10, holding_leverage: 10, intraday_type: 'Multiplier', holding_type: 'Multiplier', commission_type: 'Per Crore', commission_value: 0, ...segmentSettingsResult, ...(userBuySetting ?? {}) };
+    let sellSetting = { side: 'SELL', trade_allowed: true, max_lot: 50, max_order_lot: 50, intraday_leverage: 10, holding_leverage: 10, intraday_type: 'Multiplier', holding_type: 'Multiplier', commission_type: 'Per Crore', commission_value: 0, ...segmentSettingsResult, ...(userSellSetting ?? {}) };
     
     const segSetting = side === 'BUY' ? buySetting : sellSetting;
 
@@ -342,10 +359,17 @@ export class TradeEngine {
         baseExposure: exposure
       });
 
-      // Assume 2 legs for new positions
-      brokerage = (brokerageConfig.intraday_charge + brokerageConfig.carry_charge + brokerageConfig.gtt_charge) * 2;
+      // Calculate brokerage using the real per-user commission settings
+      const commType = segSetting.intraday_commission_type || segSetting.commission_type || 'Per Crore';
+      const commVal = Number(segSetting.intraday_commission_value ?? segSetting.commission_value ?? 0);
+      const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
+      // New positions charge both entry and exit legs up front
+      brokerage = Math.round(singleLeg * 2 * 100) / 100;
     } else {
-      brokerage = brokerageConfig.intraday_charge + brokerageConfig.carry_charge + brokerageConfig.gtt_charge;
+      // Exit: single leg only
+      const commType = segSetting.carry_commission_type || segSetting.commission_type || 'Per Crore';
+      const commVal = Number(segSetting.carry_commission_value ?? segSetting.commission_value ?? 0);
+      brokerage = Math.round(calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal }) * 100) / 100;
     }
 
     if (dbSegment === 'CRYPTO' && isCustomCalc) {

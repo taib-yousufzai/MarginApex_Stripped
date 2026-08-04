@@ -27,9 +27,15 @@ interface OptionChainTableProps {
   priceMode?: 'BA' | 'LTP';
   stickyTop?: number;
   hideMainHeader?: boolean;
+  /**
+   * User's allowed strike range from segment settings.
+   * Strikes outside this distance from spotPrice are dimmed and non-tradeable.
+   * 0 means no restriction.
+   */
+  strikeRange?: number;
 }
 
-export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, priceMode = 'LTP', stickyTop = 58, hideMainHeader = false }: OptionChainTableProps) {
+export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, priceMode = 'LTP', stickyTop = 58, hideMainHeader = false, strikeRange = 0 }: OptionChainTableProps) {
   const atmRef = React.useRef<HTMLDivElement>(null);
   const tableHeaderRef = React.useRef<HTMLDivElement>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
@@ -137,10 +143,13 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
         {/* Data rows */}
         <div className="oct-body">
           {strikes.map((s, index) => {
-            const isOutOfRange = atmIndex !== -1 && Math.abs(index - atmIndex) > 5;
             const ceQuote = getQuote(s.ce?.id, s.ce?.token);
             const peQuote = getQuote(s.pe?.id, s.pe?.token);
             const isAtm = index === atmIndex;
+
+            // Out-of-range: strike is more than strikeRange points from spot
+            const isOutOfRange = strikeRange > 0 && spotPrice > 0 &&
+              Math.abs(s.strike - spotPrice) > strikeRange;
 
             const ceLtpVal = ceQuote ? ceQuote.lastPrice : s.ce?.price;
             const peLtpVal = peQuote ? peQuote.lastPrice : s.pe?.price;
@@ -155,10 +164,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
             const handleTradeClick = (e: React.MouseEvent, symbol?: string, side?: 'BUY' | 'SELL') => {
               e.stopPropagation();
-              if (isOutOfRange) {
-                alert('Out of range. Allowed range is +-5 from ATM.');
-                return;
-              }
+              if (isOutOfRange) return; // silently block out-of-range trades in the UI
               if (symbol && side) onTrade(symbol, side);
             };
 
@@ -181,7 +187,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
                   ) : (
                     <span className="oct-val call ltp-single">{ceLtp}</span>
                   )}
-                  {s.ce && !isOutOfRange && (
+                  {s.ce && (
                     <div className="hover-actions">
                       <button className="btn-buy" onClick={(e) => handleTradeClick(e, s.ce?.symbol, 'BUY')}>B</button>
                       <button className="btn-sell" onClick={(e) => handleTradeClick(e, s.ce?.symbol, 'SELL')}>S</button>
@@ -209,7 +215,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
                   ) : (
                     <span className="oct-val put ltp-single">{peLtp}</span>
                   )}
-                  {s.pe && !isOutOfRange && (
+                  {s.pe && (
                     <div className="hover-actions">
                       <button className="btn-buy" onClick={(e) => handleTradeClick(e, s.pe?.symbol, 'BUY')}>B</button>
                       <button className="btn-sell" onClick={(e) => handleTradeClick(e, s.pe?.symbol, 'SELL')}>S</button>

@@ -10,6 +10,8 @@ import TradingSegmentsDrawer from '@/components/TradingSegmentsDrawer';
 import { WatchlistItem, getTabForItem } from '@/app/watchlist/page';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
+import { api, ApiError } from '@/lib/api';
+import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import './option-chain.css';
 import dynamic from 'next/dynamic';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
@@ -113,46 +115,21 @@ function OptionChainContent() {
   const [sheetSide, setSheetSide] = useState<'BUY' | 'SELL'>('BUY');
 
   const [userId, setUserId] = useState<string>('');
-  const [segmentSettings, setSegmentSettings] = useState<any[]>([]);
-  const [scriptSettings, setScriptSettings] = useState<{ symbol: string; lot_size: number }[]>([]);
+  // segmentSettings and scriptSettings come from the shared TradeConfigProvider
+  const { segmentSettings, scriptSettings } = useTradeConfig();
 
   useEffect(() => {
-    async function fetchUserIdAndSettings() {
+    async function fetchUserId() {
       try {
         const { getSharedSession } = await import('@/lib/sharedSession');
         const { token, userId: uid } = await getSharedSession();
         if (!token || !uid) return;
-        
         setUserId(uid);
-        
-        const { supabase: sb } = await import('@/lib/supabaseClient');
-        const { data: profile } = await sb
-          .from('profiles')
-          .select('trading_mode')
-          .eq('id', uid)
-          .single();
-        const mode = profile?.trading_mode || 'normal';
-        const [res, resScript] = await Promise.all([
-          fetch(`/api/user/segments?mode=${mode}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch('/api/user/script-settings', {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
-        if (res.ok) {
-          const sData = await res.json();
-          setSegmentSettings(sData || []);
-        }
-        if (resScript.ok) {
-          const ssData = await resScript.json();
-          setScriptSettings(ssData || []);
-        }
       } catch (err) {
-        console.error('Failed to get session or settings', err);
+        console.error('Failed to get session', err);
       }
     }
-    fetchUserIdAndSettings();
+    fetchUserId();
   }, []);
 
   // Compute lot size: DB settings take priority over hardcoded fallbacks
@@ -233,6 +210,14 @@ function OptionChainContent() {
   // Normalization for MIDCAP
   const normalizedSymbol = symbol === 'MIDCAP' ? 'MIDCPNIFTY' : symbol;
 
+  // Compute user's strike range for INDEX-OPT from their segment settings
+  const userStrikeRange = React.useMemo(() => {
+    const isIndexOpt = symbol.includes('NIFTY') || symbol.includes('SENSEX') || symbol.includes('BANKEX');
+    const seg = isIndexOpt ? 'INDEX-OPT' : 'MCX-OPT';
+    const setting = segmentSettings.find(s => s.segment === seg);
+    return Number(setting?.strike_range ?? 0);
+  }, [segmentSettings, symbol]);
+
   const [selectedExpiry, setSelectedExpiry] = useState<string | null>(null);
   const [showCharges, setShowCharges] = useState(false);
 
@@ -274,37 +259,23 @@ function OptionChainContent() {
       setLoading(true);
       setLoadingError(null);
       try {
-        const { getSharedSession } = await import('@/lib/sharedSession');
-        const { token } = await getSharedSession();
-        const headers: Record<string, string> = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-
         const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}`;
-        const res = await fetch(url, { headers });
-        
-        if (res.status === 403) {
-          setLoadingError('locked');
-          return;
-        }
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success) {
-            setLocalCache(cacheKey, json);
-            setLocalCache(`${normalizedSymbol}_${json.expiry}`, json);
-            
-            setData(json);
-            if (!selectedExpiry) setSelectedExpiry(json.expiry);
-          } else {
-            setLoadingError(json.error || 'Failed to fetch option chain');
-          }
+        const json = await api.get<{ success: boolean; expiry: string; error?: string; strikes: any[]; expiries: string[]; underlyingPrice?: number; underlyingSymbol?: string }>(url);
+        if (json.success) {
+          setLocalCache(cacheKey, json);
+          setLocalCache(`${normalizedSymbol}_${json.expiry}`, json);
+          setData(json);
+          if (!selectedExpiry) setSelectedExpiry(json.expiry);
         } else {
+          setLoadingError(json.error || 'Failed to fetch option chain');
+        }
+      } catch (err: any) {
+        if (err instanceof ApiError && err.status === 403) {
+          setLoadingError('locked');
+        } else {
+          console.error('Failed to fetch option chain', err);
           setLoadingError('Failed to fetch option chain');
         }
-      } catch (err) {
-        console.error('Failed to fetch option chain', err);
-        setLoadingError('Failed to fetch option chain');
       } finally {
         setLoading(false);
       }
@@ -328,7 +299,14 @@ function OptionChainContent() {
 
   const spotPrice = React.useMemo(() => {
     if (data?.underlyingSymbol) {
-      const q = quotes[data.underlyingSymbol] || quotes[data.underlyingSymbol.split(':')[1] || ''];
+      const sym = data.underlyingSymbol;
+      // Try full key first (e.g. "NSE:NIFTY 50"), then without exchange prefix,
+      // then without spaces, to handle any key-format mismatch from the quote feed
+      const q =
+        quotes[sym] ||
+        quotes[sym.split(':').pop() || sym] ||
+        quotes[sym.replace(/\s+/g, '_')] ||
+        quotes[sym.split(':').pop()?.replace(/\s+/g, '_') || sym];
       if (q && q.lastPrice) return q.lastPrice;
     }
     return data?.underlyingPrice || 0;
@@ -479,6 +457,7 @@ function OptionChainContent() {
                       spotPrice={spotPrice}
                       onTrade={handleTrade}
                       priceMode={priceMode}
+                      strikeRange={userStrikeRange}
                     />
                   </>
                 )}
@@ -884,7 +863,8 @@ function OptionChainContent() {
             symbol: selectedContract.symbol,
             kiteSymbol: kiteId || selectedContract.symbol,
             segment: (symbol.includes('GOLD') || symbol.includes('SILVER') || symbol.includes('CRUDE') || symbol.includes('NATGAS') || symbol.includes('NATURALGAS')) ? 'MCX - Options' : (symbol.includes('SENSEX') || symbol.includes('BANKEX') ? 'BSE - Options' : 'NSE - Options'),
-            price: ltp // Passed down to let TradeSheet know the initial price, but it will fetch live
+            price: ltp, // Passed down to let TradeSheet know the initial price, but it will fetch live
+            lot_size: lotSize, // Ensures TradeSheet uses the correct lot size
           };
 
           return (
