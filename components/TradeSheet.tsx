@@ -1460,6 +1460,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                               value={slPrice}
                               onChange={e => setSlPrice(e.target.value)}
                             />
+                            {currentLtp > 0 && (
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
+                                {activeSide === 'BUY'
+                                  ? `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              </div>
+                            )}
                           </div>
                           <div style={{ flex: 1 }}>
                             <div className="ts2-label" style={{ marginBottom: 6 }}>Target <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
@@ -1470,6 +1477,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                               value={tpPrice}
                               onChange={e => setTpPrice(e.target.value)}
                             />
+                            {currentLtp > 0 && (
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
+                                {activeSide === 'BUY'
+                                  ? `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1486,6 +1500,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                               value={slPrice}
                               onChange={e => setSlPrice(e.target.value)}
                             />
+                            {currentLtp > 0 && (
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
+                                {activeSide === 'BUY'
+                                  ? `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              </div>
+                            )}
                           </div>
                           <div style={{ flex: 1 }}>
                             <div className="ts2-label" style={{ marginBottom: 6 }}>Target <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
@@ -1496,6 +1517,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                               value={tpPrice}
                               onChange={e => setTpPrice(e.target.value)}
                             />
+                            {currentLtp > 0 && (
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
+                                {activeSide === 'BUY'
+                                  ? `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div>
