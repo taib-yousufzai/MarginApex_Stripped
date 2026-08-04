@@ -2,25 +2,55 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabaseClient';
+import { api, ApiError } from '@/lib/api';
 import './page.css';
+
+declare global {
+  interface Window {
+    __executeOrderViaBridge?: (payload: {
+      symbol: string;
+      kite_instrument: string;
+      segment: string;
+      side: string;
+      order_type: string;
+      product_type: string;
+      qty: number;
+      lots: number;
+      client_price: number;
+    }) => Promise<{ ok: boolean; fill_price?: number; error?: string }>;
+  }
+}
 
 export default function Page() {
   useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Expose an order bridge that uses the shared api client (auth injected automatically)
+    window.__executeOrderViaBridge = async (payload) => {
+      try {
+        const result = await api.post<{ fill_price: number }>('/api/orders', payload);
+        return { ok: true, fill_price: result.fill_price };
+      } catch (err) {
+        const message = err instanceof ApiError
+          ? (err.details as any)?.error ?? `API error ${err.status}`
+          : 'Network error';
+        return { ok: false, error: message };
+      }
+    };
+
+    return () => {
+      delete window.__executeOrderViaBridge;
+    };
+  }, []);
+
+  useEffect(() => {
     let injectedScript: HTMLScriptElement | null = null;
 
-    (async () => {
-      // Fetch auth token so the injected script can call /api/orders
-      const { data: sd } = await supabase.auth.getSession();
-      (window as unknown as Record<string, string>).__mapexToken =
-        sd.session?.access_token ?? '';
-
-      const script = document.createElement('script');
-      injectedScript = script;
-    script.innerHTML = `
+    const script = document.createElement('script');
+    injectedScript = script;
+    // Use String.raw to prevent Turbopack from parsing the JS string as TypeScript
+    script.textContent = String.raw`
     // COMPLETE TRADING DATABASE
     var allScripts = [
         { name: "NIFTY FUT",     symbol: "NIFTY_FUT",     kiteInstrument: "NFO:NIFTY25MAYFUT",     price: 22456.80, change: "+0.45%", segment: "INDEX - FUTURE",  lotSize: 65,  maxLots: 100,  marginPercent: 0.12 },
@@ -215,10 +245,8 @@ export default function Page() {
         var btn = document.getElementById(selectedAction === 'buy' ? 'confirmBuyBtn' : 'confirmSellBtn');
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Placing...'; }
         try {
-            var res = await fetch('/api/orders', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.__mapexToken || '') },
-                body: JSON.stringify({
+            var bridge = window.__executeOrderViaBridge;
+            var result = bridge ? await bridge({
                     symbol: currentScript.symbol,
                     kite_instrument: currentScript.kiteInstrument || currentScript.symbol,
                     segment: currentScript.segment,
@@ -228,10 +256,8 @@ export default function Page() {
                     qty: actualQty,
                     lots: currentIsLotMode ? currentQuantity : Math.floor(actualQty / lotSize),
                     client_price: price
-                })
-            });
-            var result = await res.json();
-            if (res.ok) {
+                }) : { ok: false, error: 'Order bridge not ready' };
+            if (result.ok) {
                 showToast('\u2713 Order placed @ \u20b9' + result.fill_price.toLocaleString('en-IN', {minimumFractionDigits: 2}));
             } else {
                 showToast(result.error || 'Order failed. Try again.', true);

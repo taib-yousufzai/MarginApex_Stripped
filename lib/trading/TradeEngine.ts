@@ -359,18 +359,17 @@ export class TradeEngine {
         baseExposure: exposure
       });
 
-      // Calculate brokerage using the real per-user commission settings.
-      // Only charge the entry leg upfront — the exit leg brokerage is charged
-      // when the position is closed. This matches how the DB ledger works.
+      // Brokerage logic:
+      //   - Entry brokerage + exit brokerage are both charged at position open time (× 2)
+      //   - No brokerage is charged again when the position is closed
+      //   - Carry brokerage is separate and charged at INTRADAY → CARRY conversion
       const commType = segSetting.intraday_commission_type || segSetting.commission_type || 'Per Crore';
       const commVal = Number(segSetting.intraday_commission_value ?? segSetting.commission_value ?? 0);
       const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
-      brokerage = Math.round(singleLeg * 100) / 100;
+      brokerage = Math.round(singleLeg * 2 * 100) / 100; // both legs up front
     } else {
-      // Exit: single leg only
-      const commType = segSetting.carry_commission_type || segSetting.commission_type || 'Per Crore';
-      const commVal = Number(segSetting.carry_commission_value ?? segSetting.commission_value ?? 0);
-      brokerage = Math.round(calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal }) * 100) / 100;
+      // Exit order: brokerage was already collected at position open — charge nothing
+      brokerage = 0;
     }
 
     if (dbSegment === 'CRYPTO' && isCustomCalc) {

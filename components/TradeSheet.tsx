@@ -12,20 +12,20 @@ import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import { ErrorModal } from '@/components/ErrorModal';
-export interface TradeSheetItem {
-  name: string;
-  symbol: string;
-  kiteSymbol: string;
-  binanceSymbol?: string;
-  comexSymbol?: string;
-  segment: string;
-  price: number;
-  change?: string;
-  expiry?: string;
-}
+import { useTradeConfig } from '@/contexts/TradeConfigContext';
+import { useBalance } from '@/hooks/useBalance';
+import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
+import type { TradingInstrument } from '@/lib/types/instrument';
+
+/**
+ * @deprecated Import `TradingInstrument` from `@/lib/types/instrument` instead.
+ * Kept as a type alias during migration so existing `as TradeSheetItem` casts
+ * still compile without changes at every call site.
+ */
+export type TradeSheetItem = TradingInstrument;
 
 interface TradeSheetProps {
-  item: TradeSheetItem | null;
+  item: TradingInstrument | null;
   side: 'BUY' | 'SELL' | 'BOTH';
   onClose: () => void;
   onSuccess?: () => void;
@@ -39,68 +39,6 @@ interface TradeSheetProps {
   linkedPosId?: string | null;
   initialExitQty?: number;
   hideLotText?: boolean;
-}
-
-function getLotSize(name: string, scriptSettings?: { symbol: string; lot_size: number }[]): number {
-  const n = name.toUpperCase();
-  if (scriptSettings && scriptSettings.length > 0) {
-    const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
-    const match = sortedSettings.find(s => n.includes(s.symbol.toUpperCase()));
-    if (match) return Number(match.lot_size);
-  }
-  if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 30;
-  if (n.includes('FINNIFTY')) return 60;
-  if (n.includes('MIDCP') || n.includes('MIDCAP')) return 120;
-  if (n.includes('SENSEX')) return 20;
-  if (n.includes('NIFTY')) return 65;
-  if (n.includes('GOLDM')) return 10;
-  if (n.includes('GOLD')) return 100;
-  if (n.includes('SILVERM')) return 5;
-  if (n.includes('SILVER')) return 30;
-  if (n.includes('CRUDEOILM')) return 10;
-  if (n.includes('CRUDEOIL')) return 100;
-  if (n.includes('NATGASMINI')) return 250;
-  if (n.includes('NATURALGAS')) return 1250;
-  return 1;
-}
-
-function mapSegmentToDbSegment(s: string, symbol: string = ''): string {
-  if (!s && !symbol) return '';
-  const trimmed = (s || '').trim().toUpperCase();
-
-  if (['COMEX - FUTURES', 'COMEX - OPTIONS', 'COMEX', 'COI'].includes(trimmed)) return 'COMEX';
-  if (trimmed === 'CRYPTO') return 'CRYPTO';
-
-  const n = symbol.toUpperCase();
-  if (n) {
-    if (['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => n === c || n.startsWith(c + 'USDT'))) return 'CRYPTO';
-    if (n.includes('GOLD') || n.includes('SILVER') || n.includes('CRUDEOIL') || n.includes('NATURALGAS') || n.includes('NATGAS')) {
-      if (n.endsWith('CE') || n.endsWith('PE')) return 'MCX-OPT';
-      return 'MCX-FUT';
-    }
-    if (n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX')) {
-      if (n.endsWith('CE') || n.endsWith('PE')) return 'INDEX-OPT';
-      return 'INDEX-FUT';
-    }
-    if (n.endsWith('CE') || n.endsWith('PE')) return 'STOCK-OPT';
-    if (n.endsWith('FUT')) return 'STOCK-FUT';
-    if (n.includes('-') || n.includes('/')) return 'FOREX';
-    if (trimmed === 'NSE') return 'NSE-EQ';
-  }
-
-  if (['NSE - FUTURES', 'BSE - FUTURES', 'NFO - FUTURES', 'BFO - FUTURES'].includes(trimmed)) return 'INDEX-FUT';
-  if (['NSE - OPTIONS', 'BSE - OPTIONS', 'NFO - OPTIONS', 'BFO - OPTIONS'].includes(trimmed)) return 'INDEX-OPT';
-  if (['NSE - STOCK FUTURES', 'BSE - STOCK FUTURES', 'NFO - STOCK FUTURES', 'BFO - STOCK FUTURES'].includes(trimmed)) return 'STOCK-FUT';
-  if (['NSE - STOCK OPTIONS', 'BSE - STOCK OPTIONS', 'NFO - STOCK OPTIONS', 'BFO - STOCK OPTIONS'].includes(trimmed)) return 'STOCK-OPT';
-  if (trimmed === 'MCX - FUTURES') return 'MCX-FUT';
-  if (trimmed === 'MCX - OPTIONS') return 'MCX-OPT';
-  if (['NSE - EQUITY', 'BSE - EQUITY'].includes(trimmed)) return 'NSE-EQ';
-  if (trimmed === 'CRYPTO') return 'CRYPTO';
-  if (trimmed === 'FOREX' || trimmed === 'CDS - FUTURES' || trimmed === 'CDS - OPTIONS') return 'FOREX';
-  if (trimmed === 'COMEX - FUTURES' || trimmed === 'COMEX - OPTIONS' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
-
-
-  return trimmed;
 }
 
 export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = false, productType: propProductType, initialOrder, isModify = false, modifyingOrderId, isFromPositions = false, linkedPosId = null, initialExitQty: propInitialExitQty, hideLotText = false }: TradeSheetProps) {
@@ -125,7 +63,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const [slPrice, setSlPrice] = useState('');
   const [tpPrice, setTpPrice] = useState('');
   const [gttSubOption, setGttSubOption] = useState<string>('LIMIT');
-  const [availableBalance, setAvailableBalance] = useState<number | null>(null);
+  // Balance comes from the global BalanceDataProvider — no local fetch needed
+  const { balance: availableBalance } = useBalance();
   const [toast, setToast] = useState<string | null>(null);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -152,8 +91,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     return false;
   }, [item]);
 
-  const [segmentSettings, setSegmentSettings] = useState<any[]>([]);
-  const [scriptSettings, setScriptSettings] = useState<{ symbol: string; lot_size: number }[]>([]);
+  // getLotSize and getSegment come from the shared TradeConfigProvider
+  const { getLotSize, getSegment } = useTradeConfig();
   const [showCharges, setShowCharges] = useState(false);
 
   const { positions: activePositions, refreshPositions } = useActivePositions();
@@ -163,9 +102,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const isOption = item?.symbol ? (item.symbol.endsWith('CE') || item.symbol.endsWith('PE')) : false;
   const lotSize = (item && rawLotSize > 0 && !(isOption && rawLotSize === 1))
     ? rawLotSize
-    : (item ? getLotSize(item.symbol || item.name || '', scriptSettings) : 1);
+    : (item ? getLotSize(item.symbol || item.name || '') : 1);
 
-  const dbSeg = item ? mapSegmentToDbSegment(item.segment, item.symbol) : '';
+  const dbSeg = item ? mapSegmentWithSymbol(item.segment, item.symbol) : '';
   const isCrypto = !!item?.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].includes(item?.symbol || '');
   const isComex = item && (item as any).preferredView
     ? (item as any).preferredView === 'comex'
@@ -221,8 +160,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   }
 
   const activeSide: 'BUY' | 'SELL' = (side === 'SELL' || side === 'BUY') ? side : 'BUY';
-  const buySetting = segmentSettings.find(s => s.segment === dbSeg && s.side === 'BUY');
-  const sellSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === 'SELL');
+  const buySetting = dbSeg ? getSegment(dbSeg, 'BUY') : undefined;
+  const sellSetting = dbSeg ? getSegment(dbSeg, 'SELL') : undefined;
   const segSetting = side === 'SELL' ? sellSetting : buySetting;
 
   const buyEntryBuffer = buySetting ? buySetting.entry_buffer : 0;
@@ -448,36 +387,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side, isOpen, item?.symbol, propProductType, exitMode, linkedPosId]);
 
-  // Fetch balance, active positions, and segment settings
+  // Fetch balance and refresh active positions when the sheet opens
   useEffect(() => {
     if (!isOpen) return;
     refreshPositions();
-
-    // Fetch balance
-    api.get<{ balance: number }>('/api/pay/balance')
-      .then(data => { if (typeof data.balance === 'number') setAvailableBalance(data.balance); })
-      .catch(() => { });
-
-    // Fetch segment settings and script settings in parallel
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('trading_mode')
-          .eq('id', session?.user.id)
-          .single();
-        const mode = profile?.trading_mode || 'normal';
-        const [segData, ssData] = await Promise.all([
-          api.get<any[]>(`/api/user/segments?mode=${mode}`),
-          api.get<{ symbol: string; lot_size: number }[]>('/api/user/script-settings'),
-        ]);
-        setSegmentSettings(segData || []);
-        setScriptSettings(ssData || []);
-      } catch (err) {
-        console.error(err);
-      }
-    })();
   }, [isOpen, refreshPositions]);
 
   const showToast = (msg: string) => {
@@ -494,6 +407,17 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let minAllowedPrice = minLimit > 0 ? currentLtp * (1 - minLimit / 100) : 0;
 
   if (orderType === 'LIMIT' || (orderType === 'GTT' && !exitMode)) {
+    if (side === 'BUY') {
+      maxAllowedPrice = Math.min(maxAllowedPrice, currentLtp);
+    } else if (side === 'SELL') {
+      minAllowedPrice = Math.max(minAllowedPrice, currentLtp);
+    }
+  }
+
+  // For SLM: the stop loss must be on the correct side of current market price
+  // BUY SLM entry → stop loss below market (protect a new long)
+  // SELL SLM entry → stop loss above market (protect a new short)
+  if (orderType === 'SLM' && !exitMode) {
     if (side === 'BUY') {
       maxAllowedPrice = Math.min(maxAllowedPrice, currentLtp);
     } else if (side === 'SELL') {
@@ -548,7 +472,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       }
 
       // Load setting specific to the side being placed
-      const placeSetting = segmentSettings.find(s => s.segment === dbSeg && s.side === placeSide);
+      const placeSetting = dbSeg ? getSegment(dbSeg, placeSide) : undefined;
       const pTopLimit = placeSetting?.top_limit ?? 0;
       const pMinLimit = placeSetting?.min_limit ?? 0;
 
@@ -1489,7 +1413,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                 {/* SL / SLM — Price input */}
                 {(orderType === 'SL' || orderType === 'SLM') && (
                   <div className="ts2-card">
-                    <div className="ts2-label">Stop Loss Price <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                    <div className="ts2-label">
+                      {orderType === 'SLM'
+                        ? <>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹) — order executes at market price</span></>
+                        : <>Stop Loss Price <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></>
+                      }
+                    </div>
                     <input
                       className="ts2-field-input"
                       type="number"
@@ -1497,6 +1426,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                       value={triggerPrice}
                       onChange={e => setTriggerPrice(e.target.value)}
                     />
+                    {priceRangeHelp}
                   </div>
                 )}
 
@@ -1587,7 +1517,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Available</span>
                     <span className="ts2-mv-avail">
-                      {availableBalance !== null ? `₹ ${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--'}
+                      {`₹ ${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className="ts2-margin-row">
