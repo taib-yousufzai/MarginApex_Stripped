@@ -268,8 +268,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     displayIntraday = rawIntradayCharge;
     displayCarry = rawCarryCharge;
   } else if (targetPT === 'CARRY') {
-    // CARRY open: entry+exit (×2) + carry conversion fee
-    displayIntraday = rawIntradayCharge * 2;
+    // CARRY open: only carry conversion brokerage is shown
+    displayIntraday = 0;
     displayCarry = rawCarryCharge;
   } else {
     // INTRADAY open: entry+exit both charged upfront (×2)
