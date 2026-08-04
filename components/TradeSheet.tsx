@@ -478,16 +478,16 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
       // ── Qty validation for entry orders ──────────────────────────────────
       if (!exitMode) {
-        const rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
+        let rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
 
-        // Must be a multiple of lot size
+        // If qty is not a valid lot multiple, snap down to nearest lot and continue.
+        // Don't block the order — the user clearly wants to trade.
         if (lotSize > 1 && Math.round(rawQty) % lotSize !== 0) {
-          showToast(`Quantity must be a multiple of lot size (${lotSize}).`);
-          // Snap down to nearest valid multiple
           const snapped = Math.max(lotSize, Math.floor(rawQty / lotSize) * lotSize);
+          rawQty = snapped;
+          // Update the displayed qty input to the snapped value
           setQtyInput(String(orderUnit === 'lot' ? snapped / lotSize : snapped));
           setOrderQty(orderUnit === 'lot' ? snapped / lotSize : snapped);
-          return;
         }
 
         // Must not exceed max_order_lot × lotSize
@@ -495,7 +495,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         if (maxOrderLot > 0) {
           const maxOrderQty = maxOrderLot * lotSize;
           if (rawQty > maxOrderQty) {
-            showToast(`Order exceeds max allowed: ${maxOrderLot} lots (${maxOrderQty} qty).`);
+            showToast(`Max allowed: ${maxOrderLot} lots (${maxOrderQty} qty). Reduce your order size.`);
             setQtyInput(String(orderUnit === 'lot' ? maxOrderLot : maxOrderQty));
             setOrderQty(orderUnit === 'lot' ? maxOrderLot : maxOrderQty);
             return;

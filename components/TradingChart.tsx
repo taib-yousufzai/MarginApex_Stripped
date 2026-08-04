@@ -1003,7 +1003,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         window.dispatchEvent(new CustomEvent('position-closed'));
         // isSubmitting stays true — cleared by useEffect when positions refresh
         // Safety fallback in case positions never update
-        submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 8000);
+        submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 2500);
       } else {
         showToast(res.error || 'Failed to place order', true);
         setIsSubmitting(false);
@@ -1308,7 +1308,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     // isSubmitting stays true on success — cleared by useEffect when positions refresh
     // Safety fallback in case positions never update
     if (res.success) {
-      submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 8000);
+      submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 2500);
     }
   };
 
@@ -1384,14 +1384,30 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   // Keep buttons in loading state until positions actually refresh and the UI changes
   useEffect(() => {
     if (!isSubmitting || positionSnapshotRef.current === null) return;
-    
-    // Find the position in the current positions list that matches our snapshot ID
+
     const snapshotId = positionSnapshotRef.current.split(':')[0];
-    const targetPos = positions.find(p => p.id === snapshotId && (p.status === 'open' || p.status === 'active'));
-    
-    const currentKey = targetPos ? `${targetPos.id}:${targetPos.qty_open}` : '__none__';
-    if (currentKey !== positionSnapshotRef.current) {
-      // Enforce a minimum display time of 1500ms for the loading/gray-out animation
+
+    let changed = false;
+
+    if (snapshotId === '__none__') {
+      // New position case: we had no open position before the order.
+      // Clear isSubmitting as soon as ANY open/active position for this symbol appears.
+      const hasNewPos = positions.some(
+        p => p.symbol === symbol && (p.status === 'open' || p.status === 'active')
+      );
+      changed = hasNewPos;
+    } else {
+      // Existing position case: qty changed or position closed
+      const targetPos = positions.find(
+        p => p.id === snapshotId && (p.status === 'open' || p.status === 'active')
+      );
+      const snapshotQty = Number(positionSnapshotRef.current.split(':')[1]);
+      const currentKey = targetPos ? `${targetPos.id}:${targetPos.qty_open}` : '__none__';
+      changed = currentKey !== positionSnapshotRef.current || (targetPos?.qty_open !== snapshotQty);
+    }
+
+    if (changed) {
+      // Enforce a minimum display time of 1500ms for the loading animation
       const elapsed = Date.now() - submitStartTimeRef.current;
       const delay = Math.max(0, 1500 - elapsed);
       setTimeout(() => {
@@ -1405,7 +1421,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         }
       }, delay);
     }
-  }, [positions, isSubmitting]);
+  }, [positions, isSubmitting, symbol]);
 
   // Calculated Required Margin for current order block state
   // Determine if the current chart symbol is itself an option/futures contract
