@@ -532,13 +532,6 @@ function WatchlistContent() {
   const [tradingHours, setTradingHours] = useState<any[]>([]);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
 
-  // Pipe order errors from TradeSheet into the existing error modal
-  useEffect(() => {
-    const h = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
-    window.addEventListener('order_error', h);
-    return () => window.removeEventListener('order_error', h);
-  }, []);
-
   // Receive order errors fired by TradeSheet after the sheet has already closed
   useEffect(() => {
     const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
