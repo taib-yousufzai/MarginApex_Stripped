@@ -15,6 +15,19 @@ import {
   applyExpiryFilter,
   type Instrument,
 } from '@/lib/filterEngine';
+import { parseOptionSymbol } from '@/lib/positionStore';
+
+function getUnderlyingId(symbol: string): string {
+  const parsed = parseOptionSymbol(symbol);
+  const u = parsed?.underlying || 'NIFTY';
+  if (u === 'BANKNIFTY') return 'NSE:NIFTY BANK';
+  if (u === 'FINNIFTY') return 'NSE:NIFTY FIN SERVICE';
+  if (u === 'SENSEX') return 'BSE:SENSEX';
+  if (u === 'BANKEX') return 'BSE:BANKEX';
+  if (u === 'MIDCPNIFTY') return 'NSE:NIFTY MID SELECT';
+  if (u === 'NIFTY') return 'NSE:NIFTY 50';
+  return `NSE:${u}`;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -260,14 +273,25 @@ export async function GET(request: NextRequest) {
     const parsed = parseOptionQuery(q);
 
     let allowedSymbols: string[] | null = null;
+    let userSegSettings: any[] = [];
     const user = await getUserFromRequest(request);
     if (user) {
       const adminClient = getAdminClient();
-      const { data: profile } = await adminClient.from('profiles').select('template_id').eq('id', user.id).single();
-      if (profile?.template_id) {
-        const { data: scripts } = await adminClient.from('template_scripts').select('symbol').eq('template_id', profile.template_id);
-        if (scripts && scripts.length > 0) {
-          allowedSymbols = scripts.map(s => s.symbol);
+      const { data: profile } = await adminClient.from('profiles').select('template_id, parent_id, trading_mode').eq('id', user.id).single();
+      if (profile) {
+        if (profile.template_id) {
+          const { data: scripts } = await adminClient.from('template_scripts').select('symbol').eq('template_id', profile.template_id);
+          if (scripts && scripts.length > 0) {
+            allowedSymbols = scripts.map(s => s.symbol);
+          }
+        }
+        const lookupId = profile.parent_id ?? user.id;
+        const targetTable = profile.trading_mode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
+        const { data: segSettings } = await adminClient.from(targetTable)
+          .select('segment, side, strike_range')
+          .eq('user_id', lookupId);
+        if (segSettings) {
+          userSegSettings = segSettings;
         }
       }
     }
@@ -427,6 +451,36 @@ export async function GET(request: NextRequest) {
       if (activeExpiries.length > 0) {
         const activeSet = new Set(activeExpiries);
         filteredOptions = filteredOptions.filter((r: any) => !r.expiry || activeSet.has(r.expiry));
+      }
+
+      // Filter by user's strike range setting
+      if (user && userSegSettings.length > 0) {
+        const optionsWithLimit = filteredOptions.filter((r: any) => {
+          if (r.strike_price === null) return false;
+          const dbSeg = mapSegmentToDbSegment(r.segment || r.exchange || '');
+          const setting = userSegSettings.find(s => s.segment === dbSeg);
+          return setting && Number(setting.strike_range || 0) > 0;
+        });
+
+        if (optionsWithLimit.length > 0) {
+          const underlyingIds = Array.from(new Set(optionsWithLimit.map((r: any) => getUnderlyingId(r.tradingsymbol))));
+          const priceMap = await fetchLivePrices(underlyingIds, request);
+
+          filteredOptions = filteredOptions.filter((r: any) => {
+            if (r.strike_price === null) return true;
+            const dbSeg = mapSegmentToDbSegment(r.segment || r.exchange || '');
+            const setting = userSegSettings.find(s => s.segment === dbSeg);
+            const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
+            if (strikeRange <= 0) return true;
+
+            const underlyingId = getUnderlyingId(r.tradingsymbol);
+            const underlyingLtp = priceMap[underlyingId];
+            if (underlyingLtp === undefined || underlyingLtp <= 0) return true;
+
+            const diff = Math.abs(Number(r.strike_price) - underlyingLtp);
+            return diff <= strikeRange;
+          });
+        }
       }
     }
 
