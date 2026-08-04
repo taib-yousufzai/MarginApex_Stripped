@@ -1960,14 +1960,14 @@ function WatchlistContent() {
                             <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-secondary)' }}>{leg.qty} {leg.unit.toUpperCase()}</span>
                             <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>@ ₹{ltp.toLocaleString('en-IN')}</span>
 
-                            <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', background: 'var(--bg-body, #F5F7FB)', padding: '2px', borderRadius: '4px' }}>
+                            <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', background: 'var(--bg-body, #F5F7FB)', padding: '2px', borderRadius: '4px', opacity: isExecutingBasket ? 0.5 : 1, pointerEvents: isExecutingBasket ? 'none' : 'auto' }}>
                               <div
-                                onClick={() => setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: 'INTRADAY' } : l))}
-                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '3px', cursor: 'pointer', background: (!leg.productType || leg.productType === 'INTRADAY') ? '#FFFFFF' : 'transparent', color: (!leg.productType || leg.productType === 'INTRADAY') ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                                onClick={() => !isExecutingBasket && setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: 'INTRADAY' } : l))}
+                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '3px', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', background: (!leg.productType || leg.productType === 'INTRADAY') ? '#FFFFFF' : 'transparent', color: (!leg.productType || leg.productType === 'INTRADAY') ? 'var(--text-primary)' : 'var(--text-muted)' }}
                               >Intraday</div>
                               <div
-                                onClick={() => setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: 'CARRY' } : l))}
-                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '3px', cursor: 'pointer', background: leg.productType === 'CARRY' ? '#FFFFFF' : 'transparent', color: leg.productType === 'CARRY' ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                                onClick={() => !isExecutingBasket && setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: 'CARRY' } : l))}
+                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '3px', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', background: leg.productType === 'CARRY' ? '#FFFFFF' : 'transparent', color: leg.productType === 'CARRY' ? 'var(--text-primary)' : 'var(--text-muted)' }}
                               >Carry</div>
                             </div>
                           </div>
@@ -2078,12 +2078,14 @@ function WatchlistContent() {
                   </button>
                   <button
                     onClick={() => {
+                      if (isExecutingBasket) return;
                       const sheet = document.getElementById('checkoutSheet');
                       const overlay = document.getElementById('checkoutSheetOverlay');
                       if (sheet) sheet.classList.remove('open');
                       if (overlay) overlay.classList.remove('active');
                     }}
-                    style={{ flex: 1, background: '#F3F4F6', color: '#4B5563', border: 'none', padding: '13px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '700', cursor: 'pointer' }}
+                    disabled={isExecutingBasket}
+                    style={{ flex: 1, background: '#F3F4F6', color: isExecutingBasket ? '#9CA3AF' : '#4B5563', border: 'none', padding: '13px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '700', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', opacity: isExecutingBasket ? 0.5 : 1 }}
                   >
                     Cancel
                   </button>
