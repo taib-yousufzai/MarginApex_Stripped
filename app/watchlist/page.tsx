@@ -2036,35 +2036,55 @@ function WatchlistContent() {
                       }
 
                       setIsExecutingBasket(true);
+                      // Safety net: always unlock after 15s in case a promise hangs
+                      const safetyTimer = setTimeout(() => setIsExecutingBasket(false), 15000);
                       try {
+                        let successCount = 0;
+                        let failCount = 0;
                         for (const leg of basketLegs) {
                           const ltp = getLegPrice(leg.item);
                           const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
                           const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
-                          await placeOrder({
-                            symbol: leg.item.symbol,
-                            kite_instrument: leg.item.kiteSymbol || leg.item.symbol,
-                            segment: leg.item.segment,
-                            side: leg.side,
-                            qty: qty,
-                            lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz),
-                            order_type: 'MARKET',
-                            product_type: leg.productType || 'INTRADAY',
-                            client_price: ltp
-                          });
+                          try {
+                            const res = await placeOrder({
+                              symbol: leg.item.symbol,
+                              kite_instrument: leg.item.kiteSymbol || leg.item.symbol,
+                              segment: leg.item.segment,
+                              side: leg.side,
+                              qty: qty,
+                              lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz),
+                              order_type: 'MARKET',
+                              product_type: leg.productType || 'INTRADAY',
+                              client_price: ltp
+                            });
+                            if (res && !res.success) {
+                              failCount++;
+                              showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true);
+                            } else {
+                              successCount++;
+                            }
+                          } catch (legErr: any) {
+                            failCount++;
+                            showToast(`${leg.side} ${leg.item.symbol} failed: ${legErr?.message || 'Unknown error'}`, true);
+                          }
                         }
-                        showToast('Basket executed successfully!', false);
-                        setBasketLegs([]);
-                        setBasketMode(false);
-                        const sheet = document.getElementById('checkoutSheet');
-                        const overlay = document.getElementById('checkoutSheetOverlay');
-                        if (sheet) sheet.classList.remove('open');
-                        if (overlay) overlay.classList.remove('active');
-                        const bsSheet = document.getElementById('basketSheet');
-                        const bsOverlay = document.getElementById('basketSheetOverlay');
-                        if (bsSheet) bsSheet.classList.remove('open');
-                        if (bsOverlay) bsOverlay.classList.remove('active');
+                        if (failCount === 0) {
+                          showToast('Basket executed successfully!', false);
+                          setBasketLegs([]);
+                          setBasketMode(false);
+                          const sheet = document.getElementById('checkoutSheet');
+                          const overlay = document.getElementById('checkoutSheetOverlay');
+                          if (sheet) sheet.classList.remove('open');
+                          if (overlay) overlay.classList.remove('active');
+                          const bsSheet = document.getElementById('basketSheet');
+                          const bsOverlay = document.getElementById('basketSheetOverlay');
+                          if (bsSheet) bsSheet.classList.remove('open');
+                          if (bsOverlay) bsOverlay.classList.remove('active');
+                        } else if (successCount > 0) {
+                          showToast(`${successCount} order(s) placed, ${failCount} failed.`, true);
+                        }
                       } finally {
+                        clearTimeout(safetyTimer);
                         setIsExecutingBasket(false);
                       }
                     }}
