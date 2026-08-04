@@ -367,7 +367,11 @@ export default function HistoryPage() {
                             <div className="script-info">
                               <span className="script-name">{item.scriptName}</span>
                               <div className="script-badges">
-                                <span className={`order-type-badge ${item.type.toLowerCase()}`}>{item.type}</span>
+                                <span className={`order-type-badge ${item.type.toLowerCase()}`}>
+                                  {currentTab === 'position'
+                                    ? (item.type === 'BUY' ? 'BUY' : 'SELL EXIT')
+                                    : item.type}
+                                </span>
                                 <span style={{ fontSize: '0.55rem', color: '#9AA4BF' }}>{item.orderType}</span>
                                 {currentTab === 'order' && (
                                   <span className={`order-type-badge ${item.status === 'executed' ? 'completed' : 'pending'}`}>

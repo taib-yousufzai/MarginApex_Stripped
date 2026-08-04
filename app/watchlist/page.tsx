@@ -532,6 +532,20 @@ function WatchlistContent() {
   const [tradingHours, setTradingHours] = useState<any[]>([]);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
 
+  // Pipe order errors from TradeSheet into the existing error modal
+  useEffect(() => {
+    const h = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
+    window.addEventListener('order_error', h);
+    return () => window.removeEventListener('order_error', h);
+  }, []);
+
+  // Receive order errors fired by TradeSheet after the sheet has already closed
+  useEffect(() => {
+    const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
+    window.addEventListener('order_error', handler);
+    return () => window.removeEventListener('order_error', handler);
+  }, []);
+
   const isMarketOpen = (item: WatchlistItem) => {
     const segUpper = (item.segment || '').toUpperCase();
     if (segUpper.includes('CRYPTO')) return true;
@@ -2249,7 +2263,7 @@ function WatchlistContent() {
             </div>
           </div>
 
-          <ErrorModal error={errorModalMsg} onClose={() => setErrorModalMsg(null)} title="Insufficient Funds" />
+          <ErrorModal error={errorModalMsg} onClose={() => setErrorModalMsg(null)} title="Order Failed" />
         </div>
       </main>
     </div>

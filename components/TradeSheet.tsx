@@ -849,22 +849,22 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             showToast(`${placeSide} order sent for ${item.symbol}`);
             if (onSuccess) {
               try {
-                onSuccess(); // Fire-and-forget, do NOT await it!
+                onSuccess();
               } catch (e) {
                 console.error('onSuccess refresh failed', e);
               }
             }
-            // Delayed re-fetch to catch Supabase propagation delay
             setTimeout(() => {
               window.dispatchEvent(new Event('order_placed'));
               window.dispatchEvent(new Event('position-closed'));
             }, 1500);
           } else {
-            showToast(`Order Failed: ${res.error}`);
+            // Fire error event so parent page can show the error modal
+            window.dispatchEvent(new CustomEvent('order_error', { detail: res.error || 'Order failed. Please try again.' }));
             window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
-          showToast(`Order Failed: ${err.message}`);
+          window.dispatchEvent(new CustomEvent('order_error', { detail: err.message || 'Order failed. Please try again.' }));
           window.dispatchEvent(new Event('order_failed'));
         } finally {
           setTimeout(() => {
@@ -921,19 +921,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
         }).then((res) => {
           if (!res.success) {
-            window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${res.error}` }));
+            window.dispatchEvent(new CustomEvent('order_error', { detail: `${res.error}` }));
             window.dispatchEvent(new Event('order_failed'));
           } else {
             if (onSuccess) {
               try {
-                onSuccess(); // Fire-and-forget, do NOT await it!
+                onSuccess();
               } catch (e) {
                 console.error('onSuccess refresh failed', e);
               }
             }
           }
         }).catch(err => {
-          window.dispatchEvent(new CustomEvent('toast_msg', { detail: `Order Failed: ${err.message}` }));
+          window.dispatchEvent(new CustomEvent('order_error', { detail: `${err.message}` }));
           window.dispatchEvent(new Event('order_failed'));
         }).finally(() => {
           setTimeout(() => {

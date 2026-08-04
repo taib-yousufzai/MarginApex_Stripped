@@ -338,7 +338,7 @@ export default function OrderPage() {
                       <div className="ord-row" style={{ marginTop: 4 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span className="ord-type-pill" style={{ fontSize: '0.6rem' }}>{order.product_type}</span>
-                          {order.info && order.info !== 'Exit - USER' && (
+                          {order.info && order.info !== 'Exit - USER' && !order.info.includes('-') && (
                             <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>
                               {order.info}
                             </span>

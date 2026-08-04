@@ -49,6 +49,14 @@ export default function PositionPage() {
     return () => window.removeEventListener('position-closed', handler);
   }, [refresh]);
 
+  // Global order error modal — receives errors from TradeSheet after sheet closes
+  const [orderErrorMsg, setOrderErrorMsg] = useState<string | null>(null);
+  useEffect(() => {
+    const handler = (e: Event) => setOrderErrorMsg((e as CustomEvent).detail || 'Order failed.');
+    window.addEventListener('order_error', handler);
+    return () => window.removeEventListener('order_error', handler);
+  }, []);
+
   // Closed positions are fetched separately (the main hook only returns open/active)
   const [closedPositions, setClosedPositions] = useState<EnrichedPosition[]>([]);
   const [closedLoading, setClosedLoading] = useState(false);
@@ -1559,6 +1567,20 @@ export default function PositionPage() {
               <i className="fas fa-circle-info" />
               <span>{toast}</span>
             </div>
+
+            {/* Full-screen order error modal — triggered by TradeSheet via order_error event */}
+            {orderErrorMsg && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999999 }} onClick={() => setOrderErrorMsg(null)}>
+                <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 16, width: '90%', maxWidth: 340, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }} onClick={e => e.stopPropagation()}>
+                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#FEF2F2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 14 }}>
+                    <i className="fas fa-exclamation-triangle" />
+                  </div>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>Order Failed</h3>
+                  <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, wordBreak: 'break-word' }}>{orderErrorMsg}</p>
+                  <button onClick={() => setOrderErrorMsg(null)} style={{ width: '100%', padding: '11px', background: '#F3F4F6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
+                </div>
+              </div>
+            )}
 
             {/* Profit Side Hold Timer Modal */}
             <div className={`pos-modal-overlay${lockModalPos ? ' open' : ''}`} onClick={() => setLockModalPos(null)}>
