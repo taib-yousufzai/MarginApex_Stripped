@@ -30,6 +30,9 @@ DECLARE
     v_margin_released numeric;
     v_pnl_type text;
     v_exit_side text;
+    
+    v_lot_size numeric;
+    v_lots numeric;
 BEGIN
     -- ISOLATE V1 TRIGGERS (Strangler Fig)
     PERFORM set_config('app.is_v2', 'true', true);
@@ -95,13 +98,35 @@ BEGIN
         updated_at = now()
     WHERE id = p_position_id;
 
+    -- Determine lot size to calculate lots
+    SELECT lot_size INTO v_lot_size FROM public.script_settings WHERE v_symbol LIKE '%' || symbol || '%' ORDER BY length(symbol) DESC LIMIT 1;
+    IF v_lot_size IS NULL OR v_lot_size <= 0 THEN
+      IF v_symbol LIKE '%BANKNIFTY%' OR v_symbol LIKE '%BANKEX%' THEN v_lot_size := 15;
+      ELSIF v_symbol LIKE '%FINNIFTY%' THEN v_lot_size := 25;
+      ELSIF v_symbol LIKE '%MIDCP%' OR v_symbol LIKE '%MIDCAP%' THEN v_lot_size := 50;
+      ELSIF v_symbol LIKE '%SENSEX%' THEN v_lot_size := 10;
+      ELSIF v_symbol LIKE '%NIFTY%' THEN v_lot_size := 25;
+      ELSIF v_symbol LIKE '%GOLDM%' THEN v_lot_size := 10;
+      ELSIF v_symbol LIKE '%GOLD%' THEN v_lot_size := 100;
+      ELSIF v_symbol LIKE '%SILVERM%' THEN v_lot_size := 5;
+      ELSIF v_symbol LIKE '%SILVER%' THEN v_lot_size := 30;
+      ELSIF v_symbol LIKE '%CRUDEOILM%' THEN v_lot_size := 10;
+      ELSIF v_symbol LIKE '%CRUDEOIL%' THEN v_lot_size := 100;
+      ELSIF v_symbol LIKE '%NATGASMINI%' THEN v_lot_size := 250;
+      ELSIF v_symbol LIKE '%NATURALGAS%' THEN v_lot_size := 1250;
+      ELSE v_lot_size := 1;
+      END IF;
+    END IF;
+    
+    v_lots := p_close_qty / v_lot_size;
+
     -- STEP 5: Record the Exit Order Transaction
     INSERT INTO public.orders (
         user_id, symbol, kite_instrument, segment, side, status, qty, lots,
         price, fill_price, ltp_at_entry, order_type, product_type, info, is_exit, idempotency_key
     )
     VALUES (
-        v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'NSE-EQ'), v_exit_side, 'EXECUTED', p_close_qty, p_close_qty,
+        v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'NSE-EQ'), v_exit_side, 'EXECUTED', p_close_qty, v_lots,
         p_close_price, p_close_price, p_close_price, 'MARKET', COALESCE(v_product_type, 'INTRADAY'), p_position_id::text, true, p_idempotency_key
     );
 

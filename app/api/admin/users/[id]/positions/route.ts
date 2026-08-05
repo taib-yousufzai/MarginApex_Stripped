@@ -99,7 +99,9 @@ export async function GET(
     // Step 5: Apply tab filter
     // Validates: Requirements 7.3, 7.4, 7.5
     if (tab === 'open') {
-      query = query.in('status', ['open', 'active']);
+      query = query.eq('status', 'open');
+    } else if (tab === 'active') {
+      query = query.eq('status', 'active');
     } else if (tab === 'closed') {
       query = query.eq('status', 'closed');
     }
@@ -118,18 +120,18 @@ export async function GET(
       query = query.lte('entry_time', endDate + 'T23:59:59.999Z');
     }
 
-    // Step 7: Apply pagination
-    // Validates: Requirement 7.6
-    const from = page * rows;
-    const to = from + rows - 1;
-    query = query.range(from, to);
-
     // Apply newest to oldest sorting
     if (tab === 'closed') {
       query = query.order('exit_time', { ascending: false, nullsFirst: false }).order('entry_time', { ascending: false });
     } else {
       query = query.order('entry_time', { ascending: false });
     }
+
+    // Step 7: Apply pagination
+    // Validates: Requirement 7.6
+    const from = page * rows;
+    const to = from + rows - 1;
+    query = query.range(from, to);
 
     const { data, error } = await query;
 
