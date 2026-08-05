@@ -1400,7 +1400,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                 <div className="ts2-card">
                   <div className="ts2-label">Order Type</div>
                   <div className="ts2-pills">
-                    {(exitMode ? ['MARKET', 'LIMIT', 'SL', 'TARGET', 'GTT'] : ['MARKET', 'LIMIT', 'SLM', 'GTT']).map(t => (
+                    {(exitMode ? ['MARKET', 'LIMIT', 'SL', 'GTT'] : ['MARKET', 'LIMIT', 'SLM', 'GTT']).map(t => (
                       <button
                         key={t}
                         className={`ts2-pill${orderType === t ? ' active' : ''}`}
