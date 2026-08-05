@@ -29,8 +29,15 @@ function getTokenFromLocalStorage(): { token: string | null; userId: string | nu
     
     const parsed = JSON.parse(stored);
     const token = parsed?.access_token || null;
-    let userId: string | null = null;
     
+    // Check if the token is expired or close to expiring (within 60 seconds)
+    const expiresAt = parsed?.expires_at;
+    if (expiresAt && Date.now() / 1000 > expiresAt - 60) {
+      console.log('[SharedSession] LocalStorage token is expired or expiring soon.');
+      return { token: null, userId: null };
+    }
+    
+    let userId: string | null = null;
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
@@ -50,12 +57,21 @@ function getTokenFromLocalStorage(): { token: string | null; userId: string | nu
  * Result is cached so all subsequent calls are instant.
  */
 export async function getSharedSession(): Promise<{ token: string | null; userId: string | null }> {
-  // Return cached immediately if available
+  // If we have a cached token, verify it hasn't expired in memory
   if (cachedToken) {
-    return { token: cachedToken, userId: cachedUserId };
+    try {
+      const payload = JSON.parse(atob(cachedToken.split('.')[1]));
+      const exp = payload.exp;
+      if (exp && Date.now() / 1000 < exp - 60) {
+        return { token: cachedToken, userId: cachedUserId };
+      }
+    } catch {
+      cachedToken = null;
+      cachedUserId = null;
+    }
   }
   
-  // Try localStorage first (synchronous, instant)
+  // Try localStorage (verifying expiration)
   const local = getTokenFromLocalStorage();
   if (local.token) {
     cachedToken = local.token;
@@ -66,7 +82,7 @@ export async function getSharedSession(): Promise<{ token: string | null; userId
   // Deduplicate: if someone else is already calling getSession(), wait for that
   if (sessionPromise) return sessionPromise;
   
-  // Last resort: call getSession() (slow, but only happens once)
+  // Last resort: call getSession() (slow, but only happens once and triggers refresh)
   sessionPromise = (async () => {
     try {
       const { supabase: sb } = await import('@/lib/supabaseClient');
@@ -78,6 +94,8 @@ export async function getSharedSession(): Promise<{ token: string | null; userId
       }
     } catch (err) {
       console.error('[SharedSession] getSession failed:', err);
+    } finally {
+      sessionPromise = null;
     }
     return { token: null, userId: null };
   })();
@@ -90,11 +108,25 @@ export async function getSharedSession(): Promise<{ token: string | null; userId
  * Returns null if no session is available yet. Never blocks.
  */
 export function getSharedSessionSync(): { token: string | null; userId: string | null } {
-  if (cachedToken) return { token: cachedToken, userId: cachedUserId };
+  if (cachedToken) {
+    try {
+      const payload = JSON.parse(atob(cachedToken.split('.')[1]));
+      const exp = payload.exp;
+      if (exp && Date.now() / 1000 < exp - 60) {
+        return { token: cachedToken, userId: cachedUserId };
+      }
+    } catch {
+      cachedToken = null;
+      cachedUserId = null;
+    }
+  }
   const local = getTokenFromLocalStorage();
   if (local.token) {
     cachedToken = local.token;
     cachedUserId = local.userId;
+  } else {
+    cachedToken = null;
+    cachedUserId = null;
   }
   return local;
 }
