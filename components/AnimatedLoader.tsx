@@ -9,7 +9,7 @@ interface AnimatedLoaderProps {
 export default function AnimatedLoader({ text, fullScreen = false, size = 'large' }: AnimatedLoaderProps) {
   const isSmall = size === 'small';
   const barWidth = isSmall ? '3px' : '6px';
-  const barHeight = isSmall ? '16px' : '36px';
+  const barHeight = isSmall ? '18px' : '36px';
   const gap = isSmall ? '3px' : '6px';
 
   const loaderContent = (
@@ -34,8 +34,21 @@ export default function AnimatedLoader({ text, fullScreen = false, size = 'large
     );
   }
 
+  if (isSmall) {
+    return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: gap, height: barHeight }}>
+          <div style={{ width: barWidth, height: '100%', borderRadius: '4px', background: '#4285f4', animation: 'bm-pulse 1s ease-in-out infinite', animationDelay: '-0.3s' }} />
+          <div style={{ width: barWidth, height: '100%', borderRadius: '4px', background: '#ea4335', animation: 'bm-pulse 1s ease-in-out infinite', animationDelay: '-0.15s' }} />
+          <div style={{ width: barWidth, height: '100%', borderRadius: '4px', background: '#fbbc05', animation: 'bm-pulse 1s ease-in-out infinite', animationDelay: '0s' }} />
+        </div>
+        <style dangerouslySetInnerHTML={{ __html: `@keyframes bm-pulse { 0%, 100% { transform: scaleY(0.4); opacity: 0.5; } 50% { transform: scaleY(1); opacity: 1; } }` }} />
+      </>
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', minHeight: isSmall ? 'auto' : '150px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', minHeight: '150px' }}>
       {loaderContent}
     </div>
   );
