@@ -69,6 +69,10 @@ async function main() {
     await client.connect();
     console.log('Connected successfully!');
 
+    client.on('notice', (msg) => {
+      console.log(`[DB NOTICE] ${msg.message}`);
+    });
+
     for (const fileRelativePath of SQL_FILES) {
       const filePath = path.resolve(process.cwd(), fileRelativePath);
       console.log(`Reading SQL file: ${fileRelativePath}...`);
