@@ -203,7 +203,14 @@ export class TradeEngine {
     
     // Fallbacks from script settings if instrument table is missing data
     const scriptSetting = ctx.script_settings?.find((s: any) => s.symbol === symbol || s.symbol === kiteInst || s.symbol === underlyingId);
-    let symbolLotSize = Number(instrumentDetail?.lot_size || scriptSetting?.lot_size || getLotSizeFallback(symbol, dbSegment));
+    let symbolLotSize = Number(instrumentDetail?.lot_size || 0);
+    // Option contract lot size in database is 1, but we want the actual trading unit multiplier
+    if (isOption && symbolLotSize === 1) {
+      symbolLotSize = 0;
+    }
+    if (!symbolLotSize) {
+      symbolLotSize = Number(scriptSetting?.lot_size || getLotSizeFallback(symbol, ctx.script_settings));
+    }
 
     const isBlocked = ctx.is_blocked?.some((b: any) => b.symbol === symbol || b.symbol === kiteInst);
     
