@@ -68,10 +68,10 @@ BEGIN
     BEGIN
         INSERT INTO public.orders (
             user_id, symbol, kite_instrument, segment, side, status, qty, lots, price, fill_price,
-            order_type, product_type, info, is_exit, trigger_price, stop_loss, target, buffer_fee, idempotency_key
+            order_type, product_type, info, is_exit, trigger_price, stop_loss, target, buffer_fee, brokerage, idempotency_key
         ) VALUES (
             p_user_id, p_symbol, p_kite_inst, p_segment, p_side, p_status, p_qty, p_lots, p_fill_price, p_fill_price,
-            p_order_type, p_product_type, p_info, p_is_exit, p_trigger_price, p_stop_loss, p_target, p_buffer_fee, p_idempotency_key
+            p_order_type, p_product_type, p_info, p_is_exit, p_trigger_price, p_stop_loss, p_target, p_buffer_fee, p_expected_brokerage, p_idempotency_key
         ) RETURNING id INTO v_order_id;
     EXCEPTION WHEN unique_violation THEN
         SELECT id INTO v_order_id 
