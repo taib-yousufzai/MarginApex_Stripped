@@ -32,7 +32,53 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
       .select('instrument_token')
       .eq('id', symbol)
       .single();
-    return data?.instrument_token ?? null;
+    if (data?.instrument_token) return data.instrument_token;
+  }
+
+  const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+  const upperSymbol = cleanSymbol.toUpperCase().trim();
+
+  // Handle index shortcuts (e.g. NIFTY, BANKNIFTY)
+  const baseIndices: Record<string, string> = {
+    'NIFTY': 'NSE:NIFTY 50',
+    'NIFTY 50': 'NSE:NIFTY 50',
+    'BANKNIFTY': 'NSE:NIFTY BANK',
+    'NIFTY BANK': 'NSE:NIFTY BANK',
+    'FINNIFTY': 'NSE:NIFTY FIN SERVICE',
+    'SENSEX': 'BSE:SENSEX',
+    'BANKEX': 'BSE:BANKEX',
+  };
+  if (baseIndices[upperSymbol]) {
+    const resolvedSymbol = baseIndices[upperSymbol];
+    const { data } = await supabase
+      .from('instruments')
+      .select('instrument_token')
+      .eq('id', resolvedSymbol)
+      .single();
+    if (data?.instrument_token) return data.instrument_token;
+  }
+
+  // Handle base commodity and currency shortcuts to resolve to active front-month contracts
+  const baseCommodities = ['GOLD', 'CRUDEOIL', 'SILVER', 'NATURALGAS', 'USDINR'];
+  if (baseCommodities.includes(upperSymbol)) {
+    const isCurrency = upperSymbol === 'USDINR';
+    const exchange = isCurrency ? 'CDS' : 'MCX';
+    const instrumentTypes = isCurrency ? ['FUT'] : ['FUTCOM', 'FUT', 'MAPPED_FUT'];
+    
+    const { data } = await supabase
+      .from('instruments')
+      .select('instrument_token')
+      .eq('name', upperSymbol)
+      .eq('exchange', exchange)
+      .in('instrument_type', instrumentTypes)
+      .gte('expiry', new Date().toISOString().split('T')[0])
+      .order('expiry', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+      
+    if (data?.instrument_token) {
+      return data.instrument_token;
+    }
   }
 
   // Slow path: short symbol like "GOLD_FUT" — run ALL strategies in parallel
