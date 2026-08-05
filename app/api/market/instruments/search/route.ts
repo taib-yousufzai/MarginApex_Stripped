@@ -13,9 +13,6 @@ import {
   applyForexFilter,
   applyCryptoWhitelist,
   applyExpiryFilter,
-  applyStrikeRangeFilter,
-  applyMcxStrikeRangeFilter,
-  loadStrikeConfig,
   type Instrument,
 } from '@/lib/filterEngine';
 import { getRedisClient, isRedisMock } from '@/lib/redis';
@@ -39,17 +36,8 @@ const supabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
-// ATM kite IDs for underlying index/commodity lookup in Redis
-const UNDERLYING_KITE_IDS: Record<string, string> = {
-  NIFTY:      'NSE:NIFTY 50',
-  BANKNIFTY:  'NSE:NIFTY BANK',
-  FINNIFTY:   'NSE:NIFTY FIN SERVICE',
-  MIDCPNIFTY: 'NSE:NIFTY MID SELECT',
-  SENSEX:     'BSE:SENSEX',
-  BANKEX:     'BSE:BANKEX',
-};
-
-const MCX_UNDERLYINGS = new Set(['GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL', 'CRUDEOILM', 'NATURALGAS', 'NATGASMINI']);
+// ATM kite IDs for underlying index/commodity lookup in Redis — kept for future use
+// const UNDERLYING_KITE_IDS and MCX_UNDERLYINGS removed; search now reads option chain cache directly
 
 // Known underlying symbols for smart parsing
 const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'BANKEX', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
@@ -502,55 +490,49 @@ export async function GET(request: NextRequest) {
       }
 
       // ── Admin-config strike range fallback (matches option chain logic) ─
-      // Only runs when no per-user range was applied. Keeps results consistent
-      // with what the option chain page shows.
+      // ── Match option chain exactly: read its Redis cache per underlying ──
+      // The option chain stores its filtered strike list under optionChain:SYMBOL_expiry.
+      // Reading that cache gives us the exact same strikes the user sees there —
+      // no risk of drift from different ATM snapshots or range calculations.
       if (!perUserRangeApplied && filteredOptions.length > 0) {
         try {
-          const strikeConfig = await loadStrikeConfig(supabase);
           const redis = getRedisClient();
+          if (!isRedisMock()) {
+            // Collect unique underlying names from the options we're about to return
+            const underlyingNames = Array.from(new Set(
+              filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
+            ));
 
-          // Group options by underlying name so we can look up one ATM price per underlying
-          const underlyingGroups = new Map<string, Instrument[]>();
-          for (const opt of filteredOptions) {
-            const name = (opt.name || (opt as any).underlying_symbol || '').toUpperCase();
-            if (!name) continue;
-            if (!underlyingGroups.has(name)) underlyingGroups.set(name, []);
-            underlyingGroups.get(name)!.push(opt);
-          }
+            // Build an allowed tradingsymbol set from every option chain cache entry we can find
+            const allowedSymbols = new Set<string>();
+            let cacheHit = false;
 
-          const filteredByUnderlying: Instrument[] = [];
-          const noGroupOptions: Instrument[] = filteredOptions.filter((r: any) => {
-            const name = (r.name || r.underlying_symbol || '').toUpperCase();
-            return !name;
-          });
-
-          for (const [underlying, opts] of underlyingGroups) {
-            const isMcx = MCX_UNDERLYINGS.has(underlying);
-            const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
-
-            // Look up ATM price from Redis
-            let atmPrice = 0;
-            const kiteId = UNDERLYING_KITE_IDS[underlying];
-            if (kiteId && !isRedisMock()) {
-              try {
-                const cached = await redis.hget('market:quotes', kiteId);
-                if (cached) {
-                  const q = JSON.parse(cached);
-                  atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-                }
-              } catch { /* non-fatal */ }
+            for (const underlying of underlyingNames) {
+              // Try all cached expiry keys for this underlying
+              const keys = await redis.keys(`optionChain:${underlying}_*`);
+              for (const key of keys) {
+                try {
+                  const cached = await redis.get(key);
+                  if (!cached) continue;
+                  const chain = JSON.parse(cached);
+                  if (chain.strikes && Array.isArray(chain.strikes)) {
+                    for (const s of chain.strikes) {
+                      if (s.ce?.symbol) allowedSymbols.add(s.ce.symbol.toUpperCase());
+                      if (s.pe?.symbol) allowedSymbols.add(s.pe.symbol.toUpperCase());
+                    }
+                    cacheHit = true;
+                  }
+                } catch { /* skip bad cache entry */ }
+              }
             }
 
-            if (atmPrice > 0) {
-              const filtered = applyStrikeRangeFilter(opts, atmPrice, range);
-              filteredByUnderlying.push(...filtered);
-            } else {
-              // No ATM price available — pass through unchanged rather than hiding everything
-              filteredByUnderlying.push(...opts);
+            // Only restrict if we actually got cache data — otherwise pass through
+            if (cacheHit && allowedSymbols.size > 0) {
+              filteredOptions = filteredOptions.filter((r: any) =>
+                allowedSymbols.has((r.tradingsymbol || '').toUpperCase())
+              );
             }
           }
-
-          filteredOptions = [...noGroupOptions, ...filteredByUnderlying];
         } catch { /* non-fatal — don't break search if Redis is down */ }
       }
     }
