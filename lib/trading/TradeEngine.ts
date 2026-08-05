@@ -217,12 +217,14 @@ export class TradeEngine {
     // (segment-level admin config) and has commission_value = 0.
     // The real per-user settings are in segment_settings / scalper_segment_settings
     // filtered by user_id and segment.
+    // Sub-accounts inherit from their parent — use parent_id when present.
     const tradingMode = profile.trading_mode || 'normal';
     const settingsTable = tradingMode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
+    const settingsLookupId = profile.parent_id ?? user.id;
     const { data: userSegRows } = await admin
       .from(settingsTable)
       .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit, intraday_commission_type, intraday_commission_value')
-      .eq('user_id', user.id)
+      .eq('user_id', settingsLookupId)
       .eq('segment', dbSegment);
 
     const userBuySetting  = userSegRows?.find((s: any) => s.side === 'BUY')  ?? null;

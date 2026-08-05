@@ -86,10 +86,11 @@ export default function HistoryPage() {
 
     async function fetchHistory() {
       try {
-        // Fetch both orders and positions history
+        // Fetch both orders and positions history — last 30 days by default
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const [ordersData, posData] = await Promise.all([
-          api.get<{ orders: any[] }>('/api/orders?status=executed,rejected,cancelled').catch(() => ({ orders: [] })),
-          api.get<{ positions: any[] }>('/api/positions?status=closed&all=true').catch(() => ({ positions: [] })),
+          api.get<{ orders: any[] }>('/api/orders?status=executed,rejected,cancelled&limit=500').catch(() => ({ orders: [] })),
+          api.get<{ positions: any[] }>(`/api/positions?status=closed&from=${thirtyDaysAgo}`).catch(() => ({ positions: [] })),
         ]);
 
         const formattedOrders = (ordersData.orders || []).map((o: any) => ({
