@@ -497,10 +497,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         if (maxOrderLot > 0) {
           const maxOrderQty = maxOrderLot * lotSize;
           if (rawQty > maxOrderQty) {
-            showToast(`Qty exceeds limit. Max order: ${maxOrderLot} lots (${maxOrderQty} qty). Corrected to maximum.`);
-            rawQty = maxOrderQty;
-            setQtyInput(String(orderUnit === 'lot' ? maxOrderLot : maxOrderQty));
-            setOrderQty(orderUnit === 'lot' ? maxOrderLot : maxOrderQty);
+            showToast(`Order quantity exceeds the maximum limit of ${maxOrderLot} lots (${maxOrderQty} qty).`);
+            return;
           }
         }
       }
