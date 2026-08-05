@@ -24,15 +24,7 @@ BEGIN
     -- ISOLATE V1 TRIGGERS
     PERFORM set_config('app.is_v2', 'true', true);
 
-    -- IDEMPOTENCY CHECK
     v_ref_id := COALESCE(p_idempotency_key, 'EOD_CARRY_' || p_position_id::text || '_' || to_char(now(), 'YYYYMMDD'));
-    
-    IF EXISTS (
-        SELECT 1 FROM public.transactions 
-        WHERE ref_id = v_ref_id
-    ) THEN
-        RETURN 0; -- Charge already applied
-    END IF;
 
     -- Lock and validate position
     SELECT user_id, symbol, product_type, status
@@ -43,6 +35,14 @@ BEGIN
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Position not found.';
+    END IF;
+
+    -- IDEMPOTENCY CHECK (Scoped to user to avoid global reference collisions)
+    IF EXISTS (
+        SELECT 1 FROM public.transactions 
+        WHERE user_id = v_user_id AND ref_id = v_ref_id
+    ) THEN
+        RETURN 0; -- Charge already applied
     END IF;
 
     IF v_status <> 'open' THEN
