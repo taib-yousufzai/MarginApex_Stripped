@@ -202,6 +202,10 @@ export class WebSocketGateway extends EventEmitter {
             this.syncTelemetrySubscriptions();
             this.emit('subscription-change', payload.symbols);
             logger.info({ symbols: payload.symbols }, 'Client unsubscribed');
+          } else if (payload.action === 'ping') {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'pong' }));
+            }
           }
         } catch (err) {
           logger.warn({ err, message }, 'Invalid message received from client');

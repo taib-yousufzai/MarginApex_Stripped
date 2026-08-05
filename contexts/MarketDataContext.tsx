@@ -19,12 +19,18 @@ type MarketDataContextType = {
   quotes: Record<string, QuoteData>;
   subscribe: (symbols: string[]) => void;
   unsubscribe: (symbols: string[]) => void;
+  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+  lastError: string | null;
+  reconnectCount: number;
 };
 
 const MarketDataContext = createContext<MarketDataContextType>({
   quotes: {},
   subscribe: () => {},
   unsubscribe: () => {},
+  connectionStatus: 'disconnected',
+  lastError: null,
+  reconnectCount: 0,
 });
 
 // Singleton manager
@@ -34,6 +40,13 @@ class MarketWSManager {
   public symbolRefCount: Map<string, number> = new Map();
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private wsUrl: string;
+
+  public connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = 'disconnected';
+  public lastError: string | null = null;
+  public reconnectCount = 0;
+
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private lastMessageReceivedTime = 0;
 
   constructor() {
     let url = process.env.NEXT_PUBLIC_TICKER_WS_URL;
@@ -51,58 +64,193 @@ class MarketWSManager {
 
     if (typeof window !== 'undefined') {
       let lastHiddenTime = 0;
-      document.addEventListener('visibilitychange', () => {
+      
+      const handleVisibilityChange = () => {
         if (document.visibilityState === 'hidden') {
           lastHiddenTime = Date.now();
         } else if (document.visibilityState === 'visible') {
-          if (lastHiddenTime > 0 && Date.now() - lastHiddenTime > 10000) {
-            if (this.ws) this.ws.close();
-            else if (this.symbolRefCount.size > 0) this.connect();
+          console.log('[MarketWSManager] Visibility visible. Checking connection status...');
+          const elapsed = lastHiddenTime > 0 ? Date.now() - lastHiddenTime : 0;
+          
+          if (elapsed > 5000) {
+            console.log(`[MarketWSManager] Tab hidden for ${elapsed}ms. Proactively recycling socket for iOS resilience.`);
+            this.disconnectCleanly();
+            if (this.symbolRefCount.size > 0) {
+              this.connect();
+            }
+          } else if (!this.ws || (this.ws.readyState !== WebSocket.OPEN && this.ws.readyState !== WebSocket.CONNECTING)) {
+            if (this.symbolRefCount.size > 0) {
+              this.connect();
+            }
           }
           lastHiddenTime = 0;
+        };
+      };
+
+      const handleWake = () => {
+        console.log('[MarketWSManager] Lifecycle wake/focus event. Verifying socket health...');
+        if (!this.ws || (this.ws.readyState !== WebSocket.OPEN && this.ws.readyState !== WebSocket.CONNECTING)) {
+          if (this.symbolRefCount.size > 0) {
+            this.connect();
+          }
         }
-      });
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('pageshow', handleWake);
+      window.addEventListener('focus', handleWake);
       window.addEventListener('online', () => {
-        if ((!this.ws || this.ws.readyState !== WebSocket.OPEN) && this.symbolRefCount.size > 0) this.connect();
+        console.log('[MarketWSManager] Device online event detected.');
+        if ((!this.ws || this.ws.readyState !== WebSocket.OPEN) && this.symbolRefCount.size > 0) {
+          this.connect();
+        }
       });
     }
   }
 
-  private connect() {
-    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) return;
-    this.ws = new WebSocket(this.wsUrl);
-    this.ws.onopen = () => {
-      const activeSymbols = Array.from(this.symbolRefCount.keys());
-      if (activeSymbols.length > 0) {
-        this.ws?.send(JSON.stringify({ action: 'subscribe', symbols: activeSymbols }));
-      }
-    };
-    this.ws.onmessage = (event) => {
+  private disconnectCleanly() {
+    this.stopHeartbeat();
+    if (this.ws) {
+      console.log('[MarketWSManager] Disconnecting current WebSocket cleanly...');
+      // Detach all listeners first so async closures don't trigger events on discarded sockets
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
+      this.ws.onclose = null;
       try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === 'quotes') {
-          this.notifyListeners('quotes', payload.data);
-        } else if (payload.type === 'update') {
-          this.notifyListeners('update', { symbol: payload.symbol, quote: payload.data });
-        }
-      } catch (err) {
-        console.error('[MarketWSManager] error parsing message:', err);
+        this.ws.close();
+      } catch (e) {
+        console.error('[MarketWSManager] error closing ws:', e);
       }
-    };
-    this.ws.onclose = () => this.scheduleReconnect();
-    this.ws.onerror = (e) => {
-      console.error('[MarketWSManager] WebSocket error:', e);
-    };
+      this.ws = null;
+    }
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+  }
+
+  private connect() {
+    if (this.symbolRefCount.size === 0) return;
+    
+    // Prevent overlapping connection attempts
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      return;
+    }
+
+    this.disconnectCleanly();
+
+    this.connectionStatus = this.reconnectCount > 0 ? 'reconnecting' : 'connecting';
+    this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
+
+    console.log(`[MarketWSManager] Connecting to ${this.wsUrl} (attempt #${this.reconnectCount + 1})...`);
+
+    try {
+      this.ws = new WebSocket(this.wsUrl);
+      this.ws.onopen = () => {
+        console.log('[MarketWSManager] WebSocket connection established successfully.');
+        this.reconnectCount = 0;
+        this.connectionStatus = 'connected';
+        this.lastError = null;
+        this.lastMessageReceivedTime = Date.now();
+        this.notifyListeners('status', { status: this.connectionStatus, error: null, reconnectCount: 0 });
+
+        const activeSymbols = Array.from(this.symbolRefCount.keys());
+        if (activeSymbols.length > 0) {
+          console.log('[MarketWSManager] Re-subscribing to instruments:', activeSymbols);
+          this.ws?.send(JSON.stringify({ action: 'subscribe', symbols: activeSymbols }));
+        }
+        this.startHeartbeat();
+      };
+
+      this.ws.onmessage = (event) => {
+        this.lastMessageReceivedTime = Date.now();
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'quotes') {
+            this.notifyListeners('quotes', payload.data);
+          } else if (payload.type === 'update') {
+            this.notifyListeners('update', { symbol: payload.symbol, quote: payload.data });
+          } else if (payload.type === 'pong') {
+            // Heartbeat response handled
+          }
+        } catch (err) {
+          console.error('[MarketWSManager] error parsing message:', err);
+        }
+      };
+
+      this.ws.onclose = () => {
+        console.warn('[MarketWSManager] WebSocket connection closed.');
+        this.connectionStatus = 'disconnected';
+        this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
+        this.stopHeartbeat();
+        this.scheduleReconnect();
+      };
+
+      this.ws.onerror = (e) => {
+        console.error('[MarketWSManager] WebSocket error details:', e);
+        this.lastError = 'WebSocket connection failed';
+        this.connectionStatus = 'disconnected';
+        this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
+      };
+    } catch (err: any) {
+      console.error('[MarketWSManager] Error during WebSocket instantiation:', err);
+      this.lastError = err?.message || 'WebSocket creation failed';
+      this.connectionStatus = 'disconnected';
+      this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
+      this.scheduleReconnect();
+    }
   }
 
   private scheduleReconnect() {
     if (this.symbolRefCount.size === 0) return;
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-    this.reconnectTimeout = setTimeout(() => this.connect(), 3000);
+
+    this.reconnectCount++;
+    // Exponential backoff with jitter, caps at 10s
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectCount) + Math.random() * 1000, 10000);
+    console.log(`[MarketWSManager] Reconnecting in ${delay.toFixed(0)}ms...`);
+    this.reconnectTimeout = setTimeout(() => this.connect(), delay);
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.lastMessageReceivedTime = Date.now();
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          // Send heartbeat ping frame to keep proxy/gate alive and test writeability
+          this.ws.send(JSON.stringify({ action: 'ping' }));
+        } catch (err) {
+          console.warn('[MarketWSManager] ping send failed. Reconnecting.', err);
+          this.connect();
+          return;
+        }
+
+        // If no message has been received for 15 seconds, assume half-open/dormant socket
+        if (Date.now() - this.lastMessageReceivedTime > 15000) {
+          console.warn('[MarketWSManager] No tick or heartbeat received for 15s. Reconnecting.');
+          this.connect();
+        }
+      }
+    }, 5000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
   }
 
   private notifyListeners(type: string, data: any) {
-    for (const listener of this.listeners) listener(type, data);
+    for (const listener of this.listeners) {
+      try {
+        listener(type, data);
+      } catch (err) {
+        console.error('[MarketWSManager] error in listener invocation:', err);
+      }
+    }
   }
 
   public addListener(listener: (type: string, data: any) => void) {
@@ -114,13 +262,15 @@ class MarketWSManager {
   }
 
   public subscribe(symbols: string[]) {
-    this.connect();
     const toSubscribe: string[] = [];
     for (const sym of symbols) {
       const count = this.symbolRefCount.get(sym) || 0;
       this.symbolRefCount.set(sym, count + 1);
       if (count === 0) toSubscribe.push(sym);
     }
+    
+    this.connect();
+    
     if (toSubscribe.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ action: 'subscribe', symbols: toSubscribe }));
     }
@@ -141,14 +291,12 @@ class MarketWSManager {
       this.ws.send(JSON.stringify({ action: 'unsubscribe', symbols: toUnsubscribe }));
     }
     if (this.symbolRefCount.size === 0) {
-      if (this.ws) {
-        this.ws.close();
-        this.ws = null;
-      }
+      this.disconnectCleanly();
     }
   }
+
   public get isConnectingOrOpen(): boolean {
-    return this.ws !== null;
+    return this.ws !== null && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN);
   }
 }
 
@@ -156,6 +304,12 @@ const wsManager = new MarketWSManager();
 
 export const MarketDataProvider = ({ children }: { children: React.ReactNode }) => {
   const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
+  const [statusInfo, setStatusInfo] = useState({
+    connectionStatus: wsManager.connectionStatus,
+    lastError: wsManager.lastError,
+    reconnectCount: wsManager.reconnectCount
+  });
+  
   const pendingUpdatesRef = useRef<Record<string, QuoteData>>({});
   const fetchInitialQuotesRef = useRef<() => void>(() => {});
 
@@ -174,7 +328,13 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     const onMessage = (type: string, data: any) => {
-      if (type === 'quotes') {
+      if (type === 'status') {
+        setStatusInfo({
+          connectionStatus: data.status,
+          lastError: data.error,
+          reconnectCount: data.reconnectCount
+        });
+      } else if (type === 'quotes') {
         const mapped: Record<string, QuoteData> = {};
         for (const [key, quote] of Object.entries(data)) {
           const q = quote as any;
@@ -230,10 +390,9 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
 
     wsManager.addListener(onMessage);
 
-
-
     const fetchInitialQuotes = async () => {
-      if (wsManager.isConnectingOrOpen) return;
+      // Don't skip if connection status is not fully 'connected' to ensure fallback updates flow during connection phase
+      if (wsManager.connectionStatus === 'connected') return;
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
       try {
@@ -268,7 +427,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
     const validSymbols = symbols.filter(Boolean);
     if (validSymbols.length > 0) {
       wsManager.subscribe(validSymbols);
-      if (!wsManager.isConnectingOrOpen) {
+      if (wsManager.connectionStatus !== 'connected') {
         fetchInitialQuotesRef.current?.();
       }
     }
@@ -280,10 +439,18 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <MarketDataContext.Provider value={{ quotes, subscribe, unsubscribe }}>
+    <MarketDataContext.Provider value={{
+      quotes,
+      subscribe,
+      unsubscribe,
+      connectionStatus: statusInfo.connectionStatus,
+      lastError: statusInfo.lastError,
+      reconnectCount: statusInfo.reconnectCount
+    }}>
       {children}
     </MarketDataContext.Provider>
   );
 };
 
 export const useGlobalMarketQuotes = () => useContext(MarketDataContext);
+

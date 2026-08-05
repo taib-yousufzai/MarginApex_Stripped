@@ -394,9 +394,16 @@ export default function Page() {
   }, []);
 
   const allKiteInstruments = [...marketRow1Keys, ...marketRow2Keys];
-  const { quotes } = useMarketQuotes(allKiteInstruments);
-  const kiteConnected = true;
-  const kiteLoading = false;
+  const {
+    quotes,
+    isLoading: marketLoading,
+    isUnreachable: marketUnreachable,
+    connectionStatus,
+    lastError,
+    reconnectCount
+  } = useMarketQuotes(allKiteInstruments);
+  const kiteConnected = connectionStatus === 'connected';
+  const kiteLoading = marketLoading;
 
   const buildRow = (instruments: string[]): (MarketItem & { expired?: boolean })[] => {
     return instruments.map((key) => {
@@ -623,10 +630,11 @@ export default function Page() {
                       </div>
                     )}
 
-                    {!kiteLoading && Object.keys(quotes).length === 0 && (
+                    {marketUnreachable && (
                       <div className="market-status-msg" style={{ padding: '20px', textAlign: 'center', color: 'var(--red)', fontSize: '0.9rem' }}>
                         <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
                         Market data server is currently unreachable.
+                        {lastError && <div style={{ fontSize: '0.75rem', marginTop: '4px', opacity: 0.8 }}>Reason: {lastError} (Retries: {reconnectCount})</div>}
                       </div>
                     )}
                   </div>
