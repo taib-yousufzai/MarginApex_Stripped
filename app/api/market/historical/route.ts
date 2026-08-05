@@ -204,6 +204,22 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: `Instrument not found for symbol: ${symbol}` }, { status: 404 });
     }
 
+    // Resolve the canonical symbol ID (e.g. exchange:tradingsymbol) from the database
+    let canonicalSymbol = symbol;
+    try {
+      const { data: inst } = await supabase
+        .from('instruments')
+        .select('id')
+        .eq('instrument_token', instrumentToken)
+        .limit(1)
+        .maybeSingle();
+      if (inst?.id) {
+        canonicalSymbol = inst.id;
+      }
+    } catch (e) {
+      console.error('Failed to resolve canonical symbol ID:', e);
+    }
+
     const redis = getRedisClient();
     const cacheKey = `historical:${instrumentToken}:${interval}:${from}:${to}`;
 
@@ -242,12 +258,12 @@ export async function GET(request: Request) {
 
     // Fallback 1: Query local historical_candles DB table (highly useful for MCX Options and Kite outages)
     if (!candlesData || candlesData.length === 0) {
-      console.warn(`[historical] Kite fetch unavailable or returned empty for ${symbol} (Reason: ${kiteError}). Falling back to local DB historical_candles.`);
+      console.warn(`[historical] Kite fetch unavailable or returned empty for ${canonicalSymbol} (Reason: ${kiteError}). Falling back to local DB historical_candles.`);
       try {
         const { data: dbData, error: dbError } = await supabase
           .from('historical_candles')
           .select('timestamp, open, high, low, close, volume')
-          .eq('symbol', symbol)
+          .eq('symbol', canonicalSymbol)
           .eq('interval', interval)
           .gte('timestamp', from)
           .lte('timestamp', to)
@@ -271,10 +287,10 @@ export async function GET(request: Request) {
 
     // Fallback 2: Synthesize a single placeholder candle using the latest LTP
     if (!candlesData || candlesData.length === 0) {
-      console.warn(`[historical] No historical data found in Kite or DB for ${symbol}. Synthesizing placeholder candle.`);
+      console.warn(`[historical] No historical data found in Kite or DB for ${canonicalSymbol}. Synthesizing placeholder candle.`);
       let lastPrice = 0;
       try {
-        const cachedQuote = await redis.hget('market:quotes', symbol);
+        const cachedQuote = await redis.hget('market:quotes', canonicalSymbol);
         if (cachedQuote) {
           const parsed = JSON.parse(cachedQuote);
           lastPrice = parsed.last_price || parsed.close || 0;
@@ -286,7 +302,7 @@ export async function GET(request: Request) {
           const { data: instData } = await supabase
             .from('instruments')
             .select('last_price')
-            .eq('id', symbol)
+            .eq('id', canonicalSymbol)
             .single();
           if (instData?.last_price) {
             lastPrice = Number(instData.last_price);
