@@ -2036,38 +2036,41 @@ function WatchlistContent() {
                       }
 
                       setIsExecutingBasket(true);
-                      // Safety net: always unlock after 15s in case a promise hangs
-                      const safetyTimer = setTimeout(() => setIsExecutingBasket(false), 15000);
+                      // Safety net: always unlock after 10s in case a promise hangs
+                      const safetyTimer = setTimeout(() => setIsExecutingBasket(false), 10000);
                       try {
-                        let successCount = 0;
-                        let failCount = 0;
-                        for (const leg of basketLegs) {
-                          const ltp = getLegPrice(leg.item);
-                          const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
-                          const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
-                          try {
-                            const res = await placeOrder({
-                              symbol: leg.item.symbol,
-                              kite_instrument: leg.item.kiteSymbol || leg.item.symbol,
-                              segment: leg.item.segment,
-                              side: leg.side,
-                              qty: qty,
-                              lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz),
-                              order_type: 'MARKET',
-                              product_type: leg.productType || 'INTRADAY',
-                              client_price: ltp
-                            });
-                            if (res && !res.success) {
-                              failCount++;
-                              showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true);
-                            } else {
-                              successCount++;
+                        const results = await Promise.all(
+                          basketLegs.map(async (leg) => {
+                            const ltp = getLegPrice(leg.item);
+                            const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
+                            const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
+                            try {
+                              const res = await placeOrder({
+                                symbol: leg.item.symbol,
+                                kite_instrument: leg.item.kiteSymbol || leg.item.symbol,
+                                segment: leg.item.segment,
+                                side: leg.side,
+                                qty: qty,
+                                lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz),
+                                order_type: 'MARKET',
+                                product_type: leg.productType || 'INTRADAY',
+                                client_price: ltp
+                              });
+                              if (res && !res.success) {
+                                showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true);
+                                return false;
+                              }
+                              return true;
+                            } catch (legErr: any) {
+                              showToast(`${leg.side} ${leg.item.symbol} failed: ${legErr?.message || 'Unknown error'}`, true);
+                              return false;
                             }
-                          } catch (legErr: any) {
-                            failCount++;
-                            showToast(`${leg.side} ${leg.item.symbol} failed: ${legErr?.message || 'Unknown error'}`, true);
-                          }
-                        }
+                          })
+                        );
+
+                        const successCount = results.filter(Boolean).length;
+                        const failCount = results.length - successCount;
+
                         if (failCount === 0) {
                           showToast('Basket executed successfully!', false);
                           setBasketLegs([]);
