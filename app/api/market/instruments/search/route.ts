@@ -13,8 +13,12 @@ import {
   applyForexFilter,
   applyCryptoWhitelist,
   applyExpiryFilter,
+  applyStrikeRangeFilter,
+  applyMcxStrikeRangeFilter,
+  loadStrikeConfig,
   type Instrument,
 } from '@/lib/filterEngine';
+import { getRedisClient, isRedisMock } from '@/lib/redis';
 import { parseOptionSymbol } from '@/lib/positionStore';
 
 function getUnderlyingId(symbol: string): string {
@@ -35,10 +39,20 @@ const supabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+// ATM kite IDs for underlying index/commodity lookup in Redis
+const UNDERLYING_KITE_IDS: Record<string, string> = {
+  NIFTY:      'NSE:NIFTY 50',
+  BANKNIFTY:  'NSE:NIFTY BANK',
+  FINNIFTY:   'NSE:NIFTY FIN SERVICE',
+  MIDCPNIFTY: 'NSE:NIFTY MID SELECT',
+  SENSEX:     'BSE:SENSEX',
+  BANKEX:     'BSE:BANKEX',
+};
+
+const MCX_UNDERLYINGS = new Set(['GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL', 'CRUDEOILM', 'NATURALGAS', 'NATGASMINI']);
+
 // Known underlying symbols for smart parsing
 const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'BANKEX', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
-
-const mapSegmentToDbSegment = (s: string): string => {
   if (!s) return '';
   const trimmed = s.trim();
   if (trimmed === 'NSE - Futures' || trimmed === 'BSE - Futures') return 'INDEX-FUT';
@@ -453,7 +467,8 @@ export async function GET(request: NextRequest) {
         filteredOptions = filteredOptions.filter((r: any) => !r.expiry || activeSet.has(r.expiry));
       }
 
-      // Filter by user's strike range setting
+      // ── Per-user strike range (from segment_settings.strike_range) ──────
+      let perUserRangeApplied = false;
       if (user && userSegSettings.length > 0) {
         const optionsWithLimit = filteredOptions.filter((r: any) => {
           if (r.strike_price === null) return false;
@@ -463,6 +478,7 @@ export async function GET(request: NextRequest) {
         });
 
         if (optionsWithLimit.length > 0) {
+          perUserRangeApplied = true;
           const underlyingIds = Array.from(new Set(optionsWithLimit.map((r: any) => getUnderlyingId(r.tradingsymbol))));
           const priceMap = await fetchLivePrices(underlyingIds, request);
 
@@ -481,6 +497,59 @@ export async function GET(request: NextRequest) {
             return diff <= strikeRange;
           });
         }
+      }
+
+      // ── Admin-config strike range fallback (matches option chain logic) ─
+      // Only runs when no per-user range was applied. Keeps results consistent
+      // with what the option chain page shows.
+      if (!perUserRangeApplied && filteredOptions.length > 0) {
+        try {
+          const strikeConfig = await loadStrikeConfig(supabase);
+          const redis = getRedisClient();
+
+          // Group options by underlying name so we can look up one ATM price per underlying
+          const underlyingGroups = new Map<string, Instrument[]>();
+          for (const opt of filteredOptions) {
+            const name = (opt.name || (opt as any).underlying_symbol || '').toUpperCase();
+            if (!name) continue;
+            if (!underlyingGroups.has(name)) underlyingGroups.set(name, []);
+            underlyingGroups.get(name)!.push(opt);
+          }
+
+          const filteredByUnderlying: Instrument[] = [];
+          const noGroupOptions: Instrument[] = filteredOptions.filter((r: any) => {
+            const name = (r.name || r.underlying_symbol || '').toUpperCase();
+            return !name;
+          });
+
+          for (const [underlying, opts] of underlyingGroups) {
+            const isMcx = MCX_UNDERLYINGS.has(underlying);
+            const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
+
+            // Look up ATM price from Redis
+            let atmPrice = 0;
+            const kiteId = UNDERLYING_KITE_IDS[underlying];
+            if (kiteId && !isRedisMock()) {
+              try {
+                const cached = await redis.hget('market:quotes', kiteId);
+                if (cached) {
+                  const q = JSON.parse(cached);
+                  atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
+                }
+              } catch { /* non-fatal */ }
+            }
+
+            if (atmPrice > 0) {
+              const filtered = applyStrikeRangeFilter(opts, atmPrice, range);
+              filteredByUnderlying.push(...filtered);
+            } else {
+              // No ATM price available — pass through unchanged rather than hiding everything
+              filteredByUnderlying.push(...opts);
+            }
+          }
+
+          filteredOptions = [...noGroupOptions, ...filteredByUnderlying];
+        } catch { /* non-fatal — don't break search if Redis is down */ }
       }
     }
 
