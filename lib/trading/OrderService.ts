@@ -156,12 +156,19 @@ export class OrderService {
     lossHoldSec: number
   ): string | null {
     if (isExit && activePosition && activePosition.entry_time && (orderType === 'MARKET' || orderType === 'SLM')) {
+      const entryPrice = Number(activePosition.entry_price || activePosition.avg_price || 0);
       const pnlValue = activePosition.side === 'BUY'
-        ? (baseLtp - Number(activePosition.entry_price)) * Number(activePosition.qty_open)
-        : (Number(activePosition.entry_price) - baseLtp) * Number(activePosition.qty_open);
+        ? (baseLtp - entryPrice) * Number(activePosition.qty_open)
+        : (entryPrice - baseLtp) * Number(activePosition.qty_open);
 
       const durationSec = Math.floor((Date.now() - new Date(activePosition.entry_time).getTime()) / 1000);
-      const requiredHold = pnlValue > 0 ? profitHoldSec : lossHoldSec;
+
+      // Anti-scalping hold time only applies to profitable trades. Exiting in a loss is always allowed.
+      if (pnlValue <= 0) {
+        return null;
+      }
+
+      const requiredHold = profitHoldSec;
 
       if (durationSec < requiredHold) {
         return `Anti-Scalping: Minimum hold time of ${requiredHold}s required for this trade. Elapsed: ${durationSec}s.`;
