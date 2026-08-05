@@ -246,8 +246,8 @@ export default function OrderPage() {
                   </div>
                 )}
 
-                {/* Error */}
-                {error && (
+                {/* Error — only show when we have no orders to display (avoid blanking a stale-but-populated list) */}
+                {error && orders.length === 0 && (
                   <div className="ord-empty">
                     <i className="fas fa-exclamation-circle" style={{ color: '#ef4444' }} />
                     <p>{error}</p>
@@ -299,7 +299,7 @@ export default function OrderPage() {
                       <div className="ord-row ord-row-info">
                         <div className="ord-info-inline">
                           <span className="ord-label">QTY:</span>
-                          <span className="ord-val">{fmtQty(order.qty)} ({order.lots} Lot)</span>
+                          <span className="ord-val">{fmtQty(order.qty)} ({Math.round(order.lots)} Lot)</span>
                         </div>
                         <div className="ord-info-inline right">
                           <span className="ord-label">TIME:</span>
