@@ -32,12 +32,12 @@ const instruments = [
   { id: 'CDS:JPYINR26JULFUT',    instrument_token: 322563,    tradingsymbol: 'JPYINR26JULFUT',    exchange: 'CDS', expiry: '2026-07-29', instrument_type: 'FUT', segment: 'CDS-FUT' },
 
   // MCX Commodity futures
-  { id: 'MCX:CRUDEOIL26JULFUT',  instrument_token: 133299719, tradingsymbol: 'CRUDEOIL26JULFUT',  exchange: 'MCX', expiry: '2026-07-20', instrument_type: 'FUT', segment: 'MCX-FUT' },
-  { id: 'MCX:SILVER26JULFUT',    instrument_token: 118822407, tradingsymbol: 'SILVER26JULFUT',    exchange: 'MCX', expiry: '2026-07-03', instrument_type: 'FUT', segment: 'MCX-FUT' },
-  { id: 'MCX:NATURALGAS26JULFUT',instrument_token: 137903367, tradingsymbol: 'NATURALGAS26JULFUT',exchange: 'MCX', expiry: '2026-07-28', instrument_type: 'FUT', segment: 'MCX-FUT' },
-  { id: 'MCX:COPPER26JULFUT',    instrument_token: 143884295, tradingsymbol: 'COPPER26JULFUT',    exchange: 'MCX', expiry: '2026-07-31', instrument_type: 'FUT', segment: 'MCX-FUT' },
+  { id: 'MCX:CRUDEOIL26JULFUT',  instrument_token: 133299719, tradingsymbol: 'CRUDEOIL26JULFUT',  exchange: 'MCX', expiry: '2026-07-20', instrument_type: 'FUT', segment: 'MCX-FUT', lot_size: 100 },
+  { id: 'MCX:SILVER26JULFUT',    instrument_token: 118822407, tradingsymbol: 'SILVER26JULFUT',    exchange: 'MCX', expiry: '2026-07-03', instrument_type: 'FUT', segment: 'MCX-FUT', lot_size: 30  },
+  { id: 'MCX:NATURALGAS26JULFUT',instrument_token: 137903367, tradingsymbol: 'NATURALGAS26JULFUT',exchange: 'MCX', expiry: '2026-07-28', instrument_type: 'FUT', segment: 'MCX-FUT', lot_size: 1250},
+  { id: 'MCX:COPPER26JULFUT',    instrument_token: 143884295, tradingsymbol: 'COPPER26JULFUT',    exchange: 'MCX', expiry: '2026-07-31', instrument_type: 'FUT', segment: 'MCX-FUT', lot_size: 2500},
   // Gold MCX is bimonthly — no July contract, next active is August
-  { id: 'MCX:GOLD26AUGFUT',      instrument_token: 119445255, tradingsymbol: 'GOLD26AUGFUT',      exchange: 'MCX', expiry: '2026-08-05', instrument_type: 'FUT', segment: 'MCX-FUT' },
+  { id: 'MCX:GOLD26AUGFUT',      instrument_token: 119445255, tradingsymbol: 'GOLD26AUGFUT',      exchange: 'MCX', expiry: '2026-08-05', instrument_type: 'FUT', segment: 'MCX-FUT', lot_size: 100 },
 ];
 
 async function main() {
@@ -49,6 +49,7 @@ async function main() {
     expiry: i.expiry,
     instrument_type: i.instrument_type,
     segment: i.segment,
+    lot_size: i.lot_size ?? 0,
     updated_at: new Date().toISOString(),
   }));
 
