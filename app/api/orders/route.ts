@@ -13,6 +13,7 @@ import { requireAuth as apiRequireAuth } from '@/lib/api-middleware';
 import type { PlaceOrderRequest, MyOrder } from '@/lib/types/order';
 import { logAction, extractClientIp } from '@/lib/actionLogger';
 import { TradeEngine } from '@/lib/trading/TradeEngine';
+import { getLotSizeFallback } from '@/lib/lotSize';
 
 // ─── GET /api/orders ──────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       side:         r.side as 'BUY' | 'SELL',
       status:       r.status as MyOrder['status'],
       qty:          Number(r.qty),
-      lots:         Number(r.lots ?? 0),
+      lots:         Number(r.lots) || (Number(r.qty) / getLotSizeFallback(r.symbol as string)),
       fill_price:   Number(r.fill_price ?? r.price),
       ltp_at_entry: Number(r.ltp_at_entry ?? 0),
       order_type:   (r.order_type as MyOrder['order_type']) ?? 'MARKET',
