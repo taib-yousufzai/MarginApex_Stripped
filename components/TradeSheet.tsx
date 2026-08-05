@@ -311,6 +311,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const handleQtyChange = (val: string) => {
     // Allow digits, a leading optional zero, and a single decimal point
     if (val !== '' && !/^\d*\.?\d*$/.test(val)) return;
+
+    // If lotSize > 1, prevent decimals in LOT mode to avoid confusion
+    if (orderUnit === 'lot' && lotSize > 1 && val.includes('.')) return;
+
     userHasEditedQty.current = true;
     setQtyInput(val);
     const n = parseFloat(val);
@@ -461,22 +465,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const handlePlace = async (placeSide: 'BUY' | 'SELL') => {
     if (isExecutingRef.current) return;
     isExecutingRef.current = true;
-    // Track whether we've handed off to an async order flow that manages its own reset.
-    // If we exit via a validation return, we must reset here so the button isn't stuck.
     let handedOffToOrderFlow = false;
     try {
-      showToast('Executing handlePlace');
       if (!item) return;
 
-      // Parse qty fresh from the input string at submit time — avoids stale state issues
       const parsedInputQty = parseFloat(qtyInput);
       if (isNaN(parsedInputQty) || parsedInputQty <= 0) {
         showToast('Please enter a valid quantity.');
         return;
       }
 
-      // Exit mode: hard-cap qty to the open position size to prevent over-exit
-      // (sending more qty than held would close the position AND open a new opposite order)
+      let rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
+
+      // ── Quantity Snapping & Validation ──────────────────────────────────
       if (exitMode) {
         let maxExitQty = 0;
         if (linkedPosId) {
@@ -485,48 +486,42 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         } else if (existingPos) {
           maxExitQty = existingPos.qty_open;
         }
-        if (maxExitQty > 0) {
-          const rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
-          if (rawQty > maxExitQty) {
-            showToast(`Exit quantity cannot exceed open position (${maxExitQty} qty).`);
-            setQtyInput(String(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty));
-            setOrderQty(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty);
-            return;
+        if (maxExitQty > 0 && rawQty > maxExitQty) {
+          showToast(`Exit quantity cannot exceed open position (${maxExitQty} qty). Corrected to maximum.`);
+          rawQty = maxExitQty;
+          setQtyInput(String(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty));
+          setOrderQty(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty);
+        }
+      } else {
+        // Snap to nearest lot multiple if lotSize > 1
+        if (lotSize > 1 && Math.round(rawQty) % lotSize !== 0) {
+          const snapped = Math.max(lotSize, Math.round(rawQty / lotSize) * lotSize);
+          showToast(`Quantity must be a multiple of lot size (${lotSize}). Corrected to ${snapped}.`);
+          rawQty = snapped;
+          setQtyInput(String(orderUnit === 'lot' ? snapped / lotSize : snapped));
+          setOrderQty(orderUnit === 'lot' ? snapped / lotSize : snapped);
+        }
+
+        const placeSetting = dbSeg ? getSegment(dbSeg, placeSide) : undefined;
+        const maxOrderLot = placeSetting?.max_order_lot ?? placeSetting?.max_lot ?? 0;
+        if (maxOrderLot > 0) {
+          const maxOrderQty = maxOrderLot * lotSize;
+          if (rawQty > maxOrderQty) {
+            showToast(`Qty exceeds limit. Max order: ${maxOrderLot} lots (${maxOrderQty} qty). Corrected to maximum.`);
+            rawQty = maxOrderQty;
+            setQtyInput(String(orderUnit === 'lot' ? maxOrderLot : maxOrderQty));
+            setOrderQty(orderUnit === 'lot' ? maxOrderLot : maxOrderQty);
           }
         }
       }
+
+      const finalQty = rawQty;
+      const finalLots = finalQty / lotSize;
 
       // Load setting specific to the side being placed
       const placeSetting = dbSeg ? getSegment(dbSeg, placeSide) : undefined;
       const pTopLimit = placeSetting?.top_limit ?? 0;
       const pMinLimit = placeSetting?.min_limit ?? 0;
-
-      // ── Qty validation for entry orders ──────────────────────────────────
-      if (!exitMode) {
-        let rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
-
-        // If qty is not a valid lot multiple, snap down to nearest lot and continue.
-        // Don't block the order — the user clearly wants to trade.
-        if (lotSize > 1 && Math.round(rawQty) % lotSize !== 0) {
-          const snapped = Math.max(lotSize, Math.floor(rawQty / lotSize) * lotSize);
-          rawQty = snapped;
-          // Update the displayed qty input to the snapped value
-          setQtyInput(String(orderUnit === 'lot' ? snapped / lotSize : snapped));
-          setOrderQty(orderUnit === 'lot' ? snapped / lotSize : snapped);
-        }
-
-        // Must not exceed max_order_lot × lotSize
-        const maxOrderLot = placeSetting?.max_order_lot ?? placeSetting?.max_lot ?? 0;
-        if (maxOrderLot > 0) {
-          const maxOrderQty = maxOrderLot * lotSize;
-          if (rawQty > maxOrderQty) {
-            showToast(`Qty exceeds limit. Max order: ${maxOrderLot} lots (${maxOrderQty} qty). Corrected to maximum.`, true);
-            setQtyInput(String(orderUnit === 'lot' ? maxOrderLot : maxOrderQty));
-            setOrderQty(orderUnit === 'lot' ? maxOrderLot : maxOrderQty);
-            return;
-          }
-        }
-      }
       // ─────────────────────────────────────────────────────────────────────
 
       // Resolve order_type, trigger_price, stop_loss, target, client_price under the hood
@@ -844,8 +839,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             kite_instrument: computedKiteSymbol || item.symbol,
             segment: item.segment,
             side: placeSide,
-            qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-            lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+            qty: finalQty,
+            lots: finalLots,
             order_type: resolvedOrderType as any,
             product_type: propProductType || 'INTRADAY',
             client_price: resolvedClientPrice,
@@ -907,7 +902,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           kite_instrument: computedKiteSymbol || item.symbol,
           segment: item.segment,
           side: placeSide,
-          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
+          qty: finalQty,
           client_price: resolvedClientPrice,
           product_type: productType,
         };
@@ -921,8 +916,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           kite_instrument: computedKiteSymbol || item.symbol,
           segment: item.segment,
           side: placeSide,
-          qty: orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty,
-          lots: orderUnit === 'lot' ? parsedInputQty : (parsedInputQty / lotSize),
+          qty: finalQty,
+          lots: finalLots,
           order_type: resolvedOrderType as any,
           product_type: productType,
           client_price: resolvedClientPrice,
@@ -1378,14 +1373,22 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                       value={qtyInput}
                       onChange={e => handleQtyChange(e.target.value)}
                       onBlur={() => {
-                        // On blur, if empty or invalid, reset to current orderQty
                         const n = parseFloat(qtyInput);
                         if (!qtyInput || isNaN(n) || n <= 0) {
                           setQtyInput(String(orderQty));
                         } else {
-                          // Normalise display (remove trailing dot like "0.")
-                          setQtyInput(String(n));
-                          setOrderQty(n);
+                          let snapped = n;
+                          if (lotSize > 1) {
+                            if (orderUnit === 'qty') {
+                              // Snap to nearest multiple of lotSize
+                              snapped = Math.max(lotSize, Math.round(n / lotSize) * lotSize);
+                            } else {
+                              // Snap to nearest integer lot
+                              snapped = Math.max(1, Math.round(n));
+                            }
+                          }
+                          setQtyInput(String(snapped));
+                          setOrderQty(snapped);
                         }
                       }}
                     />
