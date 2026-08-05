@@ -53,6 +53,8 @@ const MCX_UNDERLYINGS = new Set(['GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL
 
 // Known underlying symbols for smart parsing
 const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'BANKEX', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
+
+const mapSegmentToDbSegment = (s: string): string => {
   if (!s) return '';
   const trimmed = s.trim();
   if (trimmed === 'NSE - Futures' || trimmed === 'BSE - Futures') return 'INDEX-FUT';
