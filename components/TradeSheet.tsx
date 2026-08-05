@@ -322,14 +322,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     if (!isNaN(n) && n > 0) setOrderQty(n);
   };
 
-  // Stepper: lot mode steps by 1 lot, qty mode steps by lotSize
   const stepQty = (delta: number) => {
-    const step = orderUnit === 'lot' ? 1 : lotSize;
+    const step = orderUnit === 'lot' ? 1 : 1;
     const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 0;
     const maxVal = maxOrderLot > 0
       ? (orderUnit === 'lot' ? maxOrderLot : maxOrderLot * lotSize)
       : Infinity;
-    const next = Math.min(maxVal, Math.max(step, parseFloat((orderQty + delta * step).toFixed(2))));
+    const next = Math.min(maxVal, Math.max(0.0001, parseFloat((orderQty + delta * step).toFixed(4))));
     setOrderQty(next);
     setQtyInput(String(next));
   };
