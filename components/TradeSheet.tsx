@@ -493,15 +493,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           setOrderQty(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty);
         }
       } else {
-        // Snap to nearest lot multiple if lotSize > 1
-        if (lotSize > 1 && Math.round(rawQty) % lotSize !== 0) {
-          const snapped = Math.max(lotSize, Math.round(rawQty / lotSize) * lotSize);
-          showToast(`Quantity must be a multiple of lot size (${lotSize}). Corrected to ${snapped}.`);
-          rawQty = snapped;
-          setQtyInput(String(orderUnit === 'lot' ? snapped / lotSize : snapped));
-          setOrderQty(orderUnit === 'lot' ? snapped / lotSize : snapped);
-        }
-
         const placeSetting = dbSeg ? getSegment(dbSeg, placeSide) : undefined;
         const maxOrderLot = placeSetting?.max_order_lot ?? placeSetting?.max_lot ?? 0;
         if (maxOrderLot > 0) {
@@ -1380,8 +1371,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                           let snapped = n;
                           if (lotSize > 1) {
                             if (orderUnit === 'qty') {
-                              // Snap to nearest multiple of lotSize
-                              snapped = Math.max(lotSize, Math.round(n / lotSize) * lotSize);
+                              // Keep the exact custom quantity entered by the user
+                              snapped = Math.max(0.0001, n);
                             } else {
                               // Snap to nearest integer lot
                               snapped = Math.max(1, Math.round(n));
