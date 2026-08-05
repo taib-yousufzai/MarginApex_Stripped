@@ -173,33 +173,103 @@ export async function GET(request: Request) {
     }
 
     // Fetch from Kite Historical API
-    const url = `https://api.kite.trade/instruments/historical/${instrumentToken}/${interval}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    let candlesData: any[] | null = null;
+    let kiteError: string | null = null;
     
-    const response = await fetch(url, {
-      headers: {
-        'X-Kite-Version': '3',
-        'Authorization': `token ${process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY}:${session.accessToken}`
+    try {
+      const url = `https://api.kite.trade/instruments/historical/${instrumentToken}/${interval}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      const response = await fetch(url, {
+        headers: {
+          'X-Kite-Version': '3',
+          'Authorization': `token ${process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY}:${session.accessToken}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok && data.status === 'success' && data.data && Array.isArray(data.data.candles)) {
+        candlesData = data.data.candles;
+      } else {
+        kiteError = data.message || data.error_type || 'Kite API error';
       }
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || data.status !== 'success') {
-      const errorMessage = data.message || data.error_type || 'Kite API error';
-      return NextResponse.json({ error: errorMessage, details: data }, { status: response.status || 500 });
+    } catch (err: any) {
+      kiteError = err.message || 'Kite fetch exception';
     }
 
-    if (!isRedisMock()) {
+    // Fallback 1: Query local historical_candles DB table (highly useful for MCX Options and Kite outages)
+    if (!candlesData || candlesData.length === 0) {
+      console.warn(`[historical] Kite fetch unavailable or returned empty for ${symbol} (Reason: ${kiteError}). Falling back to local DB historical_candles.`);
       try {
-        // Cache daily data longer, intraday data shorter
+        const { data: dbData, error: dbError } = await supabase
+          .from('historical_candles')
+          .select('timestamp, open, high, low, close, volume')
+          .eq('symbol', symbol)
+          .eq('interval', interval)
+          .gte('timestamp', from)
+          .lte('timestamp', to)
+          .order('timestamp', { ascending: true })
+          .limit(1000);
+        
+        if (!dbError && dbData && dbData.length > 0) {
+          candlesData = dbData.map((c: any) => [
+            c.timestamp,
+            c.open,
+            c.high,
+            c.low,
+            c.close,
+            c.volume
+          ]);
+        }
+      } catch (dbErr) {
+        console.error('[historical] Failed to query local fallback candles:', dbErr);
+      }
+    }
+
+    // Fallback 2: Synthesize a single placeholder candle using the latest LTP
+    if (!candlesData || candlesData.length === 0) {
+      console.warn(`[historical] No historical data found in Kite or DB for ${symbol}. Synthesizing placeholder candle.`);
+      let lastPrice = 0;
+      try {
+        const cachedQuote = await redis.hget('market:quotes', symbol);
+        if (cachedQuote) {
+          const parsed = JSON.parse(cachedQuote);
+          lastPrice = parsed.last_price || parsed.close || 0;
+        }
+      } catch (e) {}
+
+      if (lastPrice === 0) {
+        try {
+          const { data: instData } = await supabase
+            .from('instruments')
+            .select('last_price')
+            .eq('id', symbol)
+            .single();
+          if (instData?.last_price) {
+            lastPrice = Number(instData.last_price);
+          }
+        } catch (e) {}
+      }
+
+      if (lastPrice > 0) {
+        const nowStr = new Date().toISOString();
+        candlesData = [
+          [nowStr, lastPrice, lastPrice, lastPrice, lastPrice, 0]
+        ];
+      } else {
+        candlesData = [];
+      }
+    }
+
+    const result = { candles: candlesData };
+
+    if (!isRedisMock() && candlesData && candlesData.length > 0) {
+      try {
         const ttl = (interval === 'day' || interval === 'week') ? 3600 : (interval.includes('minute') || interval.includes('min') || ['1m','5m','15m','30m','60m'].includes(interval)) ? 60 : 300;
-        await redis.setex(cacheKey, ttl, JSON.stringify(data.data));
+        await redis.setex(cacheKey, ttl, JSON.stringify(result));
       } catch (e) {
         console.error('Redis cache set error for historical data:', e);
       }
     }
 
-    return NextResponse.json(data.data);
+    return NextResponse.json(result);
 
   } catch (error: any) {
     console.error('Historical API Error:', error);
