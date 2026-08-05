@@ -109,7 +109,23 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get('symbol');
-    const interval = searchParams.get('interval') || 'day';
+    const rawInterval = searchParams.get('interval') || 'day';
+    
+    // Map standard chart interval codes to Zerodha Kite API compatible strings
+    const mapInterval = (inter: string): string => {
+      const normalized = inter.toLowerCase().trim();
+      if (normalized === '1m' || normalized === '1min' || normalized === 'minute') return 'minute';
+      if (normalized === '3m' || normalized === '3min' || normalized === '3minute') return '3minute';
+      if (normalized === '5m' || normalized === '5min' || normalized === '5minute') return '5minute';
+      if (normalized === '10m' || normalized === '10min' || normalized === '10minute') return '10minute';
+      if (normalized === '15m' || normalized === '15min' || normalized === '15minute') return '15minute';
+      if (normalized === '30m' || normalized === '30min' || normalized === '30minute') return '30minute';
+      if (normalized === '60m' || normalized === '60min' || normalized === '60minute' || normalized === '1h' || normalized === 'hour') return '60minute';
+      if (normalized === 'day' || normalized === 'd' || normalized === '1d') return 'day';
+      return inter;
+    };
+    
+    const interval = mapInterval(rawInterval);
     const toVal = searchParams.get('to') || new Date().toISOString().slice(0, 10);
     let fromVal = searchParams.get('from');
     if (!fromVal) {
