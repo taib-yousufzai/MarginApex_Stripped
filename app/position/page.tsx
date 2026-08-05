@@ -398,7 +398,10 @@ export default function PositionPage() {
         convertingIdsRef.current.delete(pos.id);
         return;
       }
-      showToast(`Conversion failed: ${err.message}`);
+      const errorMsg = (err instanceof ApiError && err.details && typeof err.details === 'object' && 'error' in err.details)
+        ? (err.details as any).error
+        : err.message;
+      showToast(`Conversion failed: ${errorMsg}`);
 
       // Revert bottom sheet state on server/network failure
       if (selectedPos && selectedPos.id === pos.id) {

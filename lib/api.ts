@@ -116,6 +116,7 @@ async function apiCall<T>(
         ? JSON.stringify(body)
         : undefined,
       signal,
+      cache: 'no-store',
     });
 
     if (res.ok) {
