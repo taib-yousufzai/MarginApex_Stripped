@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
       status: p.status ? p.status.toLowerCase() : 'open',
       product_type: p.product_type || 'INTRADAY',
       kite_instrument: p.kite_instrument || p.symbol,
+      brokerage: p.brokerage || 0,
     }));
 
     return NextResponse.json({ positions });
