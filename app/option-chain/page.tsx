@@ -133,7 +133,9 @@ function OptionChainContent() {
     fetchUserId();
   }, []);
 
-  // Compute lot size: DB settings take priority over hardcoded fallbacks
+  // Compute lot size: DB script_settings take priority over hardcoded fallbacks.
+  // For MCX options (CRUDEOIL, GOLD, SILVER, NATURALGAS), the exchange publishes
+  // lot_size=1 per contract — use that directly instead of the futures multiplier.
   const lotSize = (() => {
     const n = symbol.toUpperCase();
     const sortedSettings = [...scriptSettings].sort((a, b) => b.symbol.length - a.symbol.length);
@@ -144,14 +146,7 @@ function OptionChainContent() {
     if (n.includes('MIDCP') || n.includes('MIDCAP')) return 120;
     if (n.includes('SENSEX')) return 20;
     if (n.includes('NIFTY')) return 65;
-    if (n.includes('GOLDM')) return 10;
-    if (n.includes('GOLD')) return 100;
-    if (n.includes('SILVERM')) return 5;
-    if (n.includes('SILVER')) return 30;
-    if (n.includes('CRUDEOILM')) return 10;
-    if (n.includes('CRUDEOIL')) return 100;
-    if (n.includes('NATGASMINI')) return 250;
-    if (n.includes('NATURALGAS')) return 1250;
+    // MCX options: 1 contract = 1 lot (lot_size=1 in Zerodha master)
     return 1;
   })();
 

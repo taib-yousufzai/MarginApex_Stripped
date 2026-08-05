@@ -99,8 +99,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const isOpen = !!item;
   const rawLotSize = item ? Number((item as any).lot_size || (item as any).lotSize || 0) : 0;
-  const isOption = item?.symbol ? (item.symbol.endsWith('CE') || item.symbol.endsWith('PE')) : false;
-  const lotSize = (item && rawLotSize > 0 && !(isOption && rawLotSize === 1))
+  const lotSize = (item && rawLotSize > 0)
     ? rawLotSize
     : (item ? getLotSize(item.symbol || item.name || '') : 1);
 
