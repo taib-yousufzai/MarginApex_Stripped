@@ -1397,28 +1397,27 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                 </div>
 
                 {/* Order Type */}
-                <div className="ts2-card">
-                  <div className="ts2-label">Order Type</div>
-                  <div className="ts2-pills">
-                    {(exitMode
-                      ? ['MARKET', 'TARGET', 'SL', 'GTT']
-                      : ['MARKET', 'LIMIT', 'SLM', 'GTT']
-                    ).map(t => (
-                      <button
-                        key={t}
-                        className={`ts2-pill${orderType === t ? ' active' : ''}`}
-                        onClick={() => {
-                          setOrderType(t);
-                          if (t === 'GTT') {
-                            setGttSubOption(exitMode ? 'TARGET' : 'LIMIT');
-                          }
-                        }}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                {!exitMode && (
+                  <div className="ts2-card">
+                    <div className="ts2-label">Order Type</div>
+                    <div className="ts2-pills">
+                      {['MARKET', 'LIMIT', 'SLM', 'GTT'].map(t => (
+                        <button
+                          key={t}
+                          className={`ts2-pill${orderType === t ? ' active' : ''}`}
+                          onClick={() => {
+                            setOrderType(t);
+                            if (t === 'GTT') {
+                              setGttSubOption('LIMIT');
+                            }
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* LIMIT / TARGET — Price input (separate card, matches watchlist) */}
                 {(orderType === 'LIMIT' || orderType === 'TARGET') && (
