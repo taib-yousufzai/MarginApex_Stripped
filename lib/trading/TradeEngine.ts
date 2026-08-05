@@ -202,8 +202,12 @@ export class TradeEngine {
     const instrumentDetail = ctx.instruments?.find((i: any) => i.tradingsymbol === kiteInst || i.tradingsymbol === symbol);
     
     // Fallbacks from script settings if instrument table is missing data
+    // For MCX/options, instruments table often has lot_size=1 (Zerodha placeholder) — treat ≤1 as unreliable
+    const rawInstrumentLotSize = Number(instrumentDetail?.lot_size || 0);
     const scriptSetting = ctx.script_settings?.find((s: any) => s.symbol === symbol || s.symbol === kiteInst || s.symbol === underlyingId);
-    let symbolLotSize = Number(instrumentDetail?.lot_size || scriptSetting?.lot_size || getLotSizeFallback(symbol, ctx.script_settings));
+    let symbolLotSize = (rawInstrumentLotSize > 1)
+      ? rawInstrumentLotSize
+      : Number(scriptSetting?.lot_size || getLotSizeFallback(symbol, ctx.script_settings));
 
     const isBlocked = ctx.is_blocked?.some((b: any) => b.symbol === symbol || b.symbol === kiteInst);
     
