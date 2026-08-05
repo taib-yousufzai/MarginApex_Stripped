@@ -500,12 +500,13 @@ export default function PositionPage() {
   const groupedOpenPositions: GroupedPosition[] = useMemo(() => {
     const map = new Map<string, GroupedPosition>();
     for (const pos of openPositions) {
-      const key = `${pos.symbol}|${pos.side}|${pos.product_type}`;
+      const displaySymbol = pos.kite_instrument ? pos.kite_instrument.split(':').pop() || pos.symbol : pos.symbol;
+      const key = `${displaySymbol}|${pos.side}|${pos.product_type}`;
       const existing = map.get(key);
       if (!existing) {
         map.set(key, {
           key,
-          symbol: pos.symbol,
+          symbol: displaySymbol,
           side: pos.side,
           product_type: pos.product_type || 'INTRADAY',
           settlement: pos.settlement || '',
@@ -557,12 +558,13 @@ export default function PositionPage() {
   const groupedClosedPositions: GroupedClosedPosition[] = useMemo(() => {
     const map = new Map<string, GroupedClosedPosition>();
     for (const pos of closedPositions) {
-      const key = `${pos.symbol}|${pos.side}|${pos.product_type}`;
+      const displaySymbol = pos.kite_instrument ? pos.kite_instrument.split(':').pop() || pos.symbol : pos.symbol;
+      const key = `${displaySymbol}|${pos.side}|${pos.product_type}`;
       const existing = map.get(key);
       if (!existing) {
         map.set(key, {
           key,
-          symbol: pos.symbol,
+          symbol: displaySymbol,
           side: pos.side,
           product_type: pos.product_type || 'INTRADAY',
           settlement: pos.settlement || '',

@@ -63,14 +63,51 @@ export async function GET(request: NextRequest) {
 
     if (posResult.error) throw posResult.error;
 
-    // Attach product_type to each position, using 'INTRADAY' as a safe ultimate fallback.
-    // Also normalize the status field to lowercase so the frontend context can match it reliably.
-    const positions = (posResult.data ?? []).map(p => ({
-      ...p,
-      status: p.status ? p.status.toLowerCase() : 'open',
-      product_type: p.product_type || 'INTRADAY',
-      kite_instrument: p.kite_instrument || p.symbol,
-      brokerage: p.brokerage || 0,
+    // Resolve synthetic futures symbols to their nearest active contract trading symbols (e.g. CRUDEOIL_FUT -> MCX:CRUDEOIL26JULFUT)
+    const positions = await Promise.all((posResult.data ?? []).map(async (p) => {
+      let resolvedKite = p.symbol;
+      if (p.symbol && p.symbol.endsWith('_FUT')) {
+        const segUpper = (p.settlement || '').toUpperCase();
+        const prefix = segUpper.includes('MCX') ? 'MCX' : (segUpper.includes('CDS') || segUpper.includes('FOREX') ? 'CDS' : 'NSE');
+        let baseName = p.symbol.toUpperCase();
+        if (baseName.endsWith('_FUT')) baseName = baseName.slice(0, -4);
+
+        const cacheKey = `nearest_fut_${prefix}_${baseName}`;
+        try {
+          const { getRedisClient } = require('@/lib/redis');
+          const redis = getRedisClient();
+          let cachedSymbol = await redis.get(cacheKey);
+          if (!cachedSymbol) {
+            const { data: nearestFut } = await admin
+              .from('instruments')
+              .select('tradingsymbol')
+              .eq('name', baseName)
+              .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+              .gte('expiry', new Date().toISOString().split('T')[0])
+              .order('expiry', { ascending: true })
+              .limit(1)
+              .maybeSingle();
+
+            if (nearestFut?.tradingsymbol) {
+              cachedSymbol = nearestFut.tradingsymbol;
+              await redis.setex(cacheKey, 3600, cachedSymbol);
+            }
+          }
+          if (cachedSymbol) {
+            resolvedKite = `${prefix}:${cachedSymbol}`;
+          }
+        } catch (e) {
+          console.error('[Positions API] Failed to resolve future symbol:', e);
+        }
+      }
+
+      return {
+        ...p,
+        status: p.status ? p.status.toLowerCase() : 'open',
+        product_type: p.product_type || 'INTRADAY',
+        kite_instrument: resolvedKite,
+        brokerage: p.brokerage || 0,
+      };
     }));
 
     return NextResponse.json({ positions });
