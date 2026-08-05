@@ -1858,262 +1858,175 @@ function WatchlistContent() {
 
             {/* Checkout Sheet */}
             <div id="checkoutSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('checkoutSheet'); const overlay = document.getElementById('checkoutSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); }}></div>
-            <div id="checkoutSheet" className="trade-sheet detail-sheet" style={{ height: '100dvh', maxHeight: '100dvh', width: '100vw', top: 0, left: 0, bottom: 0, position: 'fixed', zIndex: 100000, borderRadius: 0, paddingBottom: '30px', background: 'var(--bg-body, #F5F7FB)' }}>
-              <div style={{ padding: '24px 20px 20px 20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                  <div className="sri-name" style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1A1E2B', marginBottom: '16px' }}>Checkout Summary</div>
-                  <div className="basket-margin-summary" style={{ border: '1px solid var(--border-light, #EEF2F8)', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left' }}>
-                    <div className="margin-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>Total Items</span><span className="basket-val" style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>{basketLegs.length}</span></div>
-                    <div className="margin-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>Total Value</span><span className="basket-val" style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹{basketLegs.reduce((acc, l) => acc + (getLegPrice(l.item) * l.qty), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-                    <div className="margin-row" style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>Required Margin</span><span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#C62E2E' }}>₹{basketLegs.reduce((acc, leg) => {
-                      const price = getLegPrice(leg.item);
-                      const seg = mapSegmentToDbSegment(leg.item.segment);
-                      const setting = getSegment(seg, leg.side);
+            <div id="checkoutSheet" className="trade-sheet detail-sheet" style={{ height: '100dvh', maxHeight: '100dvh', width: '100vw', top: 0, left: 0, bottom: 0, position: 'fixed', zIndex: 100000, borderRadius: 0, background: 'var(--bg-body, #F5F7FB)', display: 'flex', flexDirection: 'column', padding: 0 }}>
+
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-light, #EEF2F8)', background: 'var(--card-bg, #fff)', flexShrink: 0 }}>
+                <button onClick={() => { const s = document.getElementById('checkoutSheet'); const o = document.getElementById('checkoutSheetOverlay'); if (s) s.classList.remove('open'); if (o) o.classList.remove('active'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 10px 4px 0', fontSize: '1.05rem' }}>
+                  <i className="fas fa-arrow-left" />
+                </button>
+                <div>
+                  <div style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-primary)' }}>Checkout</div>
+                  <div style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>{basketLegs.length} item{basketLegs.length !== 1 ? 's' : ''} to execute</div>
+                </div>
+              </div>
+
+              {/* Scrollable body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+                {/* Leg cards */}
+                {basketLegs.map((leg, i) => {
+                  const ltp = getLegPrice(leg.item);
+                  const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
+                  const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
+                  const isBuy = leg.side === 'BUY';
+                  return (
+                    <div key={`chk_${i}`} style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border-card, #EEF2F8)', borderRadius: '14px', padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '0.6rem', fontWeight: '800', padding: '3px 8px', borderRadius: '5px', background: isBuy ? '#E9F6EF' : '#FEF0F0', color: isBuy ? '#15803D' : '#C62E2E', letterSpacing: '0.04em' }}>{leg.side}</span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--text-primary)' }}>{leg.item.name || leg.item.symbol}</span>
+                        </div>
+                        <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹{(ltp * qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-secondary)' }}>{leg.qty} {leg.unit.toUpperCase()}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>@ ₹{ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div style={{ display: 'flex', background: 'var(--bg-body, #F5F7FB)', borderRadius: '8px', padding: '2px', gap: '2px', opacity: isExecutingBasket ? 0.5 : 1, pointerEvents: isExecutingBasket ? 'none' : 'auto' }}>
+                          {(['INTRADAY', 'CARRY'] as const).map(pt => {
+                            const active = (leg.productType || 'INTRADAY') === pt;
+                            return (
+                              <div key={pt} onClick={() => !isExecutingBasket && setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: pt } : l))}
+                                style={{ padding: '3px 10px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', background: active ? 'var(--card-bg, #fff)' : 'transparent', color: active ? 'var(--text-primary)' : 'var(--text-muted)', boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s' }}>
+                                {pt === 'INTRADAY' ? 'Intraday' : 'Carry'}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Summary card */}
+                {(() => {
+                  let totalMargin = 0, intradayCharges = 0, carryCharges = 0;
+                  basketLegs.forEach((leg) => {
+                    const price = getLegPrice(leg.item); const seg = mapSegmentToDbSegment(leg.item.segment); const setting = getSegment(seg, leg.side);
+                    const lotSz = getLotSize(leg.item.symbol || leg.item.name || ''); const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty; const exposure = qty * price;
+                    const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
+                    const lev = Number(isIntra ? (setting?.intraday_leverage ?? 10) : (setting?.normal_leverage ?? 10));
+                    const levType = (isIntra ? setting?.intraday_type : setting?.normal_type) ?? 'Multiplier';
+                    if (levType === '%') totalMargin += exposure * (lev / 100);
+                    else if (levType === 'Fixed') totalMargin += (qty / lotSz) * lev;
+                    else totalMargin += exposure / lev;
+                    const commType = (isIntra ? setting?.intraday_commission_type : setting?.commission_type) || setting?.commission_type || 'Per Crore';
+                    let commVal = Number((isIntra ? setting?.intraday_commission_value : setting?.commission_value) ?? setting?.commission_value ?? 0);
+                    if (!setting) { const sU = (leg.item.segment || '').toUpperCase(); commVal = sU.includes('FOREX') ? 2000 : sU.includes('CRYPTO') ? 1000 : 4500; }
+                    let charge = 0;
+                    if (commType === 'Per Crore') charge = (exposure * commVal) / 10000000;
+                    else if (commType === 'Per Lot') charge = (qty / lotSz) * commVal;
+                    else if (commType === 'Per Trade' || commType === 'Flat') charge = commVal;
+                    else charge = exposure * 0.001;
+                    if (isIntra) intradayCharges += charge * 2; else carryCharges += charge * 2;
+                  });
+                  const totalCharges = intradayCharges + carryCharges;
+                  const totalValue = basketLegs.reduce((acc, l) => { const lz = getLotSize(l.item.symbol || l.item.name || ''); const q = l.unit === 'lot' ? l.qty * lz : l.qty; return acc + getLegPrice(l.item) * q; }, 0);
+                  const row: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: '1px solid var(--border-light, #EEF2F8)' };
+                  const lbl: React.CSSProperties = { fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' };
+                  const val: React.CSSProperties = { fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' };
+                  return (
+                    <div style={{ background: 'var(--card-bg, #fff)', border: '1px solid var(--border-card, #EEF2F8)', borderRadius: '14px', padding: '4px 16px 10px' }}>
+                      <div style={row}><span style={lbl}>Total Value</span><span style={val}>₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                      <div style={row}><span style={lbl}>Required Margin</span><span style={{ ...val, color: '#C62E2E' }}>₹{totalMargin.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                      <div style={{ ...row, cursor: 'pointer' }} onClick={() => setShowChargesBreakdown(!showChargesBreakdown)}>
+                        <span style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '5px' }}>Charges <i className="fas fa-chevron-down" style={{ fontSize: '0.6rem', transition: 'transform 0.2s', transform: showChargesBreakdown ? 'rotate(180deg)' : 'none' }} /></span>
+                        <span style={{ ...val, color: '#C62E2E' }}>₹{totalCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      {showChargesBreakdown && (
+                        <div style={{ padding: '8px 10px 6px', background: 'var(--bg-body, #F5F7FB)', borderRadius: '8px', marginBottom: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {[['Intraday Brokerage', intradayCharges], ['Carry Brokerage', carryCharges]].map(([label, v]) => (
+                            <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{label}</span>
+                              <span style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹{(v as number).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-primary)' }}>Available Balance</span>
+                        <span style={{ fontSize: '0.88rem', fontWeight: '800', color: '#2C8E5A', background: '#E9F6EF', padding: '4px 12px', borderRadius: '20px' }}>{availableBalance !== null ? `₹${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              </div>{/* end scrollable body */}
+
+              {/* Sticky bottom actions */}
+              <div style={{ flexShrink: 0, padding: '14px 20px', paddingBottom: 'max(14px, env(safe-area-inset-bottom))', borderTop: '1px solid var(--border-light, #EEF2F8)', background: 'var(--card-bg, #fff)', display: 'flex', gap: '10px' }}>
+                <button
+                  disabled={isExecutingBasket}
+                  onClick={async () => {
+                    if (isExecutingBasket) return;
+                    let totalRequiredMargin = 0, intradayCharges = 0, carryCharges = 0;
+                    basketLegs.forEach((leg) => {
+                      const price = getLegPrice(leg.item); const seg = mapSegmentToDbSegment(leg.item.segment); const setting = getSegment(seg, leg.side);
+                      const lotSz = getLotSize(leg.item.symbol || leg.item.name || ''); const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty; const exposure = qty * price;
                       const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
                       const lev = Number(isIntra ? (setting?.intraday_leverage ?? 10) : (setting?.normal_leverage ?? 10));
                       const levType = (isIntra ? setting?.intraday_type : setting?.normal_type) ?? 'Multiplier';
-                      const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
-                      const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
-                      const exposure = qty * price;
-                      let portion = 0;
-                      if (levType === '%') portion = exposure * (lev / 100);
-                      else if (levType === 'Fixed') portion = (qty / lotSz) * lev;
-                      else portion = exposure / lev;
-                      return acc + portion;
-                    }, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
-                    {(() => {
-                      let intradayCharges = 0;
-                      let carryCharges = 0;
-                      basketLegs.forEach((leg) => {
-                        const price = getLegPrice(leg.item);
-                        const seg = mapSegmentToDbSegment(leg.item.segment);
-                        const setting = getSegment(seg, leg.side);
-                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
-                        const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
-                        const exposure = qty * price;
-
-                        const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
-                        const commType = (isIntra ? setting?.intraday_commission_type : setting?.commission_type) || setting?.commission_type || 'Per Crore';
-                        let commVal = Number((isIntra ? setting?.intraday_commission_value : setting?.commission_value) ?? setting?.commission_value ?? 0);
-
-                        if (!setting) {
-                          const sUpper = (leg.item.segment || '').toUpperCase();
-                          if (sUpper.includes('FOREX')) commVal = 2000;
-                          else if (sUpper.includes('CRYPTO')) commVal = 1000;
-                          else commVal = 4500;
-                        }
-
-                        let charge = 0;
-                        if (commType === 'Per Crore') charge = (exposure * commVal) / 10000000;
-                        else if (commType === 'Per Lot') charge = (qty / lotSz) * commVal;
-                        else if (commType === 'Per Trade' || commType === 'Flat') charge = commVal;
-                        else charge = exposure * 0.001;
-
-                        if (isIntra) intradayCharges += charge * 2;
-                        else carryCharges += charge * 2;
-                      });
-                      const totalCharges = intradayCharges + carryCharges;
-
-                      return (
-                        <>
-                          <div className="margin-row" style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-light, #EEF2F8)', paddingTop: '10px', marginTop: '2px', cursor: 'pointer' }} onClick={() => setShowChargesBreakdown(!showChargesBreakdown)}>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)', display: 'flex', alignItems: 'center' }}>
-                              Charges Breakdown <i className="fas fa-chevron-down" style={{ marginLeft: '6px', fontSize: '0.65rem', transition: 'transform 0.2s', transform: showChargesBreakdown ? 'rotate(180deg)' : 'none' }}></i>
-                            </span>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#C62E2E' }}>₹{totalCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                          {showChargesBreakdown && (
-                            <div style={{ marginTop: '8px', padding: '8px 10px', background: 'var(--card-alt-bg, #F8FAFF)', borderRadius: '6px', border: '1px solid var(--border-light, #EEF2F8)' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>Intraday Brokerage</span>
-                                <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹{intradayCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>Carry Brokerage</span>
-                                <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹{carryCharges.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--text-muted, #8C94A8)' }}>GTT Charges</span>
-                                <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹0.00</span>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <div className="margin-row" style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-light, #EEF2F8)', paddingTop: '10px', marginTop: '2px' }}><span className="basket-val" style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-primary)' }}>Available Balance</span><span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#2C8E5A', background: '#E9F6EF', padding: '4px 10px', borderRadius: '8px' }}>{availableBalance !== null ? `₹${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'}</span></div>
-                  </div>
-
-                  <div style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1A1E2B', marginBottom: '10px', textAlign: 'left' }}>Items to Execute</div>
-                  <div style={{ flex: 1, overflowY: 'auto', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left' }}>
-                    {basketLegs.map((leg, i) => {
-                      const ltp = getLegPrice(leg.item);
-                      const totalVal = ltp * leg.qty;
-                      return (
-                        <div key={`chk_${i}`} style={{ background: 'var(--card-alt-bg, #F8FAFF)', border: '1px solid var(--border-card, #EEF2F8)', borderRadius: '12px', padding: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--text-primary)' }}>{leg.item.name}</span>
-                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>₹{totalVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.65rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', background: leg.side === 'BUY' ? '#E9F6EF' : '#FEF0F0', color: leg.side === 'BUY' ? '#15803D' : '#C62E2E' }}>{leg.side}</span>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-secondary)' }}>{leg.qty} {leg.unit.toUpperCase()}</span>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>@ ₹{ltp.toLocaleString('en-IN')}</span>
-
-                            <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px', background: 'var(--bg-body, #F5F7FB)', padding: '2px', borderRadius: '4px', opacity: isExecutingBasket ? 0.5 : 1, pointerEvents: isExecutingBasket ? 'none' : 'auto' }}>
-                              <div
-                                onClick={() => !isExecutingBasket && setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: 'INTRADAY' } : l))}
-                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '3px', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', background: (!leg.productType || leg.productType === 'INTRADAY') ? '#FFFFFF' : 'transparent', color: (!leg.productType || leg.productType === 'INTRADAY') ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                              >Intraday</div>
-                              <div
-                                onClick={() => !isExecutingBasket && setBasketLegs(prev => prev.map((l, idx) => idx === i ? { ...l, productType: 'CARRY' } : l))}
-                                style={{ padding: '2px 6px', fontSize: '0.65rem', fontWeight: '700', borderRadius: '3px', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', background: leg.productType === 'CARRY' ? '#FFFFFF' : 'transparent', color: leg.productType === 'CARRY' ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                              >Carry</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    disabled={isExecutingBasket}
-                    onClick={async () => {
-                      if (isExecutingBasket) return;
-
-                      // 1. Calculate total margin required + total charges
-                      let totalRequiredMargin = 0;
-                      let intradayCharges = 0;
-                      let carryCharges = 0;
-
-                      basketLegs.forEach((leg) => {
-                        const price = getLegPrice(leg.item);
-                        const seg = mapSegmentToDbSegment(leg.item.segment);
-                        const setting = getSegment(seg, leg.side);
-                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
-                        const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
-                        const exposure = qty * price;
-
-                        // Margin
-                        const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
-                        const lev = Number(isIntra ? (setting?.intraday_leverage ?? 10) : (setting?.normal_leverage ?? 10));
-                        const levType = (isIntra ? setting?.intraday_type : setting?.normal_type) ?? 'Multiplier';
-                        let portion = 0;
-                        if (levType === '%') portion = exposure * (lev / 100);
-                        else if (levType === 'Fixed') portion = (qty / lotSz) * lev;
-                        else portion = exposure / lev;
-                        totalRequiredMargin += portion;
-
-                        // Commission
-                        const commType = (isIntra ? setting?.intraday_commission_type : setting?.commission_type) || setting?.commission_type || 'Per Crore';
-                        let commVal = Number((isIntra ? setting?.intraday_commission_value : setting?.commission_value) ?? setting?.commission_value ?? 0);
-
-                        if (!setting) {
-                          const sUpper = (leg.item.segment || '').toUpperCase();
-                          if (sUpper.includes('FOREX')) commVal = 2000;
-                          else if (sUpper.includes('CRYPTO')) commVal = 1000;
-                          else commVal = 4500;
-                        }
-
-                        let charge = 0;
-                        if (commType === 'Per Crore') charge = (exposure * commVal) / 10000000;
-                        else if (commType === 'Per Lot') charge = (qty / lotSz) * commVal;
-                        else if (commType === 'Per Trade' || commType === 'Flat') charge = commVal;
-                        else charge = exposure * 0.001;
-
-                        if (isIntra) intradayCharges += charge * 2;
-                        else carryCharges += charge * 2;
-                      });
-
-                      const totalNeeded = totalRequiredMargin + intradayCharges + carryCharges;
-                      const avBal = availableBalance ?? 0;
-
-                      if (avBal < totalNeeded) {
-                        setErrorModalMsg(`Required: ₹${totalNeeded.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\nAvailable: ₹${avBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
-                        return;
-                      }
-
-                      setIsExecutingBasket(true);
-                      // Safety net: always unlock after 10s in case a promise hangs
-                      const safetyTimer = setTimeout(() => setIsExecutingBasket(false), 10000);
-                      try {
-                        const results = await Promise.all(
-                          basketLegs.map(async (leg) => {
-                            const ltp = getLegPrice(leg.item);
-                            const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
-                            const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
-                            try {
-                              const res = await placeOrder({
-                                symbol: leg.item.symbol,
-                                kite_instrument: leg.item.kiteSymbol || leg.item.symbol,
-                                segment: leg.item.segment,
-                                side: leg.side,
-                                qty: qty,
-                                lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz),
-                                order_type: 'MARKET',
-                                product_type: leg.productType || 'INTRADAY',
-                                client_price: ltp
-                              });
-                              if (res && !res.success) {
-                                showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true);
-                                return false;
-                              }
-                              return true;
-                            } catch (legErr: any) {
-                              showToast(`${leg.side} ${leg.item.symbol} failed: ${legErr?.message || 'Unknown error'}`, true);
-                              return false;
-                            }
-                          })
-                        );
-
-                        const successCount = results.filter(Boolean).length;
-                        const failCount = results.length - successCount;
-
-                        if (failCount === 0) {
-                          showToast('Basket executed successfully!', false);
-                          setBasketLegs([]);
-                          setBasketMode(false);
-                          const sheet = document.getElementById('checkoutSheet');
-                          const overlay = document.getElementById('checkoutSheetOverlay');
-                          if (sheet) sheet.classList.remove('open');
-                          if (overlay) overlay.classList.remove('active');
-                          const bsSheet = document.getElementById('basketSheet');
-                          const bsOverlay = document.getElementById('basketSheetOverlay');
-                          if (bsSheet) bsSheet.classList.remove('open');
-                          if (bsOverlay) bsOverlay.classList.remove('active');
-                        } else if (successCount > 0) {
-                          showToast(`${successCount} order(s) placed, ${failCount} failed.`, true);
-                        }
-                      } finally {
-                        clearTimeout(safetyTimer);
-                        setIsExecutingBasket(false);
-                      }
-                    }}
-                    style={{ flex: 1, background: isExecutingBasket ? '#9CA3AF' : '#2C8E5A', color: '#fff', border: 'none', padding: '13px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', boxShadow: isExecutingBasket ? 'none' : '0 4px 12px rgba(44,142,90,0.3)' }}
-                  >
-                    {isExecutingBasket ? (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><AnimatedLoader size="small" /> Executing...</span>
-                    ) : (
-                      <><i className="fas fa-bolt" style={{ marginRight: '6px' }}></i>Confirm</>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (isExecutingBasket) return;
-                      const sheet = document.getElementById('checkoutSheet');
-                      const overlay = document.getElementById('checkoutSheetOverlay');
-                      if (sheet) sheet.classList.remove('open');
-                      if (overlay) overlay.classList.remove('active');
-                    }}
-                    disabled={isExecutingBasket}
-                    style={{ flex: 1, background: '#F3F4F6', color: isExecutingBasket ? '#9CA3AF' : '#4B5563', border: 'none', padding: '13px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '700', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', opacity: isExecutingBasket ? 0.5 : 1 }}
-                  >
-                    Cancel
-                  </button>
-                </div>
+                      if (levType === '%') totalRequiredMargin += exposure * (lev / 100);
+                      else if (levType === 'Fixed') totalRequiredMargin += (qty / lotSz) * lev;
+                      else totalRequiredMargin += exposure / lev;
+                      const commType = (isIntra ? setting?.intraday_commission_type : setting?.commission_type) || setting?.commission_type || 'Per Crore';
+                      let commVal = Number((isIntra ? setting?.intraday_commission_value : setting?.commission_value) ?? setting?.commission_value ?? 0);
+                      if (!setting) { const sU = (leg.item.segment || '').toUpperCase(); commVal = sU.includes('FOREX') ? 2000 : sU.includes('CRYPTO') ? 1000 : 4500; }
+                      let charge = 0;
+                      if (commType === 'Per Crore') charge = (exposure * commVal) / 10000000;
+                      else if (commType === 'Per Lot') charge = (qty / lotSz) * commVal;
+                      else if (commType === 'Per Trade' || commType === 'Flat') charge = commVal;
+                      else charge = exposure * 0.001;
+                      if (isIntra) intradayCharges += charge * 2; else carryCharges += charge * 2;
+                    });
+                    const totalNeeded = totalRequiredMargin + intradayCharges + carryCharges;
+                    const avBal = availableBalance ?? 0;
+                    if (avBal < totalNeeded) { setErrorModalMsg(`Required: ₹${totalNeeded.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\nAvailable: ₹${avBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`); return; }
+                    setIsExecutingBasket(true);
+                    const safetyTimer = setTimeout(() => setIsExecutingBasket(false), 10000);
+                    try {
+                      const results = await Promise.all(basketLegs.map(async (leg) => {
+                        const ltp = getLegPrice(leg.item); const lotSz = getLotSize(leg.item.symbol || leg.item.name || ''); const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
+                        try {
+                          const res = await placeOrder({ symbol: leg.item.symbol, kite_instrument: leg.item.kiteSymbol || leg.item.symbol, segment: leg.item.segment, side: leg.side, qty, lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz), order_type: 'MARKET', product_type: leg.productType || 'INTRADAY', client_price: ltp });
+                          if (res && !res.success) { showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true); return false; }
+                          return true;
+                        } catch (e: any) { showToast(`${leg.side} ${leg.item.symbol} failed: ${e?.message || 'Unknown error'}`, true); return false; }
+                      }));
+                      const successCount = results.filter(Boolean).length;
+                      const failCount = results.length - successCount;
+                      if (failCount === 0) {
+                        showToast('Basket executed successfully!', false);
+                        setBasketLegs([]); setBasketMode(false);
+                        ['checkoutSheet','checkoutSheetOverlay','basketSheet','basketSheetOverlay'].forEach(id => document.getElementById(id)?.classList.remove('open','active'));
+                      } else if (successCount > 0) { showToast(`${successCount} order(s) placed, ${failCount} failed.`, true); }
+                    } finally { clearTimeout(safetyTimer); setIsExecutingBasket(false); }
+                  }}
+                  style={{ flex: 1, background: isExecutingBasket ? '#9CA3AF' : '#2C8E5A', color: '#fff', border: 'none', padding: '15px 0', borderRadius: '14px', fontSize: '0.95rem', fontWeight: '800', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: isExecutingBasket ? 'none' : '0 4px 12px rgba(44,142,90,0.25)' }}
+                >
+                  {isExecutingBasket ? <><AnimatedLoader size="small" /> Executing...</> : <><i className="fas fa-bolt" style={{ marginRight: '4px' }} /> Confirm &amp; Execute</>}
+                </button>
+                <button
+                  onClick={() => { if (isExecutingBasket) return; const s = document.getElementById('checkoutSheet'); const o = document.getElementById('checkoutSheetOverlay'); if (s) s.classList.remove('open'); if (o) o.classList.remove('active'); }}
+                  disabled={isExecutingBasket}
+                  style={{ flexShrink: 0, background: 'var(--bg-body, #F3F4F6)', color: isExecutingBasket ? '#9CA3AF' : 'var(--text-secondary)', border: '1px solid var(--border-light, #EEF2F8)', padding: '15px 22px', borderRadius: '14px', fontSize: '0.9rem', fontWeight: '700', cursor: isExecutingBasket ? 'not-allowed' : 'pointer' }}
+                >
+                  Cancel
+                </button>
               </div>
+
             </div>
 
             <div id="drawerOverlay" className={`drawer-overlay${isFolderDrawerOpen ? ' active' : ''}`} onClick={() => setIsFolderDrawerOpen(false)}></div>
