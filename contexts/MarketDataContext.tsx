@@ -395,6 +395,28 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
       if (wsManager.connectionStatus === 'connected') return;
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
+      
+      try {
+        // Fallback 1: Local Next.js API route (bypasses iOS Safari / iCloud Private Relay CORS blocks)
+        const res = await fetch('/api/kite/quotes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ instruments: symbols })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data && Object.keys(json.data).length > 0) {
+            onMessage('quotes', json.data);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[MarketDataProvider] Local HTTP fallback failed, trying direct ticker daemon:', err);
+      }
+
+      // Fallback 2: Direct query to Railway ticker daemon (original path)
       try {
         let baseUrl = process.env.NEXT_PUBLIC_TICKER_URL;
         if (!baseUrl) {
@@ -408,7 +430,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
           }
         }
       } catch (err) {
-        console.error('[MarketDataProvider] HTTP fallback error:', err);
+        console.error('[MarketDataProvider] Direct HTTP fallback error:', err);
       }
     };
 
