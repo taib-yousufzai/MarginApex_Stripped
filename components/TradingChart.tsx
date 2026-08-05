@@ -1261,13 +1261,20 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     // In scalp mode qtyValue is always in lots. Guard against a stale exit-qty
     // (e.g. 1500 units from a previous exit flow) being treated as lot count,
     // which would multiply by lotSize again and blow past max_order_lot.
-    // Cap at max_order_lot (defaults to 50) before the multiplication.
     const dbSeg = mapSegmentToDbSegment(segment);
     const segSetting = getSegment(dbSeg, side);
     const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 50;
-    const safeQVal = effectiveUseLots ? Math.min(qVal, maxOrderLot) : qVal;
 
-    const finalQty = effectiveUseLots ? (isCrypto ? safeQVal * lotSize : Math.round(safeQVal * lotSize)) : (isCrypto ? safeQVal : Math.round(safeQVal));
+    // If qty exceeds max, show error, correct input to max, and abort — don't silently clamp.
+    if (effectiveUseLots && maxOrderLot > 0 && qVal > maxOrderLot) {
+      showToast(`Max allowed: ${maxOrderLot} lots (${maxOrderLot * lotSize} qty). Corrected to maximum.`, true);
+      setQtyValue(String(maxOrderLot));
+      quickEntryLock.current = false;
+      setIsSubmitting(false);
+      return;
+    }
+
+    const finalQty = effectiveUseLots ? (isCrypto ? qVal * lotSize : Math.round(qVal * lotSize)) : (isCrypto ? qVal : Math.round(qVal));
     const intradayLeverage = segSetting?.intraday_leverage ?? 10;
     const intradayType = segSetting?.intraday_type ?? 'Multiplier';
     const required = Math.round(intradayType === '%' ? (currentPrice * finalQty) * (intradayLeverage / 100) : (intradayType === 'Fixed' ? (finalQty / lotSize) * intradayLeverage : (currentPrice * finalQty) / intradayLeverage));
@@ -1286,7 +1293,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       segment: segment,
       side: side,
       qty: finalQty,
-      lots: effectiveUseLots ? safeQVal : (finalQty / lotSize),
+      lots: effectiveUseLots ? qVal : (finalQty / lotSize),
       order_type: 'MARKET',
       product_type: 'INTRADAY',
       client_price: currentPrice,
