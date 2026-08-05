@@ -14,6 +14,7 @@ import { api, ApiError } from '@/lib/api';
 import type { TradeSheetItem } from '@/components/TradeSheet';
 import HoldLockCountdown from '@/components/HoldLockCountdown';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
+import { ErrorModal } from '@/components/ErrorModal';
 import dynamic from 'next/dynamic';
 import './page.css';
 
@@ -132,6 +133,13 @@ export default function PositionPage() {
   const [selectedPos, setSelectedPos] = useState<EnrichedPosition | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
+    window.addEventListener('order_error', handler);
+    return () => window.removeEventListener('order_error', handler);
+  }, []);
   const [chartItem, setChartItem] = useState<any | null>(null);
 
   const openChart = (pos: EnrichedPosition) => {
@@ -1724,6 +1732,7 @@ export default function PositionPage() {
           )}
         </div>
       </div>
+      <ErrorModal error={errorModalMsg} onClose={() => setErrorModalMsg(null)} title="Order Failed" />
     </div>
   );
 }

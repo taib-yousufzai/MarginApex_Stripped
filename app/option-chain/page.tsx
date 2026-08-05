@@ -15,6 +15,7 @@ import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import './option-chain.css';
 import dynamic from 'next/dynamic';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
+import { ErrorModal } from '@/components/ErrorModal';
 
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 
@@ -206,6 +207,14 @@ function OptionChainContent() {
       setToast(t => ({ ...t, visible: false }));
     }, 3500);
   };
+
+  const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
+    window.addEventListener('order_error', handler);
+    return () => window.removeEventListener('order_error', handler);
+  }, []);
 
   // Normalization for MIDCAP
   const normalizedSymbol = symbol === 'MIDCAP' ? 'MIDCPNIFTY' : symbol;
@@ -925,6 +934,7 @@ function OptionChainContent() {
           )}
         </div>
       </div>
+      <ErrorModal error={errorModalMsg} onClose={() => setErrorModalMsg(null)} title="Order Failed" />
     </div>
   );
 }

@@ -91,11 +91,12 @@ describe('Admin Square-Off POST /api/admin/positions/[id]/sqoff', () => {
     // Verify RPC call arguments
     expect(mockRpc).toHaveBeenCalledTimes(1);
     const rpcArgs = mockRpc.mock.calls[0];
-    expect(rpcArgs[0]).toBe('close_position');
+    expect(rpcArgs[0]).toBe('close_position_v2');
     expect(rpcArgs[1]).toMatchObject({
       p_position_id: 'pos-123',
-      p_user_id: 'user-456',
-      p_closed_by: 'ADMIN_ACTION', // Tracking field
+      p_close_qty: 50,
+      p_close_price: 109.81, // 110 * (1 - 0.17/100) = 109.81
+      p_closed_by: 'ADMIN',
     });
   });
 });

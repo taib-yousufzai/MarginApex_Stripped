@@ -52,6 +52,32 @@ let mockDataResult: { data: unknown[]; error: null | { message: string }; count:
 let mockProfileResult: { data: unknown; error: null | { message: string } };
 
 const mockFrom = vi.fn();
+const mockRequireAdmin = vi.fn().mockImplementation(async (req: Request) => {
+  const auth = req?.headers?.get('Authorization');
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const token = auth.slice(7).trim();
+  if (token === 'invalid-token' || token === '') {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const userResult = await mockGetUser();
+  if (userResult.error || !userResult.data.user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const role = userResult.data.user.user_metadata?.role;
+  if (role !== 'admin' && role !== 'super_admin' && role !== 'broker') {
+    return Response.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  
+  const { createClient } = await import('@supabase/supabase-js');
+  const adminClient = createClient('https://test.supabase.co', 'key');
+  return { adminClient, callerUser: userResult.data.user };
+});
+
+vi.mock('../../../../_auth', () => ({
+  requireAdmin: (req: Request) => mockRequireAdmin(req),
+}));
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => ({
