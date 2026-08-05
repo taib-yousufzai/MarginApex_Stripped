@@ -68,6 +68,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const [toast, setToast] = useState<string | null>(null);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [qtyError, setQtyError] = useState<string | null>(null);
   const isExpired = useMemo(() => {
     if (!item?.expiry || exitMode || isModify) return false;
     const expiryDate = new Date(item.expiry);
@@ -317,12 +318,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
     userHasEditedQty.current = true;
     setQtyInput(val);
+    if (qtyError) setQtyError(null);
     const n = parseFloat(val);
     // Only update the committed qty when we have a real positive number
     if (!isNaN(n) && n > 0) setOrderQty(n);
   };
 
   const stepQty = (delta: number) => {
+    if (qtyError) setQtyError(null);
     const step = orderUnit === 'lot' ? 1 : 1;
     const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 0;
     const maxVal = maxOrderLot > 0
@@ -497,6 +500,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         if (maxOrderLot > 0) {
           const maxOrderQty = maxOrderLot * lotSize;
           if (rawQty > maxOrderQty) {
+            setQtyError(`Exceeds max limit of ${maxOrderLot} lots (${maxOrderQty} qty)`);
             showToast(`Order quantity exceeds the maximum limit of ${maxOrderLot} lots (${maxOrderQty} qty).`);
             return;
           }
@@ -1385,6 +1389,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     </button>
                   </div>
                   <div className="ts2-qty-hint">{orderUnit === 'lot' ? `${orderQty} Lots` : `${orderQty} Qty`}</div>
+                  {qtyError && (
+                    <div style={{ color: '#ef4444', fontSize: '0.68rem', fontWeight: 700, marginTop: '6px', textAlign: 'center' }}>
+                      {qtyError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Order Type */}
