@@ -134,14 +134,38 @@ export class TradeEngine {
       
       if (dbSegment === 'MCX-OPT') {
         // MCX options underlyings are MCX futures (e.g. CRUDEOIL, GOLD, SILVER)
-        // Try Redis cache for the nearest futures contract (populated during kiteInst resolution)
+        // Try Redis cache for the nearest futures contract
+        let cachedFut: string | null = null;
         try {
           const { getRedisClient } = require('@/lib/redis');
           const redisCl = getRedisClient();
-          const cachedFut = await redisCl.get(`nearest_fut_MCX_${u}`);
-          underlyingId = cachedFut ? `MCX:${cachedFut}` : `MCX:${u}`;
-        } catch {
-          underlyingId = `MCX:${u}`;
+          cachedFut = await redisCl.get(`nearest_fut_MCX_${u}`);
+        } catch {}
+
+        if (cachedFut) {
+          underlyingId = `MCX:${cachedFut}`;
+        } else {
+          // Fallback: Query the database for the active nearest futures contract
+          const { data: nearestFut } = await admin
+            .from('instruments')
+            .select('tradingsymbol')
+            .eq('name', u)
+            .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+            .gte('expiry', new Date().toISOString().split('T')[0])
+            .order('expiry', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (nearestFut?.tradingsymbol) {
+            underlyingId = `MCX:${nearestFut.tradingsymbol}`;
+            try {
+              const { getRedisClient } = require('@/lib/redis');
+              const redisCl = getRedisClient();
+              await redisCl.setex(`nearest_fut_MCX_${u}`, 3600, nearestFut.tradingsymbol);
+            } catch {}
+          } else {
+            underlyingId = `MCX:${u}`;
+          }
         }
       } else if (u === 'BANKNIFTY') underlyingId = 'NSE:NIFTY BANK';
       else if (u === 'FINNIFTY') underlyingId = 'NSE:NIFTY FIN SERVICE';
