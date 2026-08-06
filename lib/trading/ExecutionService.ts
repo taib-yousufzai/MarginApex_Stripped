@@ -44,6 +44,22 @@ export class ExecutionService {
       throw new Error('Order processing in progress. Please wait a second before placing another order.');
     }
 
+    // Redis Fast-Reject: Check cached balance before calling DB transaction
+    try {
+      const cachedBalance = await redis.get(`balance:${params.userId}`);
+      if (cachedBalance !== null) {
+        const balance = parseFloat(cachedBalance);
+        const totalRequired = params.requiredMargin + params.brokerage + params.bufferFee;
+        if (balance < totalRequired && !params.isExit) {
+          throw new Error(`Insufficient balance. Available: ₹${balance.toFixed(2)}, Required: ₹${totalRequired.toFixed(2)}`);
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('Insufficient balance')) {
+        throw err;
+      }
+    }
+
     let orderId: string;
 
     try {
@@ -139,13 +155,14 @@ export class ExecutionService {
       }
 
     } finally {
-      // Always release the lock and invalidate position cache
+      // Always release the lock and invalidate position and balance cache
       await redis.del(lockKey);
       try {
         await redis.del(
           `pos:${params.userId}:default`,
           `pos:${params.userId}:open`,
           `pos:${params.userId}:active`,
+          `balance:${params.userId}`,
         );
       } catch { /* non-critical */ }
     }

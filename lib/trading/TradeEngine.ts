@@ -180,6 +180,13 @@ export class TradeEngine {
     if (!profile) throw new Error('User profile not found.');
     if (!profile.active) throw new Error('Account is inactive');
 
+    // Cache the profile balance in Redis asynchronously with a 5-minute TTL for fast-reject
+    try {
+      const { getRedisClient } = require('@/lib/redis');
+      const redis = getRedisClient();
+      redis.set(`balance:${user.id}`, profile.balance.toString(), 'EX', 300).catch(() => {});
+    } catch {}
+
     // Database segments use format like 'NSE-EQ', 'MCX-FUT', 'CRYPTO'.
     // TradeEngine segmentId uses short codes: 'nse', 'mcx', 'crypto', etc.
     // Map each segmentId to the DB segment values that grant access to it.
