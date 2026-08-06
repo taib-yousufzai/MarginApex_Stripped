@@ -181,12 +181,12 @@ export async function POST(
 
     // Log action asynchronously
     if (carryBrokerageToCharge > 0) {
-      admin.from('act_logs').insert({
+      (async () => admin.from('act_logs').insert({
         user_id: user.id,
         action: 'BROKERAGE_DEDUCTION',
         reason: `Carry Brokerage charged on conversion to CARRY for ${pos.symbol} (Qty: ${pos.qty_open}) | Amount: ₹${carryBrokerageToCharge.toFixed(2)}`,
         ip_address: request.headers.get('x-forwarded-for') || '127.0.0.1'
-      }).catch(err => console.error('[Positions Convert API] Failed to log act_log:', err));
+      }))().catch(err => console.error('[Positions Convert API] Failed to log act_log:', err));
     }
 
     return NextResponse.json({ success: true, product_type }, { status: 200 });
