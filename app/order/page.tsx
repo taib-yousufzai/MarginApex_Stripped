@@ -110,35 +110,8 @@ export default function OrderPage() {
   const handleTradeAgain = (order: any) => {
     setIsSheetOpen(false);
     setSelectedOrder(null);
-    setTimeout(() => {
-      // Create a minimal TradingInstrument object for the TradeSheet
-      const instrument: TradingInstrument = {
-        name: order.symbol,
-        symbol: order.symbol,
-        kiteSymbol: order.kite_instrument || order.symbol,
-        segment: order.segment,
-        feed: 'kite', // Default feed
-        expiry: '', // Not needed for orders
-        price: order.fill_price || 0,
-        change: '', // Not needed for orders
-        open: 0,
-        high: 0,
-        low: 0,
-        close: 0,
-      };
-
-      setTradeSheetItem(instrument);
-      setTradeSheetSide('BOTH');
-      setTradeSheetInitialOrder({
-        qty: order.qty,
-        order_type: order.order_type,
-        product_type: order.product_type,
-        client_price: order.client_price || order.fill_price,
-        trigger_price: order.trigger_price,
-        stop_loss: order.stop_loss,
-        target: order.target,
-      });
-    }, 80);
+    const symbol = order.symbol;
+    router.push(`/watchlist?symbol=${encodeURIComponent(symbol)}&action=detail`);
   };
 
   const openOrders = orders.filter(o => o.status === 'PENDING');
