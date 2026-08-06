@@ -12,33 +12,56 @@ const supabase = createClient(
  * Resolve a symbol to an instrument_token.
  * Runs strategies in parallel for speed.
  */
-async function resolveInstrumentToken(symbol: string): Promise<number | null> {
+interface ResolvedInstrument {
+  token: number;
+  /** The canonical DB id (e.g. "NSE:NIFTY 50"). Equals the input symbol when we can't determine it. */
+  canonicalId: string;
+}
+
+async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | null> {
   const redis = getRedisClient();
   const cacheKey = `instrument_token:${symbol}`;
   
   if (!isRedisMock()) {
     try {
       const cached = await redis.get(cacheKey);
-      if (cached) return parseInt(cached, 10);
+      if (cached) {
+        // Cached value may be "token" or "token|canonicalId"
+        const parts = cached.split('|');
+        return { token: parseInt(parts[0], 10), canonicalId: parts[1] ?? symbol };
+      }
     } catch (e) {
       console.error('Redis cache error for instrument token:', e);
     }
   }
 
+  const save = async (token: number, canonicalId: string): Promise<ResolvedInstrument> => {
+    if (!isRedisMock()) {
+      try {
+        await redis.setex(cacheKey, 86400, `${token}|${canonicalId}`);
+      } catch (e) {
+        console.error('Redis cache set error for instrument token:', e);
+      }
+    }
+    return { token, canonicalId };
+  };
+
   // Fast path: symbol contains ':' (e.g. "NFO:NIFTY2661623700CE") — exact id match
+  // We already know the canonical ID; no reverse lookup needed.
   if (symbol.includes(':')) {
     const { data } = await supabase
       .from('instruments')
       .select('instrument_token')
       .eq('id', symbol)
       .single();
-    if (data?.instrument_token) return data.instrument_token;
+    if (data?.instrument_token) return save(data.instrument_token, symbol);
   }
 
   const cleanSymbol = (symbol.includes(':') ? symbol.split(':')[1] : symbol).replace(/\//g, '');
   const upperSymbol = cleanSymbol.toUpperCase().trim();
 
   // Handle index shortcuts (e.g. NIFTY, BANKNIFTY)
+  // The mapped canonical ID is known statically — zero extra DB round-trip.
   const baseIndices: Record<string, string> = {
     'NIFTY': 'NSE:NIFTY 50',
     'NIFTY 50': 'NSE:NIFTY 50',
@@ -55,7 +78,7 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
       .select('instrument_token')
       .eq('id', resolvedSymbol)
       .single();
-    if (data?.instrument_token) return data.instrument_token;
+    if (data?.instrument_token) return save(data.instrument_token, resolvedSymbol);
   }
 
   // Handle base commodity and currency shortcuts to resolve to active front-month contracts
@@ -70,7 +93,7 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
       
       const { data } = await supabase
         .from('instruments')
-        .select('instrument_token')
+        .select('instrument_token, tradingsymbol')
         .eq('name', matchedCommodity)
         .eq('exchange', exchange)
         .in('instrument_type', instrumentTypes)
@@ -80,46 +103,48 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
         .maybeSingle();
         
       if (data?.instrument_token) {
-        return data.instrument_token;
+        const canonicalId = `${exchange}:${data.tradingsymbol}`;
+        return save(data.instrument_token, canonicalId);
       }
     }
   }
 
-  // Slow path: short symbol like "GOLD_FUT" — run ALL strategies in parallel
+  // Slow path: short symbol — run ALL strategies in parallel
   const exchanges = ['NSE', 'NFO', 'MCX', 'BSE', 'BFO', 'CDS'];
   const hasUnderscore = symbol.includes('_');
   const baseName = hasUnderscore ? symbol.split('_')[0] : symbol;
 
-  // Build all queries to run in parallel
-  const queries: PromiseLike<number | null>[] = [];
+  const queries: PromiseLike<{ token: number; canonicalId: string } | null>[] = [];
 
   // Strategy 1: Exact id match
   queries.push(
     supabase.from('instruments').select('instrument_token').eq('id', symbol).single()
-      .then(r => r.data?.instrument_token ?? null)
+      .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: symbol } : null)
   );
 
   // Strategy 2: tradingsymbol match
   queries.push(
-    supabase.from('instruments').select('instrument_token').eq('tradingsymbol', symbol).limit(1).single()
-      .then(r => r.data?.instrument_token ?? null)
+    supabase.from('instruments').select('instrument_token, exchange, tradingsymbol').eq('tradingsymbol', symbol).limit(1).single()
+      .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: `${r.data.exchange}:${r.data.tradingsymbol}` } : null)
   );
 
   // Strategy 3: Exchange prefix matches (all in parallel)
   for (const exchange of exchanges) {
+    const prefixed = `${exchange}:${symbol}`;
     queries.push(
-      supabase.from('instruments').select('instrument_token').eq('id', `${exchange}:${symbol}`).single()
-        .then(r => r.data?.instrument_token ?? null)
+      supabase.from('instruments').select('instrument_token').eq('id', prefixed).single()
+        .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: prefixed } : null)
     );
   }
 
   // Strategy 4a: Mapped continuous contracts (for underscored symbols)
   if (hasUnderscore) {
     for (const exchange of exchanges) {
+      const prefixed = `${exchange}:${baseName}`;
       queries.push(
         supabase.from('instruments').select('instrument_token')
-          .eq('id', `${exchange}:${baseName}`).eq('instrument_type', 'MAPPED_FUT').single()
-          .then(r => r.data?.instrument_token ?? null)
+          .eq('id', prefixed).eq('instrument_type', 'MAPPED_FUT').single()
+          .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: prefixed } : null)
       );
     }
   }
@@ -128,31 +153,22 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
   if (hasUnderscore) {
     const fuzzyPattern = symbol.replace(/_/g, '%');
     queries.push(
-      supabase.from('instruments').select('instrument_token, instrument_type')
+      supabase.from('instruments').select('instrument_token, instrument_type, exchange, tradingsymbol')
         .ilike('tradingsymbol', fuzzyPattern).in('exchange', exchanges)
         .order('instrument_type', { ascending: true }).limit(5)
         .then(r => {
           if (!r.data?.length) return null;
           const mapped = r.data.find((m: any) => m.instrument_type === 'MAPPED_FUT');
-          return (mapped || r.data[0]).instrument_token;
+          const row = mapped || r.data[0];
+          return { token: row.instrument_token, canonicalId: `${row.exchange}:${row.tradingsymbol}` };
         })
     );
   }
 
-  // Run all queries in parallel, return first non-null result
-  // Priority: exact > tradingsymbol > prefix > mapped > fuzzy
   const results = await Promise.all(queries);
-  const token = results.find(r => r !== null) ?? null;
-  
-  if (token && !isRedisMock()) {
-      try {
-          // Cache for 24 hours
-          await redis.setex(cacheKey, 86400, token.toString());
-      } catch (e) {
-          console.error('Redis cache set error for instrument token:', e);
-      }
-  }
-  return token;
+  const resolved = results.find(r => r !== null) ?? null;
+  if (resolved) return save(resolved.token, resolved.canonicalId);
+  return null;
 }
 
 export async function GET(request: Request) {
@@ -196,33 +212,21 @@ export async function GET(request: Request) {
     const to = toVal;
 
     // Run session fetch and symbol resolution in PARALLEL (they're independent)
-    const [session, instrumentToken] = await Promise.all([
+    const [session, resolved] = await Promise.all([
       getSharedKiteSession(),
-      resolveInstrumentToken(symbol)
+      resolveInstrument(symbol)
     ]);
 
     if (!session) {
       return NextResponse.json({ error: 'No active Kite session found' }, { status: 401 });
     }
-    if (!instrumentToken) {
+    if (!resolved) {
       return NextResponse.json({ error: `Instrument not found for symbol: ${symbol}` }, { status: 404 });
     }
 
-    // Resolve the canonical symbol ID (e.g. exchange:tradingsymbol) from the database
-    let canonicalSymbol = symbol;
-    try {
-      const { data: inst } = await supabase
-        .from('instruments')
-        .select('id')
-        .eq('instrument_token', instrumentToken)
-        .limit(1)
-        .maybeSingle();
-      if (inst?.id) {
-        canonicalSymbol = inst.id;
-      }
-    } catch (e) {
-      console.error('Failed to resolve canonical symbol ID:', e);
-    }
+    const instrumentToken = resolved.token;
+    // canonicalId comes directly from resolution — no extra round-trip needed.
+    const canonicalSymbol = resolved.canonicalId;
 
     const redis = getRedisClient();
     const cacheKey = `historical:${instrumentToken}:${interval}:${from}:${to}`;
