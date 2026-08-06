@@ -142,6 +142,27 @@ class ConfigurationServiceClass {
     return config;
   }
 
+  constructor() {
+    this.initPubSubListener();
+  }
+
+  private async initPubSubListener() {
+    try {
+      const { createRedisPubSubClient, isRedisMock } = require('@/lib/redis');
+      if (isRedisMock()) return;
+
+      const pubsub = createRedisPubSubClient();
+      pubsub.subscribe('config:invalidate');
+      pubsub.on('message', (channel: string) => {
+        if (channel === 'config:invalidate') {
+          this.clearCache();
+        }
+      });
+    } catch (err) {
+      console.warn('[ConfigurationService] Failed to initialize Pub/Sub invalidation listener:', err);
+    }
+  }
+
   /**
    * Optional: Clear cache if an admin pushes an update.
    */
