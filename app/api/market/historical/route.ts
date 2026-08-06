@@ -60,24 +60,28 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
 
   // Handle base commodity and currency shortcuts to resolve to active front-month contracts
   const baseCommodities = ['GOLD', 'CRUDEOIL', 'SILVER', 'NATURALGAS', 'USDINR'];
-  if (baseCommodities.includes(upperSymbol)) {
-    const isCurrency = upperSymbol === 'USDINR';
-    const exchange = isCurrency ? 'CDS' : 'MCX';
-    const instrumentTypes = isCurrency ? ['FUT'] : ['FUTCOM', 'FUT', 'MAPPED_FUT'];
-    
-    const { data } = await supabase
-      .from('instruments')
-      .select('instrument_token')
-      .eq('name', upperSymbol)
-      .eq('exchange', exchange)
-      .in('instrument_type', instrumentTypes)
-      .gte('expiry', new Date().toISOString().split('T')[0])
-      .order('expiry', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+  const isOption = upperSymbol.endsWith('CE') || upperSymbol.endsWith('PE');
+  if (!isOption) {
+    const matchedCommodity = baseCommodities.find(c => upperSymbol.includes(c));
+    if (matchedCommodity) {
+      const isCurrency = matchedCommodity === 'USDINR';
+      const exchange = isCurrency ? 'CDS' : 'MCX';
+      const instrumentTypes = isCurrency ? ['FUT'] : ['FUTCOM', 'FUT', 'MAPPED_FUT'];
       
-    if (data?.instrument_token) {
-      return data.instrument_token;
+      const { data } = await supabase
+        .from('instruments')
+        .select('instrument_token')
+        .eq('name', matchedCommodity)
+        .eq('exchange', exchange)
+        .in('instrument_type', instrumentTypes)
+        .gte('expiry', new Date().toISOString().split('T')[0])
+        .order('expiry', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+        
+      if (data?.instrument_token) {
+        return data.instrument_token;
+      }
     }
   }
 
