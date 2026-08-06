@@ -946,6 +946,7 @@ function WatchlistContent() {
 
   // Handle deep linking from other screens (e.g. Home)
   const deepLinkSymbol = searchParams.get('symbol');
+  const deepLinkAction = searchParams.get('action');
   useEffect(() => {
     if (!deepLinkSymbol || !hasLoaded) return;
     // Only process the deep-link once — re-running on every watchlistItems change
@@ -1028,7 +1029,7 @@ function WatchlistContent() {
 
       const timer = setTimeout(() => {
         const dashboardBenchmarks = ['NIFTY 50', 'SENSEX', 'BANK NIFTY', 'USD/INR', 'CRUDE OIL', 'GOLD', 'SILVER', 'NAT GAS'];
-        if (dashboardBenchmarks.includes(deepLinkSymbol)) {
+        if (dashboardBenchmarks.includes(deepLinkSymbol) && deepLinkAction !== 'detail') {
           setChartItem(item!);
           setIsBenchmarkChart(true);
           const chartSheet = document.getElementById('chartSheet');
@@ -1043,7 +1044,7 @@ function WatchlistContent() {
     };
 
     return tryOpen(watchlistItemsRef.current);
-  }, [deepLinkSymbol, hasLoaded]);
+  }, [deepLinkSymbol, deepLinkAction, hasLoaded]);
 
   useEffect(() => {
     if (allowedSegments === null) return; // Wait until session/allowedSegments are resolved to avoid premature loading/defaulting

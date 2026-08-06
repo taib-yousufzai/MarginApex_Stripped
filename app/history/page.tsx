@@ -363,7 +363,7 @@ export default function HistoryPage() {
                       const pnlPercent = item.entryPrice ? ((item.pnl / (item.entryPrice * item.qty)) * 100).toFixed(2) : "0.00";
 
                       return (
-                        <div key={item.id} className="history-card" style={{ cursor: 'pointer' }} onClick={() => router.push(`/watchlist?symbol=${encodeURIComponent(item.scriptName)}`)}>
+                        <div key={item.id} className="history-card" style={{ cursor: 'pointer' }} onClick={() => router.push(`/watchlist?symbol=${encodeURIComponent(item.scriptName)}&action=detail`)}>
                           <div className="history-card-header">
                             <div className="script-info">
                               <span className="script-name">{item.scriptName}</span>
