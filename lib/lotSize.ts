@@ -26,7 +26,7 @@ const FALLBACK_LOT_SIZES: Record<string, number> = {
   MIDCPNIFTY:  120,
   MIDCP:       120,
   MIDCAP:      120,
-  NIFTY:       25,
+  NIFTY:       65,
   SENSEX:      20,
   GOLD:        100,
   GOLDM:       10,
