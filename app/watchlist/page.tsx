@@ -1024,8 +1024,9 @@ function WatchlistContent() {
             if (masterFound) break;
           }
         }
+      }
 
-        if (masterFound) {
+      if (masterFound) {
           item = { ...masterFound };
         } else {
           item = {

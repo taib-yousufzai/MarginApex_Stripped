@@ -1011,7 +1011,8 @@ export default function PositionPage() {
                                 </svg>
                               </button>
                             </div>
-                          )}
+                          </>
+                        )}
                         </div>
                       ))
                     ) : (
@@ -1198,12 +1199,13 @@ export default function PositionPage() {
                                   </svg>
                                 </button>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      closedPositions.length === 0 ? (
+                            </>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    closedPositions.length === 0 ? (
                         <div className="pos-empty">
                           <i className="fas fa-history" />
                           <p>No closed positions</p>
