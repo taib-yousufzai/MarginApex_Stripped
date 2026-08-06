@@ -166,13 +166,7 @@ export class TradeEngine {
         }
         const instrumentsToFetch = [kiteInst];
         if (isOption && underlyingId !== kiteInst) instrumentsToFetch.push(underlyingId);
-        
-        const fallbackPrices: Record<string, number> = {};
-        if (client_price) {
-          fallbackPrices[kiteInst] = client_price;
-          if (underlyingId) fallbackPrices[underlyingId] = client_price;
-        }
-        return fetchSpeedQuotes(instrumentsToFetch, fallbackPrices);
+        return fetchSpeedQuotes(instrumentsToFetch);
       })()
     ]);
 
@@ -327,7 +321,14 @@ export class TradeEngine {
     let kiteAsk = quotesMap[`${kiteInst}_ask`] || kiteLtp;
 
     if (!kiteLtp || kiteLtp <= 0) {
-      throw new Error('Could not determine market price. Try again.');
+      throw new Error('Market data unavailable. Execution rejected.');
+    }
+
+    if (isOption) {
+      const underlyingPrice = quotesMap[underlyingId];
+      if (!underlyingPrice || underlyingPrice <= 0) {
+        throw new Error('Underlying market data unavailable. Option execution rejected.');
+      }
     }
 
     const clientPriceNum = client_price || 0;

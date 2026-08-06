@@ -1,5 +1,6 @@
 import { getAdminClient } from '@/lib/adminClient';
 import { getSharedKiteSession } from '@/lib/kiteSession';
+import { telemetry } from '@/lib/metrics';
 
 export async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 250): Promise<Response> {
   const controller = new AbortController();
@@ -260,11 +261,13 @@ export function fetchKiteQuotes(instruments: string[]): Promise<Record<string, n
 }
 
 export async function fetchSpeedQuotes(
-  instruments: string[],
-  fallbackPrices: Record<string, number>
+  instruments: string[]
 ): Promise<Record<string, number>> {
   const result: Record<string, number> = {};
   if (instruments.length === 0) return result;
+
+  let redisHits = 0;
+  let daemonHits = 0;
 
   try {
     const { getRedisClient } = require('@/lib/redis');
@@ -284,6 +287,7 @@ export async function fetchSpeedQuotes(
               result[`${inst}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${inst}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
               foundKiteIds.add(inst);
+              redisHits++;
             }
           } catch {}
         }
@@ -308,6 +312,7 @@ export async function fetchSpeedQuotes(
               result[`${key}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${key}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
               foundKiteIds.add(key);
+              daemonHits++;
             }
           }
         }
@@ -316,26 +321,18 @@ export async function fetchSpeedQuotes(
       }
     }
 
-    // 3. Fallback to client-submitted LTP/prices
-    instruments.forEach(inst => {
-      if (!foundKiteIds.has(inst)) {
-        const fallback = fallbackPrices[inst] || fallbackPrices[inst.split(':').pop() || ''] || 0;
-        result[inst] = fallback;
-        result[`${inst}_bid`] = fallback;
-        result[`${inst}_ask`] = fallback;
-      }
-    });
+    // 3. Telemetry and warnings on misses
+    const misses = instruments.length - (redisHits + daemonHits);
+    if (misses > 0) {
+      const missingSymbols = instruments.filter(id => !foundKiteIds.has(id));
+      console.warn(`[fetchSpeedQuotes] Cache miss for instruments: ${missingSymbols.join(', ')}`);
+    }
 
+    telemetry.recordQuoteLookup(redisHits, daemonHits, misses);
     return result;
   } catch (err) {
     console.error('[fetchSpeedQuotes] Error:', err);
-    // Absolute fallback
-    instruments.forEach(inst => {
-      const fallback = fallbackPrices[inst] || fallbackPrices[inst.split(':').pop() || ''] || 0;
-      result[inst] = fallback;
-      result[`${inst}_bid`] = fallback;
-      result[`${inst}_ask`] = fallback;
-    });
+    telemetry.recordQuoteLookup(0, 0, instruments.length);
     return result;
   }
 }

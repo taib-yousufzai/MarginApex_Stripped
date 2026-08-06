@@ -16,6 +16,12 @@ class TelemetryRegistry {
   public ticks_received_total = 0;
   public ticks_processed_total = 0;
   public tick_processing_latency_ms: number[] = [];
+  
+  // Quote cache hit rate tracking
+  public quote_lookups_total = 0;
+  public quote_redis_hits = 0;
+  public quote_daemon_hits = 0;
+  public quote_misses = 0;
 
   // Matching Engine
   public orders_evaluated_total = 0;
@@ -68,6 +74,13 @@ class TelemetryRegistry {
 
   public recordTickReceived(count = 1) {
     this.ticks_received_total += count;
+  }
+
+  public recordQuoteLookup(redisHits: number, daemonHits: number, misses: number) {
+    this.quote_lookups_total += (redisHits + daemonHits + misses);
+    this.quote_redis_hits += redisHits;
+    this.quote_daemon_hits += daemonHits;
+    this.quote_misses += misses;
   }
 
   public recordTickProcessed(count = 1, latencyMs = 0) {
@@ -214,6 +227,10 @@ class TelemetryRegistry {
         ticksReceived: this.ticks_received_total,
         ticksProcessed: this.ticks_processed_total,
         avgProcessingLatencyMs: this.average(this.tick_processing_latency_ms),
+        quoteLookupsTotal: this.quote_lookups_total,
+        quoteRedisHits: this.quote_redis_hits,
+        quoteDaemonHits: this.quote_daemon_hits,
+        quoteMisses: this.quote_misses,
       },
       matchingEngine: {
         ordersEvaluated: this.orders_evaluated_total,
