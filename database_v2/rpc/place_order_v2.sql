@@ -88,7 +88,28 @@ BEGIN
 
     -- STEP 3: ROUTE INTO POSITION ENGINE (Only if immediate execution)
     IF p_status = 'EXECUTED' THEN
-        -- Find if an open position exists for this symbol
+        -- Validate exit order constraints
+        IF p_is_exit THEN
+            SELECT side, COALESCE(SUM(qty_open), 0)
+            INTO v_pos_side, v_pos_qty_open
+            FROM public.positions
+            WHERE user_id = p_user_id AND symbol = p_symbol AND status = 'open'
+            GROUP BY side;
+
+            IF NOT FOUND OR v_pos_qty_open <= 0 THEN
+                RAISE EXCEPTION 'No open position exists to exit.';
+            END IF;
+
+            IF v_pos_side = p_side THEN
+                RAISE EXCEPTION 'Exit order side (%) must be opposite of open position side (%).', p_side, v_pos_side;
+            END IF;
+
+            IF p_qty > v_pos_qty_open THEN
+                RAISE EXCEPTION 'Exit quantity (%) exceeds total open position quantity (%).', p_qty, v_pos_qty_open;
+            END IF;
+        END IF;
+
+        -- Find if an open position exists for this symbol (re-fetch single lot for routing)
         SELECT id, qty_open, side
         INTO v_position_id, v_pos_qty_open, v_pos_side
         FROM public.positions
