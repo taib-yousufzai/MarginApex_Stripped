@@ -17,7 +17,7 @@ const supabase = createClient(
  * Returns both in one call so the caller avoids a serial reverse-lookup.
  * Result is cached in Redis for 24 h.
  */
-async function resolveInstrument(symbol: string): Promise<{ token: number; canonicalId: string } | null> {
+export async function resolveInstrument(symbol: string): Promise<{ token: number; canonicalId: string } | null> {
   const redis = getRedisClient();
   const cacheKey = `instrument_v2:${symbol}`;
 
