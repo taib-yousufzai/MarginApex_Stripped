@@ -33,6 +33,7 @@ DECLARE
     
     v_lot_size numeric;
     v_lots numeric;
+    v_order_exists boolean := false;
 BEGIN
     -- ISOLATE V1 TRIGGERS (Strangler Fig)
     PERFORM set_config('app.is_v2', 'true', true);
@@ -121,14 +122,31 @@ BEGIN
     v_lots := p_close_qty / v_lot_size;
 
     -- STEP 5: Record the Exit Order Transaction
-    INSERT INTO public.orders (
-        user_id, symbol, kite_instrument, segment, side, status, qty, lots,
-        price, fill_price, ltp_at_entry, order_type, product_type, info, is_exit, idempotency_key
-    )
-    VALUES (
-        v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'NSE-EQ'), v_exit_side, 'EXECUTED', p_close_qty, v_lots,
-        p_close_price, p_close_price, p_close_price, 'MARKET', COALESCE(v_product_type, 'INTRADAY'), p_position_id::text, true, p_idempotency_key
-    );
+    v_order_exists := false;
+    IF p_idempotency_key IS NOT NULL THEN
+        IF position('_' in p_idempotency_key) > 0 THEN
+            SELECT EXISTS (
+                SELECT 1 FROM public.orders 
+                WHERE user_id = v_user_id AND idempotency_key = split_part(p_idempotency_key, '_', 1)
+            ) INTO v_order_exists;
+        ELSE
+            SELECT EXISTS (
+                SELECT 1 FROM public.orders 
+                WHERE user_id = v_user_id AND idempotency_key = p_idempotency_key
+            ) INTO v_order_exists;
+        END IF;
+    END IF;
+
+    IF NOT v_order_exists THEN
+        INSERT INTO public.orders (
+            user_id, symbol, kite_instrument, segment, side, status, qty, lots,
+            price, fill_price, ltp_at_entry, order_type, product_type, info, is_exit, idempotency_key
+        )
+        VALUES (
+            v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'NSE-EQ'), v_exit_side, 'EXECUTED', p_close_qty, v_lots,
+            p_close_price, p_close_price, p_close_price, 'MARKET', COALESCE(v_product_type, 'INTRADAY'), p_position_id::text, true, p_idempotency_key
+        );
+    END IF;
 
     -- STEP 6: Write to Ledger
     -- Brokerage
