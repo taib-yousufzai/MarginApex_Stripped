@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import { useKitePositions } from '@/hooks/useKitePositions';
@@ -16,6 +17,7 @@ const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: f
 
 export default function OrderPage() {
   useAuth();
+  const router = useRouter();
   const [tab, setTab] = useState<'open' | 'closed'>('open');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
@@ -108,21 +110,7 @@ export default function OrderPage() {
   const handleTradeAgain = (order: any) => {
     setIsSheetOpen(false);
     setSelectedOrder(null);
-    setTimeout(() => {
-      setTradeSheetSide('BOTH');
-      setTradeSheetItem({
-        name: order.symbol,
-        symbol: order.symbol,
-        kiteSymbol: order.kite_instrument,
-        segment: order.segment,
-        price: order.fill_price || 0,
-      });
-      setTradeSheetInitialOrder({
-        qty: order.qty,
-        order_type: order.order_type,
-        product_type: order.product_type,
-      });
-    }, 80);
+    router.push(`/watchlist?symbol=${encodeURIComponent(order.symbol)}&action=detail`);
   };
 
   const openOrders = orders.filter(o => o.status === 'PENDING');
