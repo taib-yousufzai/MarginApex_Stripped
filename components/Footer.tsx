@@ -231,14 +231,14 @@ const Footer: React.FC<FooterProps> = ({ activeTab, hideDrawer = false, position
                 </div>
                 <div className="summary-item">
                   <span className="summary-label">Free Margin</span>
-                  <span className={`summary-value ${freeMargin >= 0 ? '' : 'negative'}`}>
-                    <TickFlash value={freeMargin}>{freeMargin < 0 ? '-' : ''}₹{fmt(freeMargin)}</TickFlash>
+                  <span className={`summary-value ${freeMargin >= 0 ? '' : 'negative'}`} suppressHydrationWarning>
+                    <TickFlash value={freeMargin} suppressHydrationWarning>{freeMargin < 0 ? '-' : ''}₹{fmt(freeMargin)}</TickFlash>
                   </span>
                 </div>
                 <div className="summary-item">
                   <span className="summary-label">Floating P/L</span>
-                  <span className={`summary-value ${floatingPnl >= 0 ? 'pnl-green' : 'negative'}`}>
-                    <TickFlash value={floatingPnl}>{floatingPnl >= 0 ? '+' : '-'}₹{fmt(floatingPnl)}</TickFlash>
+                  <span className={`summary-value ${floatingPnl >= 0 ? 'pnl-green' : 'negative'}`} suppressHydrationWarning>
+                    <TickFlash value={floatingPnl} suppressHydrationWarning>{floatingPnl >= 0 ? '+' : '-'}₹{fmt(floatingPnl)}</TickFlash>
                   </span>
                 </div>
                 <div className="summary-item">
