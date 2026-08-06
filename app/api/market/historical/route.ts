@@ -12,143 +12,98 @@ const supabase = createClient(
  * Resolve a symbol to an instrument_token.
  * Runs strategies in parallel for speed.
  */
-async function resolveInstrumentToken(symbol: string): Promise<number | null> {
+/**
+ * Resolve a symbol to { token, canonicalId }.
+ * Returns both in one call so the caller avoids a serial reverse-lookup.
+ * Result is cached in Redis for 24 h.
+ */
+async function resolveInstrument(symbol: string): Promise<{ token: number; canonicalId: string } | null> {
   const redis = getRedisClient();
-  const cacheKey = `instrument_token:${symbol}`;
-  
+  const cacheKey = `instrument_v2:${symbol}`;
+
   if (!isRedisMock()) {
     try {
       const cached = await redis.get(cacheKey);
-      if (cached) return parseInt(cached, 10);
-    } catch (e) {
-      console.error('Redis cache error for instrument token:', e);
-    }
+      if (cached) return JSON.parse(cached);
+    } catch {}
   }
 
-  // Fast path: symbol contains ':' (e.g. "NFO:NIFTY2661623700CE") — exact id match
+  const select = 'id, instrument_token';
+  const toResult = (data: any) => data?.instrument_token ? { token: data.instrument_token as number, canonicalId: data.id as string } : null;
+
+  // Fast path: fully-qualified id (e.g. "NFO:NIFTY2661623700CE")
   if (symbol.includes(':')) {
-    const { data } = await supabase
-      .from('instruments')
-      .select('instrument_token')
-      .eq('id', symbol)
-      .single();
-    if (data?.instrument_token) return data.instrument_token;
+    const { data } = await supabase.from('instruments').select(select).eq('id', symbol).single();
+    const r = toResult(data);
+    if (r) { await cacheResult(redis, cacheKey, r); return r; }
   }
 
   const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
   const upperSymbol = cleanSymbol.toUpperCase().trim();
 
-  // Handle index shortcuts (e.g. NIFTY, BANKNIFTY)
+  // Index shortcuts
   const baseIndices: Record<string, string> = {
-    'NIFTY': 'NSE:NIFTY 50',
-    'NIFTY 50': 'NSE:NIFTY 50',
-    'BANKNIFTY': 'NSE:NIFTY BANK',
-    'NIFTY BANK': 'NSE:NIFTY BANK',
+    'NIFTY': 'NSE:NIFTY 50', 'NIFTY 50': 'NSE:NIFTY 50',
+    'BANKNIFTY': 'NSE:NIFTY BANK', 'NIFTY BANK': 'NSE:NIFTY BANK',
     'FINNIFTY': 'NSE:NIFTY FIN SERVICE',
-    'SENSEX': 'BSE:SENSEX',
-    'BANKEX': 'BSE:BANKEX',
+    'SENSEX': 'BSE:SENSEX', 'BANKEX': 'BSE:BANKEX',
   };
   if (baseIndices[upperSymbol]) {
-    const resolvedSymbol = baseIndices[upperSymbol];
-    const { data } = await supabase
-      .from('instruments')
-      .select('instrument_token')
-      .eq('id', resolvedSymbol)
-      .single();
-    if (data?.instrument_token) return data.instrument_token;
+    const { data } = await supabase.from('instruments').select(select).eq('id', baseIndices[upperSymbol]).single();
+    const r = toResult(data);
+    if (r) { await cacheResult(redis, cacheKey, r); return r; }
   }
 
-  // Handle base commodity and currency shortcuts to resolve to active front-month contracts
+  // Commodity/currency front-month
   const baseCommodities = ['GOLD', 'CRUDEOIL', 'SILVER', 'NATURALGAS', 'USDINR'];
   if (baseCommodities.includes(upperSymbol)) {
     const isCurrency = upperSymbol === 'USDINR';
     const exchange = isCurrency ? 'CDS' : 'MCX';
     const instrumentTypes = isCurrency ? ['FUT'] : ['FUTCOM', 'FUT', 'MAPPED_FUT'];
-    
-    const { data } = await supabase
-      .from('instruments')
-      .select('instrument_token')
-      .eq('name', upperSymbol)
-      .eq('exchange', exchange)
-      .in('instrument_type', instrumentTypes)
+    const { data } = await supabase.from('instruments').select(select)
+      .eq('name', upperSymbol).eq('exchange', exchange).in('instrument_type', instrumentTypes)
       .gte('expiry', new Date().toISOString().split('T')[0])
-      .order('expiry', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-      
-    if (data?.instrument_token) {
-      return data.instrument_token;
-    }
+      .order('expiry', { ascending: true }).limit(1).maybeSingle();
+    const r = toResult(data);
+    if (r) { await cacheResult(redis, cacheKey, r); return r; }
   }
 
-  // Slow path: short symbol like "GOLD_FUT" — run ALL strategies in parallel
+  // Slow path: fire strategies in parallel
   const exchanges = ['NSE', 'NFO', 'MCX', 'BSE', 'BFO', 'CDS'];
   const hasUnderscore = symbol.includes('_');
   const baseName = hasUnderscore ? symbol.split('_')[0] : symbol;
 
-  // Build all queries to run in parallel
-  const queries: PromiseLike<number | null>[] = [];
-
-  // Strategy 1: Exact id match
-  queries.push(
-    supabase.from('instruments').select('instrument_token').eq('id', symbol).single()
-      .then(r => r.data?.instrument_token ?? null)
-  );
-
-  // Strategy 2: tradingsymbol match
-  queries.push(
-    supabase.from('instruments').select('instrument_token').eq('tradingsymbol', symbol).limit(1).single()
-      .then(r => r.data?.instrument_token ?? null)
-  );
-
-  // Strategy 3: Exchange prefix matches (all in parallel)
-  for (const exchange of exchanges) {
-    queries.push(
-      supabase.from('instruments').select('instrument_token').eq('id', `${exchange}:${symbol}`).single()
-        .then(r => r.data?.instrument_token ?? null)
-    );
-  }
-
-  // Strategy 4a: Mapped continuous contracts (for underscored symbols)
+  const queries: PromiseLike<{ token: number; canonicalId: string } | null>[] = [
+    supabase.from('instruments').select(select).eq('id', symbol).single().then(r => toResult(r.data)),
+    supabase.from('instruments').select(select).eq('tradingsymbol', symbol).limit(1).single().then(r => toResult(r.data)),
+    ...exchanges.map(ex => supabase.from('instruments').select(select).eq('id', `${ex}:${symbol}`).single().then(r => toResult(r.data))),
+  ];
   if (hasUnderscore) {
-    for (const exchange of exchanges) {
-      queries.push(
-        supabase.from('instruments').select('instrument_token')
-          .eq('id', `${exchange}:${baseName}`).eq('instrument_type', 'MAPPED_FUT').single()
-          .then(r => r.data?.instrument_token ?? null)
-      );
-    }
-  }
-
-  // Strategy 4b: Fuzzy tradingsymbol match (for underscored symbols)
-  if (hasUnderscore) {
-    const fuzzyPattern = symbol.replace(/_/g, '%');
+    queries.push(...exchanges.map(ex =>
+      supabase.from('instruments').select(select).eq('id', `${ex}:${baseName}`).eq('instrument_type', 'MAPPED_FUT').single().then(r => toResult(r.data))
+    ));
     queries.push(
-      supabase.from('instruments').select('instrument_token, instrument_type')
-        .ilike('tradingsymbol', fuzzyPattern).in('exchange', exchanges)
+      supabase.from('instruments').select(select + ', instrument_type')
+        .ilike('tradingsymbol', symbol.replace(/_/g, '%')).in('exchange', exchanges)
         .order('instrument_type', { ascending: true }).limit(5)
         .then(r => {
           if (!r.data?.length) return null;
           const mapped = r.data.find((m: any) => m.instrument_type === 'MAPPED_FUT');
-          return (mapped || r.data[0]).instrument_token;
+          return toResult(mapped || r.data[0]);
         })
     );
   }
 
-  // Run all queries in parallel, return first non-null result
-  // Priority: exact > tradingsymbol > prefix > mapped > fuzzy
   const results = await Promise.all(queries);
-  const token = results.find(r => r !== null) ?? null;
-  
-  if (token && !isRedisMock()) {
-      try {
-          // Cache for 24 hours
-          await redis.setex(cacheKey, 86400, token.toString());
-      } catch (e) {
-          console.error('Redis cache set error for instrument token:', e);
-      }
+  const found = results.find(r => r !== null) ?? null;
+  if (found) await cacheResult(redis, cacheKey, found);
+  return found;
+}
+
+async function cacheResult(redis: any, key: string, value: any) {
+  if (!isRedisMock()) {
+    try { await redis.setex(key, 86400, JSON.stringify(value)); } catch {}
   }
-  return token;
 }
 
 export async function GET(request: Request) {
@@ -192,33 +147,20 @@ export async function GET(request: Request) {
     const to = toVal;
 
     // Run session fetch and symbol resolution in PARALLEL (they're independent)
-    const [session, instrumentToken] = await Promise.all([
+    const [session, instrument] = await Promise.all([
       getSharedKiteSession(),
-      resolveInstrumentToken(symbol)
+      resolveInstrument(symbol)
     ]);
 
     if (!session) {
       return NextResponse.json({ error: 'No active Kite session found' }, { status: 401 });
     }
-    if (!instrumentToken) {
+    if (!instrument) {
       return NextResponse.json({ error: `Instrument not found for symbol: ${symbol}` }, { status: 404 });
     }
 
-    // Resolve the canonical symbol ID (e.g. exchange:tradingsymbol) from the database
-    let canonicalSymbol = symbol;
-    try {
-      const { data: inst } = await supabase
-        .from('instruments')
-        .select('id')
-        .eq('instrument_token', instrumentToken)
-        .limit(1)
-        .maybeSingle();
-      if (inst?.id) {
-        canonicalSymbol = inst.id;
-      }
-    } catch (e) {
-      console.error('Failed to resolve canonical symbol ID:', e);
-    }
+    const instrumentToken = instrument.token;
+    const canonicalSymbol = instrument.canonicalId || symbol;
 
     const redis = getRedisClient();
     const cacheKey = `historical:${instrumentToken}:${interval}:${from}:${to}`;
@@ -240,12 +182,14 @@ export async function GET(request: Request) {
     
     try {
       const url = `https://api.kite.trade/instruments/historical/${instrumentToken}/${interval}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      // Use shorter timeout for intraday (user feels the wait more) vs daily charts
+      const kiteTimeoutMs = interval === 'day' || interval === 'week' ? 3000 : 2000;
       const response = await fetch(url, {
         headers: {
           'X-Kite-Version': '3',
           'Authorization': `token ${process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY}:${session.accessToken}`
         },
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(kiteTimeoutMs)
       });
       const data = await response.json();
       if (response.ok && data.status === 'success' && data.data && Array.isArray(data.data.candles)) {
@@ -342,16 +286,25 @@ export async function GET(request: Request) {
 
     const result = { candles: candlesData };
 
+    // Intraday TTL: 60s  |  Daily/Weekly TTL: 1h
+    const ttl = (interval === 'day' || interval === 'week') ? 3600 : 60;
+
     if (!isRedisMock() && candlesData && candlesData.length > 0) {
       try {
-        const ttl = (interval === 'day' || interval === 'week') ? 3600 : (interval.includes('minute') || interval.includes('min') || ['1m','5m','15m','30m','60m'].includes(interval)) ? 60 : 300;
         await redis.setex(cacheKey, ttl, JSON.stringify(result));
       } catch (e) {
         console.error('Redis cache set error for historical data:', e);
       }
     }
 
-    return NextResponse.json(result);
+    // Let the browser cache the response too (reduces repeat fetches on same symbol/timeframe)
+    const cacheControl = interval === 'day' || interval === 'week'
+      ? 'public, max-age=300, stale-while-revalidate=3600'  // daily: 5m fresh, 1h stale
+      : 'public, max-age=30, stale-while-revalidate=60';     // intraday: 30s fresh
+
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': cacheControl },
+    });
 
   } catch (error: any) {
     console.error('Historical API Error:', error);
