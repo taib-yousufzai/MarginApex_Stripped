@@ -958,6 +958,11 @@ function WatchlistContent() {
   // Handle deep linking from other screens (e.g. Home)
   const deepLinkSymbol = searchParams.get('symbol');
   const deepLinkAction = searchParams.get('action');
+
+  useEffect(() => {
+    deepLinkHandledRef.current = false;
+  }, [deepLinkSymbol, deepLinkAction]);
+
   useEffect(() => {
     if (!deepLinkSymbol || !hasLoaded) return;
     // Only process the deep-link once — re-running on every watchlistItems change
@@ -985,10 +990,20 @@ function WatchlistContent() {
 
       // Fallback: Try to find in master segments lists first
       if (!item) {
-        let masterFound: any = null;
-        for (const seg of tradingSegmentsRef.current) {
-          if (seg.instruments) {
-            const found = seg.instruments.find(i =>
+        // Try searching defaults first (e.g. for crypto/forex/comex)
+        const allDefaults = [...DEFAULT_CRYPTO_ITEMS, ...DEFAULT_FOREX_ITEMS, ...DEFAULT_COMEX_ITEMS];
+        const defaultMatch = allDefaults.find(d =>
+          d.symbol.toUpperCase() === query ||
+          d.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
+          (d.kiteSymbol && d.kiteSymbol.toUpperCase() === query)
+        );
+
+        let masterFound: any = defaultMatch ? { ...defaultMatch } : null;
+
+        if (!masterFound) {
+          for (const seg of tradingSegmentsRef.current) {
+            if (seg.instruments) {
+              const found = seg.instruments.find(i =>
               i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
               i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
               (i.kiteSymbol && i.kiteSymbol.toUpperCase() === query) ||
