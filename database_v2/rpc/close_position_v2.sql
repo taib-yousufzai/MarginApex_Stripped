@@ -102,11 +102,11 @@ BEGIN
     -- Determine lot size to calculate lots
     SELECT lot_size INTO v_lot_size FROM public.script_settings WHERE v_symbol LIKE '%' || symbol || '%' ORDER BY length(symbol) DESC LIMIT 1;
     IF v_lot_size IS NULL OR v_lot_size <= 0 THEN
-      IF v_symbol LIKE '%BANKNIFTY%' OR v_symbol LIKE '%BANKEX%' THEN v_lot_size := 15;
-      ELSIF v_symbol LIKE '%FINNIFTY%' THEN v_lot_size := 25;
-      ELSIF v_symbol LIKE '%MIDCP%' OR v_symbol LIKE '%MIDCAP%' THEN v_lot_size := 50;
-      ELSIF v_symbol LIKE '%SENSEX%' THEN v_lot_size := 10;
-      ELSIF v_symbol LIKE '%NIFTY%' THEN v_lot_size := 25;
+      IF v_symbol LIKE '%BANKNIFTY%' OR v_symbol LIKE '%BANKEX%' THEN v_lot_size := 30;
+      ELSIF v_symbol LIKE '%FINNIFTY%' THEN v_lot_size := 60;
+      ELSIF v_symbol LIKE '%MIDCPNIFTY%' OR v_symbol LIKE '%MIDCP%' OR v_symbol LIKE '%MIDCAP%' THEN v_lot_size := 120;
+      ELSIF v_symbol LIKE '%SENSEX%' THEN v_lot_size := 20;
+      ELSIF v_symbol LIKE '%NIFTY%' THEN v_lot_size := 65;
       ELSIF v_symbol LIKE '%GOLDM%' THEN v_lot_size := 10;
       ELSIF v_symbol LIKE '%GOLD%' THEN v_lot_size := 100;
       ELSIF v_symbol LIKE '%SILVERM%' THEN v_lot_size := 5;
