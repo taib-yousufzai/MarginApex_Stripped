@@ -35,7 +35,7 @@ async function resolveInstrumentToken(symbol: string): Promise<number | null> {
     if (data?.instrument_token) return data.instrument_token;
   }
 
-  const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+  const cleanSymbol = (symbol.includes(':') ? symbol.split(':')[1] : symbol).replace(/\//g, '');
   const upperSymbol = cleanSymbol.toUpperCase().trim();
 
   // Handle index shortcuts (e.g. NIFTY, BANKNIFTY)
