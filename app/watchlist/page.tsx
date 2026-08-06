@@ -1642,8 +1642,8 @@ function WatchlistContent() {
               />
             )}
 
-            <div id="detailSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); }}></div>
-            <div id="detailSheet" className="trade-sheet detail-sheet" style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
+            <div id="detailSheetOverlay" className={`trade-sheet-overlay${selectedItem ? ' active' : ''}`} onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setSelectedItem(null); }}></div>
+            <div id="detailSheet" className={`trade-sheet detail-sheet${selectedItem ? ' open' : ''}`} style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
               <div className="sheet-handle"><div className="handle-bar"></div></div>
               {selectedItem && (() => {
                 const ltp = currentLtp;
