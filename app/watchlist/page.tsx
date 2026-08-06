@@ -2022,7 +2022,8 @@ function WatchlistContent() {
                       if (failCount === 0) {
                         showToast('Basket executed successfully!', false);
                         setBasketLegs([]); setBasketMode(false);
-                        ['checkoutSheet','checkoutSheetOverlay','basketSheet','basketSheetOverlay'].forEach(id => document.getElementById(id)?.classList.remove('open','active'));
+                        ['checkoutSheet', 'basketSheet'].forEach(id => document.getElementById(id)?.classList.remove('open'));
+                        ['checkoutSheetOverlay', 'basketSheetOverlay'].forEach(id => document.getElementById(id)?.classList.remove('active'));
                       } else if (successCount > 0) { showToast(`${successCount} order(s) placed, ${failCount} failed.`, true); }
                     } finally { clearTimeout(safetyTimer); setIsExecutingBasket(false); }
                   }}
