@@ -220,6 +220,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   };
   const targetPT = propProductType || productType;
   const existingPos = activePositions.find(p => p.symbol === item?.symbol && ((p.status as string) === 'open' || (p.status as string) === 'OPEN') && p.product_type === targetPT);
+  // Total qty across all open lots for this symbol+product_type (for multi-lot exit validation)
+  const totalOpenQtyForSymbol = activePositions
+    .filter(p => p.symbol === item?.symbol && ((p.status as string) === 'open' || (p.status as string) === 'OPEN') && p.product_type === targetPT && p.side === existingPos?.side)
+    .reduce((sum, p) => sum + (Number(p.qty_open) || 0), 0);
   const hasSellPos = existingPos?.side === 'SELL' || false;
   const hasBuyPos = existingPos?.side === 'BUY' || false;
 
@@ -483,10 +487,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       if (exitMode) {
         let maxExitQty = 0;
         if (linkedPosId) {
+          // Specific-position exit: cap to that position's qty_open only
           const exactPos = activePositionsRef.current?.find(p => p.id === linkedPosId);
           maxExitQty = exactPos?.qty_open ?? 0;
         } else if (existingPos) {
-          maxExitQty = existingPos.qty_open;
+          // General exit: cap to TOTAL qty across all open lots for this symbol
+          maxExitQty = totalOpenQtyForSymbol || existingPos.qty_open;
         }
         if (maxExitQty > 0 && rawQty > maxExitQty) {
           showToast(`Exit quantity cannot exceed open position (${maxExitQty} qty). Corrected to maximum.`);

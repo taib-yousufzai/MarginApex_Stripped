@@ -89,7 +89,7 @@ export class TradeEngine {
         if (!resolvedSymbol) {
           const { data: nearestFut } = await admin
             .from('instruments')
-            .select('tradingsymbol')
+            .select('tradingsymbol, expiry')
             .eq('name', baseName)
             .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
             .gte('expiry', new Date().toISOString().split('T')[0])
@@ -99,7 +99,15 @@ export class TradeEngine {
             
           if (nearestFut?.tradingsymbol) {
             resolvedSymbol = nearestFut.tradingsymbol;
-            await redis.setex(cacheKey, 3600, resolvedSymbol); // Cache for 1 hour
+            // TTL: min(1 hour, seconds until end of expiry day in IST) so stale contracts never survive rollover
+            let ttl = 3600;
+            if (nearestFut.expiry) {
+              const expiryEndIST = new Date(nearestFut.expiry);
+              expiryEndIST.setUTCHours(18, 30, 0, 0); // midnight IST = 18:30 UTC
+              const secsUntilExpiry = Math.floor((expiryEndIST.getTime() - Date.now()) / 1000);
+              if (secsUntilExpiry > 0) ttl = Math.min(ttl, secsUntilExpiry);
+            }
+            await redis.setex(cacheKey, ttl, resolvedSymbol);
           }
         }
         
@@ -124,7 +132,18 @@ export class TradeEngine {
       const parsed = parseOptionSymbol(symbol);
       const u = parsed?.underlying || 'NIFTY';
       
-      if (u === 'BANKNIFTY') underlyingId = 'NSE:NIFTY BANK';
+      if (dbSegment === 'MCX-OPT') {
+        // MCX options underlyings are MCX futures (e.g. CRUDEOIL, GOLD, SILVER)
+        // Try Redis cache for the nearest futures contract (populated during kiteInst resolution)
+        try {
+          const { getRedisClient } = require('@/lib/redis');
+          const redisCl = getRedisClient();
+          const cachedFut = await redisCl.get(`nearest_fut_MCX_${u}`);
+          underlyingId = cachedFut ? `MCX:${cachedFut}` : `MCX:${u}`;
+        } catch {
+          underlyingId = `MCX:${u}`;
+        }
+      } else if (u === 'BANKNIFTY') underlyingId = 'NSE:NIFTY BANK';
       else if (u === 'FINNIFTY') underlyingId = 'NSE:NIFTY FIN SERVICE';
       else if (u === 'SENSEX') underlyingId = 'BSE:SENSEX';
       else if (u === 'BANKEX') underlyingId = 'BSE:BANKEX';
