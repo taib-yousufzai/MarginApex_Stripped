@@ -179,3 +179,8 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.place_order_v2 FROM public;
+
+-- Composite indexes to optimize order idempotency and positions lookups inside place_order_v2
+CREATE INDEX IF NOT EXISTS idx_orders_user_idempotency ON public.orders(user_id, idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_positions_user_symbol_status ON public.positions(user_id, symbol, status);
+CREATE INDEX IF NOT EXISTS idx_positions_user_symbol_status_side ON public.positions(user_id, symbol, status, side);
