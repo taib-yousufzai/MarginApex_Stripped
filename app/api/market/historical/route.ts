@@ -244,7 +244,8 @@ export async function GET(request: Request) {
         headers: {
           'X-Kite-Version': '3',
           'Authorization': `token ${process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY}:${session.accessToken}`
-        }
+        },
+        signal: AbortSignal.timeout(4000)
       });
       const data = await response.json();
       if (response.ok && data.status === 'success' && data.data && Array.isArray(data.data.candles)) {
@@ -285,9 +286,9 @@ export async function GET(request: Request) {
       }
     }
 
-    // Fallback 2: Synthesize a single placeholder candle using the latest LTP
+    // Fallback 2: Synthesize a sequence of flat placeholder candles using the latest LTP
     if (!candlesData || candlesData.length === 0) {
-      console.warn(`[historical] No historical data found in Kite or DB for ${canonicalSymbol}. Synthesizing placeholder candle.`);
+      console.warn(`[historical] No historical data found in Kite or DB for ${canonicalSymbol}. Synthesizing flat-line placeholder candles.`);
       let lastPrice = 0;
       try {
         const cachedQuote = await redis.hget('market:quotes', canonicalSymbol);
@@ -311,10 +312,29 @@ export async function GET(request: Request) {
       }
 
       if (lastPrice > 0) {
-        const nowStr = new Date().toISOString();
-        candlesData = [
-          [nowStr, lastPrice, lastPrice, lastPrice, lastPrice, 0]
-        ];
+        let spacingMs = 60 * 1000;
+        const normalized = interval.toLowerCase();
+        if (normalized.includes('3min')) spacingMs = 3 * 60 * 1000;
+        else if (normalized.includes('5min')) spacingMs = 5 * 60 * 1000;
+        else if (normalized.includes('10min')) spacingMs = 10 * 60 * 1000;
+        else if (normalized.includes('15min')) spacingMs = 15 * 60 * 1000;
+        else if (normalized.includes('30min')) spacingMs = 30 * 60 * 1000;
+        else if (normalized.includes('60min') || normalized.includes('hour')) spacingMs = 60 * 60 * 1000;
+        else if (normalized.includes('day') || normalized.includes('1d')) spacingMs = 24 * 60 * 60 * 1000;
+
+        const nowMs = Date.now();
+        candlesData = [];
+        for (let i = 99; i >= 0; i--) {
+          const candleTime = new Date(nowMs - i * spacingMs).toISOString();
+          candlesData.push([
+            candleTime,
+            lastPrice,
+            lastPrice,
+            lastPrice,
+            lastPrice,
+            0
+          ]);
+        }
       } else {
         candlesData = [];
       }
