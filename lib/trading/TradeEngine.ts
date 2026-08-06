@@ -396,10 +396,22 @@ export class TradeEngine {
     }
 
     if (isOption) {
-      const underlyingPrice = quotesMap[underlyingId];
+      let underlyingPrice = quotesMap[underlyingId] ?? null;
+      if (!underlyingPrice || underlyingPrice <= 0) {
+        try {
+          const restQuotes = await fetchKiteQuotes([underlyingId]);
+          const ltp = restQuotes?.[underlyingId];
+          if (ltp && ltp > 0) {
+            underlyingPrice = ltp;
+          }
+        } catch {}
+      }
+
       if (!underlyingPrice || underlyingPrice <= 0) {
         throw new Error('Underlying market data unavailable. Option execution rejected.');
       }
+      
+      quotesMap[underlyingId] = underlyingPrice;
     }
 
     const clientPriceNum = client_price || 0;
