@@ -2009,14 +2009,36 @@ function WatchlistContent() {
                     setIsExecutingBasket(true);
                     const safetyTimer = setTimeout(() => setIsExecutingBasket(false), 10000);
                     try {
-                      const results = await Promise.all(basketLegs.map(async (leg) => {
-                        const ltp = getLegPrice(leg.item); const lotSz = getLotSize(leg.item.symbol || leg.item.name || ''); const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
+                      const results: boolean[] = [];
+                      for (const leg of basketLegs) {
+                        const ltp = getLegPrice(leg.item);
+                        const lotSz = getLotSize(leg.item.symbol || leg.item.name || '');
+                        const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty;
                         try {
-                          const res = await placeOrder({ symbol: leg.item.symbol, kite_instrument: leg.item.kiteSymbol || leg.item.symbol, segment: leg.item.segment, side: leg.side, qty, lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz), order_type: 'MARKET', product_type: leg.productType || 'INTRADAY', client_price: ltp });
-                          if (res && !res.success) { showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true); return false; }
-                          return true;
-                        } catch (e: any) { showToast(`${leg.side} ${leg.item.symbol} failed: ${e?.message || 'Unknown error'}`, true); return false; }
-                      }));
+                          const res = await placeOrder({
+                            symbol: leg.item.symbol,
+                            kite_instrument: leg.item.kiteSymbol || leg.item.symbol,
+                            segment: leg.item.segment,
+                            side: leg.side,
+                            qty,
+                            lots: leg.unit === 'lot' ? leg.qty : Math.ceil(leg.qty / lotSz),
+                            order_type: 'MARKET',
+                            product_type: leg.productType || 'INTRADAY',
+                            client_price: ltp
+                          });
+                          if (res && !res.success) {
+                            showToast(`${leg.side} ${leg.item.symbol} failed: ${res.error || 'Unknown error'}`, true);
+                            results.push(false);
+                          } else {
+                            results.push(true);
+                          }
+                        } catch (e: any) {
+                          showToast(`${leg.side} ${leg.item.symbol} failed: ${e?.message || 'Unknown error'}`, true);
+                          results.push(false);
+                        }
+                        // Small delay to ensure the Redis lock is fully released
+                        await new Promise((resolve) => setTimeout(resolve, 150));
+                      }
                       const successCount = results.filter(Boolean).length;
                       const failCount = results.length - successCount;
                       if (failCount === 0) {
