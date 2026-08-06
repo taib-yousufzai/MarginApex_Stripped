@@ -51,6 +51,31 @@ export async function POST(
       return NextResponse.json({ error: `Position is already ${product_type}` }, { status: 400 });
     }
 
+    // Market closed check when converting/switching to CARRY
+    if (product_type === 'CARRY') {
+      const settlement = (pos.settlement || '').toUpperCase();
+      let segmentId = 'nse';
+      if (settlement.includes('MCX')) segmentId = 'mcx';
+      else if (settlement.includes('BSE') || settlement.includes('BFO')) segmentId = 'bse';
+      else if (settlement.includes('CDS') || settlement.includes('FOREX')) segmentId = 'forex';
+      else if (settlement.includes('COMEX')) segmentId = 'comex';
+      else if (settlement.includes('CRYPTO')) segmentId = 'crypto';
+
+      if (segmentId !== 'crypto') {
+        const { data: marketHours } = await admin
+          .from('trading_hours')
+          .select('start_time, end_time, is_active')
+          .eq('id', segmentId)
+          .maybeSingle();
+
+        const { RiskValidation } = require('@/lib/trading/RiskValidation');
+        const isMarketOpen = RiskValidation.validateTradingHours(marketHours);
+        if (!isMarketOpen) {
+          return NextResponse.json({ error: 'Market is closed. You cannot convert position to CARRY.' }, { status: 400 });
+        }
+      }
+    }
+
     // 2. Calculate the new leverage and required margin
     const isScalper = profile.trading_mode === 'scalper';
     const targetTable = isScalper ? 'scalper_segment_settings' : 'segment_settings';
