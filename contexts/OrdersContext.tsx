@@ -64,6 +64,14 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
     window.addEventListener('position-closed', handleOrderPlaced);
 
     async function init() {
+      // Wait for a valid session before fetching — prevents a 401 flash on
+      // first load when Supabase hasn't yet restored the session from storage.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setLoading(false);
+        return;
+      }
+      if (cancelled) return;
       await fetchOrders();
       if (cancelled) return;
       intervalRef.current = setInterval(() => {
@@ -81,6 +89,7 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
       window.removeEventListener('position-closed', handleOrderPlaced);
     };
   }, [fetchOrders, refreshInterval]);
+
 
   const cancelOrder = useCallback(async (id: string) => {
     try {
