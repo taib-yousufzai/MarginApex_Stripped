@@ -169,6 +169,26 @@ class ConfigurationServiceClass {
   clearCache() {
     this.cache.clear();
   }
+
+  /**
+   * Caches whether shadow mode is globally enabled.
+   */
+  async isShadowModeEnabled(): Promise<boolean> {
+    const cacheKey = 'shadow_mode_enabled';
+    const cached = this.getCached<boolean>(cacheKey);
+    if (cached !== null) return cached;
+
+    const admin = getAdminClient();
+    const { data } = await admin
+      .from('shadow_mode_config')
+      .select('enabled')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const enabled = data?.enabled ?? false;
+    this.setCached(cacheKey, enabled);
+    return enabled;
+  }
 }
 
 export const ConfigurationService = new ConfigurationServiceClass();

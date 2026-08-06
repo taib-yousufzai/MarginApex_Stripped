@@ -59,13 +59,9 @@ export class ExecutionService {
 
       const idempotencyKey = randomUUID();
 
-      // Check shadow mode config once before execution
-      const { data: shadowConfig } = await admin
-        .from('shadow_mode_config')
-        .select('enabled')
-        .eq('id', 1)
-        .maybeSingle();
-      const isShadowMode = shadowConfig?.enabled ?? false;
+      // Check shadow mode config once before execution using in-memory cache
+      const { ConfigurationService } = await import('./ConfigurationService');
+      const isShadowMode = await ConfigurationService.isShadowModeEnabled();
 
       // Execute via EngineClient — telemetry and correlation ID attached automatically
       orderId = await callEngineRpc<string>(
