@@ -18,7 +18,20 @@ interface ResolvedInstrument {
   canonicalId: string;
 }
 
+/**
+ * Process-lifetime in-memory cache for resolved instruments.
+ * Survives across requests in the same Node.js worker.
+ * Crucial when Redis is mocked (dev) or DB indexes are absent:
+ * the TV widget calls getBars 5–15 times per chart open, each needing resolution.
+ * After the first hit this map returns in < 1ms.
+ */
+const memCache = new Map<string, ResolvedInstrument>();
+
 async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | null> {
+  // 1. Fastest path: process-level in-memory cache (always checked first)
+  const memHit = memCache.get(symbol);
+  if (memHit) return memHit;
+
   const redis = getRedisClient();
   const cacheKey = `instrument_token:${symbol}`;
   
@@ -28,7 +41,9 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
       if (cached) {
         // Cached value may be "token" or "token|canonicalId"
         const parts = cached.split('|');
-        return { token: parseInt(parts[0], 10), canonicalId: parts[1] ?? symbol };
+        const result: ResolvedInstrument = { token: parseInt(parts[0], 10), canonicalId: parts[1] ?? symbol };
+        memCache.set(symbol, result); // backfill so next call skips Redis too
+        return result;
       }
     } catch (e) {
       console.error('Redis cache error for instrument token:', e);
@@ -36,6 +51,9 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   }
 
   const save = async (token: number, canonicalId: string): Promise<ResolvedInstrument> => {
+    const result: ResolvedInstrument = { token, canonicalId };
+    // Always write to process-level cache — survives across requests in same worker
+    memCache.set(symbol, result);
     if (!isRedisMock()) {
       try {
         await redis.setex(cacheKey, 86400, `${token}|${canonicalId}`);
@@ -43,7 +61,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
         console.error('Redis cache set error for instrument token:', e);
       }
     }
-    return { token, canonicalId };
+    return result;
   };
 
   // Fast path: symbol contains ':' (e.g. "NFO:NIFTY2661623700CE") — exact id match
