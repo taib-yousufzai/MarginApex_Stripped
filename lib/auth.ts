@@ -192,13 +192,14 @@ export async function getSession(): Promise<Session | null> {
       // Refresh user data from server to get latest user_metadata (e.g. role)
       const { data: userData, error: userError } = await supabase.auth.getUser();
       
-      let freshSession = sessionData.session;
-      if (!userError && userData?.user) {
-        // Merge fresh user into session and cache it
-        freshSession = { ...sessionData.session, user: userData.user };
-      } else {
-        console.warn('getUser() failed, falling back to sessionData.session:', userError);
+      if (userError) {
+        console.warn('getUser() failed, treating session as invalid:', userError.message);
+        _cachedSession = null;
+        _cacheTimestamp = 0;
+        return null;
       }
+
+      const freshSession = { ...sessionData.session, user: userData.user };
 
       _cachedSession = freshSession;
       _cacheTimestamp = Date.now();
