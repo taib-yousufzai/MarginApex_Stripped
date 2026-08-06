@@ -69,6 +69,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       stop_loss:    r.stop_loss !== null ? Number(r.stop_loss) : undefined,
       target:       r.target !== null ? Number(r.target) : undefined,
       created_at:   r.created_at as string,
+      is_exit:      !!r.is_exit,
     }));
 
     // Dynamically synthesize virtual pending orders for positions with SL/Target

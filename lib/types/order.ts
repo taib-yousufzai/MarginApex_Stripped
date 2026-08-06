@@ -67,6 +67,7 @@ export interface MyOrder {
   target?: number;
   brokerage: number;
   created_at: string;
+  is_exit?: boolean;
 }
 
 // ─── Platform position row ───────────────────────────────────────────────────
