@@ -1170,14 +1170,23 @@ function WatchlistContent() {
       return item;
     });
 
-    if (migrated) {
-      setWatchlistItems(updated);
-      try {
-        localStorage.setItem(userKey, JSON.stringify(updated));
-      } catch (e) { }
-    } else {
-      setWatchlistItems(itemsToLoad);
+    const finalItems = migrated ? updated : itemsToLoad;
+
+    // Deduplicate by symbol — keep the first occurrence.
+    // Guards against duplicates saved in localStorage from prior sessions.
+    const seen = new Set<string>();
+    const deduped = finalItems.filter(item => {
+      if (seen.has(item.symbol)) return false;
+      seen.add(item.symbol);
+      return true;
+    });
+
+    if (deduped.length !== finalItems.length) {
+      // Duplicates were found — persist the cleaned list immediately
+      try { localStorage.setItem(userKey, JSON.stringify(deduped)); } catch (e) {}
     }
+
+    setWatchlistItems(deduped);
     setHasLoaded(true);
   }, [userId, allowedSegments]);
 
