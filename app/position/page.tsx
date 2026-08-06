@@ -287,18 +287,7 @@ export default function PositionPage() {
   const openTradeAgain = (pos: EnrichedPosition) => {
     closeSheet();
     setTimeout(() => {
-      setTradeSheetItem({
-        name: pos.symbol,
-        symbol: pos.symbol,
-        kiteSymbol: pos.kite_instrument || pos.symbol,
-        segment: pos.settlement || 'INR',
-        price: pos.current_ltp,
-        change: `${pos.pnl_percent >= 0 ? '+' : ''}${pos.pnl_percent.toFixed(2)}%`,
-      });
-      setTradeSheetSide('BOTH');
-      setTradeSheetExitMode(false);
-      setTradeSheetProductType(pos.product_type as 'INTRADAY' | 'CARRY');
-      setTradeSheetIsAddMore(false);
+      router.push(`/watchlist?symbol=${encodeURIComponent(pos.symbol)}&action=detail`);
     }, 80);
   };
 
