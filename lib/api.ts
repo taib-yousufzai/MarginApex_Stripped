@@ -126,7 +126,10 @@ async function apiCall<T>(
 
     if (res.status === 401) {
       if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+        const path = window.location.pathname;
+        if (path !== '/login' && path !== '/register' && path !== '/forgot-password' && path !== '/reset-password') {
+          window.location.href = '/login';
+        }
       }
     }
 
