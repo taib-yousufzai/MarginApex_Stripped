@@ -124,6 +124,12 @@ async function apiCall<T>(
       return res.json() as Promise<T>;
     }
 
+    if (res.status === 401) {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+
     // Error path: parse body for structured error info
     let details: unknown;
     let code: string | undefined;
