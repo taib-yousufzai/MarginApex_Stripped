@@ -3,6 +3,7 @@ import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 import { getLotSizeFromDB } from '@/lib/lotSize';
 import { calculateFreeMarginFromPositions } from '@/lib/floatingPnl';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
 
 export async function POST(
   request: NextRequest,
@@ -68,7 +69,6 @@ export async function POST(
           .eq('id', segmentId)
           .maybeSingle();
 
-        const { RiskValidation } = require('@/lib/trading/RiskValidation');
         const isMarketOpen = RiskValidation.validateTradingHours(marketHours);
         if (!isMarketOpen) {
           return NextResponse.json({ error: 'Market is closed. You cannot convert position to CARRY.' }, { status: 400 });

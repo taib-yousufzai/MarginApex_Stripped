@@ -42,8 +42,17 @@ export class RiskValidation {
     if (!marketHours) return false; // No hours row = market is closed (fail-closed for safety)
     if (!marketHours.is_active) return false;
 
-    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const currentMins = nowIST.getHours() * 60 + nowIST.getMinutes();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(new Date());
+    const hourPart = parts.find(p => p.type === 'hour')?.value;
+    const minutePart = parts.find(p => p.type === 'minute')?.value;
+    if (!hourPart || !minutePart) return false;
+    const currentMins = Number(hourPart) * 60 + Number(minutePart);
     
     const [startH, startM] = (marketHours.start_time || '').split(':').map(Number);
     const [endH, endM] = (marketHours.end_time || '').split(':').map(Number);

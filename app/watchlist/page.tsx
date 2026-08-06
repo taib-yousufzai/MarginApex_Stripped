@@ -552,11 +552,22 @@ function WatchlistContent() {
     if (!th) return true; // fallback
     if (!th.is_active) return false;
 
-    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const dayOfWeek = nowIST.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: 'numeric',
+      weekday: 'short',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(new Date());
+    const weekday = parts.find(p => p.type === 'weekday')?.value;
+    const hourVal = parts.find(p => p.type === 'hour')?.value;
+    const minuteVal = parts.find(p => p.type === 'minute')?.value;
+    if (!weekday || !hourVal || !minuteVal) return true;
 
-    const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
+    if (weekday === 'Sat' || weekday === 'Sun') return false;
+
+    const currentHHMM = `${hourVal.padStart(2, '0')}:${minuteVal.padStart(2, '0')}`;
     if (currentHHMM < th.start_time || currentHHMM >= th.end_time) return false;
 
     return true;
