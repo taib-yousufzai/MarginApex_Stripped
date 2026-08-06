@@ -39,7 +39,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   const atmRef = React.useRef<HTMLDivElement>(null);
   const tableHeaderRef = React.useRef<HTMLDivElement>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
-  const hasScrolledRef = React.useRef(false);
+  const isFirstScrollRef = React.useRef(true);
 
   const atmIndex = React.useMemo(() => {
     if (spotPrice <= 0 || strikes.length === 0) return -1;
@@ -57,37 +57,29 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
   const atmStrike = atmIndex >= 0 ? strikes[atmIndex] : null;
 
+  // Reset so we do an instant scroll on the next data load
   React.useEffect(() => {
-    hasScrolledRef.current = false;
+    isFirstScrollRef.current = true;
   }, [strikes]);
 
+  // Always keep the ATM row centered.
+  // Fires on first data load AND whenever the spot crosses into a new strike.
   React.useEffect(() => {
-    if (hasScrolledRef.current) return;
     if (!atmRef.current || strikes.length === 0 || spotPrice <= 0 || !atmStrike) return;
 
-    hasScrolledRef.current = true;
+    const el = atmRef.current;
+    const behavior: ScrollBehavior = isFirstScrollRef.current ? 'instant' : 'smooth';
+    isFirstScrollRef.current = false;
 
     const doScroll = () => {
-      const el = atmRef.current;
-      if (!el) return;
-
-      let scrollParent: HTMLElement | null = el.parentElement;
-      while (scrollParent) {
-        const { overflowY } = window.getComputedStyle(scrollParent);
-        if (overflowY === 'auto' || overflowY === 'scroll' || scrollParent.tagName === 'BODY') break;
-        scrollParent = scrollParent.parentElement;
-      }
-
-      const container = scrollParent ?? document.documentElement;
-      const containerRect = container.getBoundingClientRect?.() ?? { top: 0 };
-      const elRect = el.getBoundingClientRect();
-      const offset = elRect.top - containerRect.top + container.scrollTop - container.clientHeight / 2 + el.offsetHeight / 2;
-      container.scrollTo({ top: offset, behavior: 'smooth' });
+      el.scrollIntoView({ block: 'center', behavior });
     };
 
-    const t = setTimeout(doScroll, 150);
+    // Small delay so the DOM has finished painting before we measure
+    const t = setTimeout(doScroll, behavior === 'instant' ? 100 : 0);
     return () => clearTimeout(t);
-  }, [strikes, spotPrice, atmStrike]);
+  }, [atmStrike]);
+
 
   React.useEffect(() => {
     const scrollEl = tableHeaderRef.current?.closest('.main-content') as HTMLElement | null;
