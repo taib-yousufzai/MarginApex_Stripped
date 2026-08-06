@@ -2046,7 +2046,9 @@ function WatchlistContent() {
                         setBasketLegs([]); setBasketMode(false);
                         ['checkoutSheet', 'basketSheet'].forEach(id => document.getElementById(id)?.classList.remove('open'));
                         ['checkoutSheetOverlay', 'basketSheetOverlay'].forEach(id => document.getElementById(id)?.classList.remove('active'));
-                      } else if (successCount > 0) { showToast(`${successCount} order(s) placed, ${failCount} failed.`, true); }
+                      } else {
+                        showToast(`${successCount} order(s) placed, ${failCount} failed.`, true);
+                      }
                     } finally { clearTimeout(safetyTimer); setIsExecutingBasket(false); }
                   }}
                   style={{ flex: 1, background: isExecutingBasket ? '#9CA3AF' : '#2C8E5A', color: '#fff', border: 'none', padding: '15px 0', borderRadius: '14px', fontSize: '0.95rem', fontWeight: '800', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: isExecutingBasket ? 'none' : '0 4px 12px rgba(44,142,90,0.25)' }}
