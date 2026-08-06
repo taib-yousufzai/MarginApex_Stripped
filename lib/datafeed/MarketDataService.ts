@@ -258,3 +258,84 @@ export function fetchKiteQuotes(instruments: string[]): Promise<Record<string, n
     }
   });
 }
+
+export async function fetchSpeedQuotes(
+  instruments: string[],
+  fallbackPrices: Record<string, number>
+): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  if (instruments.length === 0) return result;
+
+  try {
+    const { getRedisClient } = require('@/lib/redis');
+    const redis = getRedisClient();
+    const foundKiteIds = new Set<string>();
+
+    // 1. Fetch from Redis cache hash
+    try {
+      const cachedValues = await redis.hmget('market:quotes', ...instruments);
+      instruments.forEach((inst, idx) => {
+        const raw = cachedValues[idx];
+        if (raw) {
+          try {
+            const q = JSON.parse(raw);
+            if (q && q.last_price !== undefined) {
+              result[inst] = q.last_price;
+              result[`${inst}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
+              result[`${inst}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
+              foundKiteIds.add(inst);
+            }
+          } catch {}
+        }
+      });
+    } catch (redisErr) {
+      console.warn('[fetchSpeedQuotes] Redis HMGET failed:', redisErr);
+    }
+
+    // 2. Fetch from Ticker Daemon
+    const remainingKiteIds = instruments.filter(id => !foundKiteIds.has(id));
+    if (remainingKiteIds.length > 0) {
+      try {
+        const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
+        const params = new URLSearchParams({ symbols: remainingKiteIds.join(',') });
+        const resTicker = await fetchWithTimeout(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' }, 150);
+        if (resTicker.ok) {
+          const json = await resTicker.json();
+          if (json.success && json.data) {
+            for (const [key, val] of Object.entries(json.data)) {
+              const q = val as any;
+              result[key] = q.last_price;
+              result[`${key}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
+              result[`${key}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
+              foundKiteIds.add(key);
+            }
+          }
+        }
+      } catch (tickerErr) {
+        // Ignored, fallback below
+      }
+    }
+
+    // 3. Fallback to client-submitted LTP/prices
+    instruments.forEach(inst => {
+      if (!foundKiteIds.has(inst)) {
+        const fallback = fallbackPrices[inst] || fallbackPrices[inst.split(':').pop() || ''] || 0;
+        result[inst] = fallback;
+        result[`${inst}_bid`] = fallback;
+        result[`${inst}_ask`] = fallback;
+      }
+    });
+
+    return result;
+  } catch (err) {
+    console.error('[fetchSpeedQuotes] Error:', err);
+    // Absolute fallback
+    instruments.forEach(inst => {
+      const fallback = fallbackPrices[inst] || fallbackPrices[inst.split(':').pop() || ''] || 0;
+      result[inst] = fallback;
+      result[`${inst}_bid`] = fallback;
+      result[`${inst}_ask`] = fallback;
+    });
+    return result;
+  }
+}

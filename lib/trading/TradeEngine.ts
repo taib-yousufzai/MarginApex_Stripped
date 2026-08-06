@@ -1,5 +1,5 @@
 import { getAdminClient } from '@/lib/adminClient';
-import { fetchBinanceQuote, fetchKiteQuotes } from '../datafeed/MarketDataService';
+import { fetchBinanceQuote, fetchKiteQuotes, fetchSpeedQuotes } from '../datafeed/MarketDataService';
 import { calculateBufferedPrice } from './BufferCalculator';
 import { calculateMarginPortion } from './MarginCalculator';
 import { calculateSingleLegCharge } from './BrokerageCalculator';
@@ -166,7 +166,13 @@ export class TradeEngine {
         }
         const instrumentsToFetch = [kiteInst];
         if (isOption && underlyingId !== kiteInst) instrumentsToFetch.push(underlyingId);
-        return fetchKiteQuotes(instrumentsToFetch);
+        
+        const fallbackPrices: Record<string, number> = {};
+        if (client_price) {
+          fallbackPrices[kiteInst] = client_price;
+          if (underlyingId) fallbackPrices[underlyingId] = client_price;
+        }
+        return fetchSpeedQuotes(instrumentsToFetch, fallbackPrices);
       })()
     ]);
 
