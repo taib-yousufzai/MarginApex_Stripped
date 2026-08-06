@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminClient } from '@/lib/adminClient';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * GET /api/market/candles
@@ -37,7 +37,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const admin = getAdminClient();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  if (!url || !key) {
+    return NextResponse.json(
+      { success: false, error: 'Server configuration error' },
+      { status: 500 }
+    );
+  }
+
+  const admin = createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
   const { data, error } = await admin
     .from('historical_candles')
@@ -65,7 +76,5 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     from,
     to,
     candles: data ?? [],
-  }, {
-    headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
   });
 }
