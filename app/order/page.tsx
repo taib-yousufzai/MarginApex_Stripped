@@ -275,9 +275,9 @@ export default function OrderPage() {
                     >
                       <div className="ord-row ord-row-top">
                         <span className="ord-symbol">{order.symbol}</span>
-                        <span className={`ord-badge ${isBuy ? 'long' : 'short'}`}>
-                          <i className={`fas fa-arrow-${isBuy ? 'up' : 'down'}`} />
-                          {order.side}{order.is_exit ? ' EXIT' : ''}
+                        <span className={`ord-badge ${order.is_exit ? (isBuy ? 'short' : 'long') : (isBuy ? 'long' : 'short')}`}>
+                          <i className={`fas fa-arrow-${order.is_exit ? (isBuy ? 'down' : 'up') : (isBuy ? 'up' : 'down')}`} />
+                          {order.is_exit ? (isBuy ? 'SELL' : 'BUY') : order.side}{order.is_exit ? ' EXIT' : ''}
                         </span>
                       </div>
                       <div className="ord-row ord-row-price">
