@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import { useKitePositions } from '@/hooks/useKitePositions';
@@ -16,6 +17,7 @@ const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: f
 
 export default function OrderPage() {
   useAuth();
+  const router = useRouter();
   const [tab, setTab] = useState<'open' | 'closed'>('open');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState<string | null>(null);
@@ -109,17 +111,7 @@ export default function OrderPage() {
     setIsSheetOpen(false);
     setSelectedOrder(null);
     setTimeout(() => {
-      setTradeSheetItem({
-        name: order.symbol,
-        symbol: order.symbol,
-        kiteSymbol: order.kite_instrument || order.symbol,
-        segment: order.segment || 'INR',
-        price: order.fill_price || order.client_price || 0,
-        change: '0%',
-      });
-      setTradeSheetSide('BOTH');
-      setTradeSheetInitialOrder(null);
-      setModifyingOrderId(null);
+      router.push(`/watchlist?symbol=${encodeURIComponent(order.symbol)}&action=detail`);
     }, 80);
   };
 
