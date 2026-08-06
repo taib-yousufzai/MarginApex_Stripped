@@ -6,8 +6,9 @@ import { api } from '@/lib/api';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
 import { MyPosition } from '@/lib/types/order';
-import { isContractExpired } from '@/lib/contractExpiry';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
+import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
+import { isContractExpired } from '@/lib/contractExpiry';
 
 export interface EnrichedPosition extends MyPosition {
   current_ltp: number;
@@ -210,7 +211,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       const staticProps = staticPositionPropsRef.current;
       newPositions.forEach(p => {
         if (!staticProps[p.id]) {
-          const dbSeg = mapSegmentToDbSegment(p.settlement || '');
+          const dbSeg = mapSegmentWithSymbol(p.settlement || '', p.symbol);
           const segUpper = dbSeg.toUpperCase();
           const isCrypto = segUpper.includes('CRYPTO') || (p.symbol && p.symbol.endsWith('USDT'));
           const isComex = (p as any).preferredView === 'comex' || segUpper.includes('COMEX');
@@ -375,7 +376,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       let ltp = p.ltp || p.entry_price;
 
       const cached = props[p.id];
-      const dbSeg = cached ? cached.dbSeg : mapSegmentToDbSegment(p.settlement || '');
+      const dbSeg = cached ? cached.dbSeg : mapSegmentWithSymbol(p.settlement || '', p.symbol);
       const isCrypto = cached ? cached.isCrypto : (p.settlement || '').toUpperCase().includes('CRYPTO');
       const isComex = cached ? cached.isComex : (p.settlement || '').toUpperCase().includes('COMEX');
       const entryTimeMs = cached ? cached.entryTimeMs : new Date(p.entry_time).getTime();
