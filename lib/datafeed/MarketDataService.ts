@@ -1,6 +1,9 @@
 import { getAdminClient } from '@/lib/adminClient';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { telemetry } from '@/lib/metrics';
+import pino from 'pino';
+
+const logger = pino({ name: 'market-data-service' });
 
 export async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 250): Promise<Response> {
   const controller = new AbortController();
@@ -263,11 +266,15 @@ export function fetchKiteQuotes(instruments: string[]): Promise<Record<string, n
 export async function fetchSpeedQuotes(
   instruments: string[]
 ): Promise<Record<string, number>> {
+  const start = performance.now();
   const result: Record<string, number> = {};
   if (instruments.length === 0) return result;
 
+  const MAX_QUOTE_AGE_MS = 15000; // 15 seconds max age
   let redisHits = 0;
   let daemonHits = 0;
+  let isRedisErr = false;
+  let isDaemonErr = false;
 
   try {
     const { getRedisClient } = require('@/lib/redis');
@@ -283,6 +290,14 @@ export async function fetchSpeedQuotes(
           try {
             const q = JSON.parse(raw);
             if (q && q.last_price !== undefined) {
+              const quoteTime = q.timestamp ? new Date(q.timestamp).getTime() : 0;
+              const ageMs = Date.now() - quoteTime;
+              
+              if (quoteTime > 0 && ageMs > MAX_QUOTE_AGE_MS) {
+                logger.warn({ symbol: inst, source: 'quotes', reason: 'stale_quote', ageMs });
+                return; // Stale, skip
+              }
+
               result[inst] = q.last_price;
               result[`${inst}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${inst}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
@@ -293,7 +308,8 @@ export async function fetchSpeedQuotes(
         }
       });
     } catch (redisErr) {
-      console.warn('[fetchSpeedQuotes] Redis HMGET failed:', redisErr);
+      isRedisErr = true;
+      logger.warn({ source: 'quotes', reason: 'redis_unavailable', error: redisErr instanceof Error ? redisErr.message : String(redisErr) });
     }
 
     // 2. Fetch from Ticker Daemon
@@ -308,6 +324,14 @@ export async function fetchSpeedQuotes(
           if (json.success && json.data) {
             for (const [key, val] of Object.entries(json.data)) {
               const q = val as any;
+              const quoteTime = q.timestamp ? new Date(q.timestamp).getTime() : 0;
+              const ageMs = Date.now() - quoteTime;
+
+              if (quoteTime > 0 && ageMs > MAX_QUOTE_AGE_MS) {
+                logger.warn({ symbol: key, source: 'quotes', reason: 'stale_quote', ageMs });
+                continue; // Stale, skip
+              }
+
               result[key] = q.last_price;
               result[`${key}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${key}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
@@ -317,22 +341,28 @@ export async function fetchSpeedQuotes(
           }
         }
       } catch (tickerErr) {
-        // Ignored, fallback below
+        isDaemonErr = true;
+        logger.warn({ source: 'quotes', reason: 'daemon_timeout', error: tickerErr instanceof Error ? tickerErr.message : String(tickerErr) });
       }
     }
 
-    // 3. Telemetry and warnings on misses
+    // 3. Telemetry and structured logging on misses
     const misses = instruments.length - (redisHits + daemonHits);
     if (misses > 0) {
-      const missingSymbols = instruments.filter(id => !foundKiteIds.has(id));
-      console.warn(`[fetchSpeedQuotes] Cache miss for instruments: ${missingSymbols.join(', ')}`);
+      instruments.forEach(inst => {
+        if (!foundKiteIds.has(inst)) {
+          logger.warn({ symbol: inst, source: 'quotes', reason: 'cache_miss', redis_error: isRedisErr, daemon_error: isDaemonErr });
+        }
+      });
     }
 
-    telemetry.recordQuoteLookup(redisHits, daemonHits, misses);
+    const latencyMs = performance.now() - start;
+    telemetry.recordQuoteLookup(redisHits, daemonHits, misses, latencyMs);
     return result;
   } catch (err) {
-    console.error('[fetchSpeedQuotes] Error:', err);
-    telemetry.recordQuoteLookup(0, 0, instruments.length);
+    logger.error({ source: 'quotes', reason: 'lookup_error', error: err instanceof Error ? err.message : String(err) });
+    const latencyMs = performance.now() - start;
+    telemetry.recordQuoteLookup(0, 0, instruments.length, latencyMs);
     return result;
   }
 }

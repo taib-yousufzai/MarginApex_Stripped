@@ -236,6 +236,13 @@ export async function POST(
     }
 
     try {
+      const { ConfigurationService } = await import('@/lib/trading/ConfigurationService');
+      ConfigurationService.clearCache();
+    } catch (cacheErr) {
+      console.error('[segments] Failed to clear ConfigurationService cache:', cacheErr);
+    }
+
+    try {
       const { checkAndSquareOffPositionsForMargin } = await import('@/lib/marginSquareOff');
       await checkAndSquareOffPositionsForMargin(id, adminClient);
     } catch (err) {
