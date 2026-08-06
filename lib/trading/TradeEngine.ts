@@ -370,6 +370,27 @@ export class TradeEngine {
     let kiteBid = quotesMap[`${kiteInst}_bid`] || kiteLtp;
     let kiteAsk = quotesMap[`${kiteInst}_ask`] || kiteLtp;
 
+    // Speed cache missed (common for MCX options not streamed by Ticker Daemon).
+    // Fall back: 1) client_price observed by the UI, 2) Kite REST quote.
+    if (!kiteLtp || kiteLtp <= 0) {
+      if (client_price && client_price > 0) {
+        kiteLtp = client_price;
+        kiteBid = client_price;
+        kiteAsk = client_price;
+      } else {
+        // Last resort: one direct Kite REST call
+        try {
+          const restQuotes = await fetchKiteQuotes([kiteInst]);
+          const ltp = restQuotes?.[kiteInst];
+          if (ltp && ltp > 0) {
+            kiteLtp = ltp;
+            kiteBid = restQuotes[`${kiteInst}_bid`] || ltp;
+            kiteAsk = restQuotes[`${kiteInst}_ask`] || ltp;
+          }
+        } catch {}
+      }
+    }
+
     if (!kiteLtp || kiteLtp <= 0) {
       throw new Error('Market data unavailable. Execution rejected.');
     }
