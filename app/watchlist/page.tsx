@@ -778,6 +778,17 @@ function WatchlistContent() {
     rawAsk = currentKiteQuote.ask || currentLtp;
   }
 
+  if (currentLtp > 0) {
+    const bidDev = Math.abs(rawBid - currentLtp) / currentLtp;
+    const askDev = Math.abs(rawAsk - currentLtp) / currentLtp;
+    if (bidDev > 0.15 || rawBid <= 0) {
+      rawBid = currentLtp;
+    }
+    if (askDev > 0.15 || rawAsk <= 0) {
+      rawAsk = currentLtp;
+    }
+  }
+
 
 
   // ── Mobile Back Button Interception ──
