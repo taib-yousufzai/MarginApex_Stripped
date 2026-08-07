@@ -278,14 +278,14 @@ export class TradeEngine {
     
     let { data: userSegRows } = await admin
       .from(settingsTable)
-      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit, intraday_commission_type, intraday_commission_value')
+      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit')
       .eq('user_id', user.id)
       .eq('segment', dbSegment);
 
     if ((!userSegRows || userSegRows.length === 0) && profile.parent_id) {
       const { data: parentSegRows } = await admin
         .from(settingsTable)
-        .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit, intraday_commission_type, intraday_commission_value')
+        .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit')
         .eq('user_id', profile.parent_id)
         .eq('segment', dbSegment);
       if (parentSegRows && parentSegRows.length > 0) {
