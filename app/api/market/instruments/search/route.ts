@@ -805,11 +805,11 @@ export async function GET(request: NextRequest) {
       { name: 'COPPER (COMEX)', symbol: 'HG=F', comexSymbol: 'HG=F', segment: 'COMEX - Futures' },
       { name: 'NATURAL GAS (COMEX)', symbol: 'NG=F', comexSymbol: 'NG=F', segment: 'COMEX - Futures' },
     ];
-    const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const comexSearchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
     const matchingComex = comexSearchItems
       .filter(item => {
         const itemText = `${item.name} ${item.symbol} ${item.segment} comex`.toLowerCase();
-        return searchTerms.every(term => itemText.includes(term));
+        return comexSearchTerms.every(term => itemText.includes(term));
       })
       .map(item => ({
         name: item.name,
