@@ -145,6 +145,7 @@ export default function HistoryPage() {
             productType: p.product_type || 'INTRADAY',
             settlement,
             settlementAmount: Math.abs(Number(p.settlement_amount || 0)),
+            entry_brokerage: p.entry_brokerage || 0,
             timestamp: p.updated_at ? new Date(p.updated_at).getTime() : new Date(p.created_at).getTime(),
           };
         });
@@ -206,7 +207,7 @@ export default function HistoryPage() {
     const posHistory = filteredData.filter(h => h.status === 'closed');
     const gp = posHistory.filter(h => h.pnl > 0).reduce((acc, h) => acc + h.pnl, 0);
     const gl = posHistory.filter(h => h.pnl < 0).reduce((acc, h) => acc + Math.abs(h.pnl), 0);
-    const b = filteredData.reduce((acc, h) => acc + h.brokerage, 0);
+    const b = filteredData.reduce((acc, h) => acc + (h.brokerage || (h as any).entry_brokerage || 0), 0);
     const s = posHistory.reduce((acc, h) => acc + (h.settlementAmount ?? 0), 0);
     return { gp, gl, b, s, n: gp - gl - b - s };
   }, [filteredData]);
@@ -432,10 +433,13 @@ export default function HistoryPage() {
                               }
                             })()} style={{ position: 'relative' }}>
                               <i className="fas fa-receipt"></i> {(() => {
-                                // Use brokerage field directly; fall back to sum of breakdown columns
+                                // Use brokerage field directly; fall back to entry_brokerage or sum of breakdown columns
                                 // for positions that predate the brokerage column being populated
                                 const direct = item.brokerage || 0;
                                 if (direct > 0) return formatPrice(direct);
+                                // Fallback to entry_brokerage if available (since brokerage was charged upfront at entry)
+                                const entryBrk = (item as any).entry_brokerage || 0;
+                                if (entryBrk > 0) return formatPrice(entryBrk);
                                 if (currentTab === 'position') {
                                   const computed = (item.entry_intraday_brokerage || 0) + (item.entry_carry_brokerage || 0) +
                                     (item.exit_intraday_brokerage || 0) + (item.exit_carry_brokerage || 0);

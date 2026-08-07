@@ -96,6 +96,7 @@ BEGIN
         status = CASE WHEN (qty_open - p_close_qty) <= 0 THEN 'closed' ELSE status END,
         closed_by = p_closed_by,
         exit_time = CASE WHEN (qty_open - p_close_qty) <= 0 THEN now() ELSE exit_time END,
+        duration_seconds = CASE WHEN (qty_open - p_close_qty) <= 0 THEN EXTRACT(EPOCH FROM (now() - entry_time))::integer ELSE duration_seconds END,
         updated_at = now()
     WHERE id = p_position_id;
 
