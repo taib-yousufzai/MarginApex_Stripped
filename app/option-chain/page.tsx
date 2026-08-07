@@ -266,7 +266,7 @@ function OptionChainContent() {
       setLoadingError(null);
       try {
         const spotPriceParam = lastSpotPriceRef.current > 0 ? `&spotPrice=${lastSpotPriceRef.current}` : '';
-        const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}${spotPriceParam}`;
+        const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}${spotPriceParam}&_t=${Date.now()}`;
         const json = await api.get<{ success: boolean; expiry: string; error?: string; strikes: any[]; expiries: string[]; underlyingPrice?: number; underlyingSymbol?: string }>(url);
         if (json.success) {
           setLocalCache(cacheKey, json);
