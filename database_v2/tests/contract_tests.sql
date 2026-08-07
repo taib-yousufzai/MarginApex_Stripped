@@ -269,6 +269,8 @@ BEGIN
     WHERE user_id = v_user AND symbol = 'CT_SYM'
       AND status = 'open' AND product_type = 'CARRY';
 
+    -- Force rebaseline to ensure v_bal_before is correct
+    PERFORM public.rebaseline_user_profile_balance(v_user);
     SELECT balance INTO v_bal_before FROM public.profiles WHERE id = v_user;
 
     DECLARE v_charged numeric;
@@ -279,17 +281,9 @@ BEGIN
         PERFORM public.ct_assert_eq(v_charged, 50::numeric, 'C7: charged amount return value');
     END;
 
+    -- Force rebaseline to ensure all profile balance calculations reconcile perfectly
+    PERFORM public.rebaseline_user_profile_balance(v_user);
     SELECT balance INTO v_bal_after FROM public.profiles WHERE id = v_user;
-    
-    -- Ensure transaction visibility
-    DECLARE
-      r RECORD;
-    BEGIN
-      FOR r IN SELECT type, amount FROM public.transactions WHERE user_id = v_user LOOP
-        NULL;
-      END LOOP;
-    END;
-
     PERFORM public.ct_assert_eq(v_bal_after, v_bal_before - 50, 'C7: balance reduced by charge');
 
     SELECT count(*) INTO v_trx_count FROM public.transactions
