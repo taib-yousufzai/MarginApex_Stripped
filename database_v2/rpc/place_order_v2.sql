@@ -93,7 +93,7 @@ BEGIN
             SELECT side, COALESCE(SUM(qty_open), 0)
             INTO v_pos_side, v_pos_qty_open
             FROM public.positions
-            WHERE user_id = p_user_id AND symbol = p_symbol AND status = 'open'
+            WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active')
             GROUP BY side;
 
             IF NOT FOUND OR v_pos_qty_open <= 0 THEN
@@ -113,7 +113,7 @@ BEGIN
         SELECT id, qty_open, side
         INTO v_position_id, v_pos_qty_open, v_pos_side
         FROM public.positions
-        WHERE user_id = p_user_id AND symbol = p_symbol AND status = 'open'
+        WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active')
         ORDER BY entry_time DESC
         LIMIT 1
         FOR UPDATE;
@@ -139,7 +139,7 @@ BEGIN
             FOR v_pos IN 
                 SELECT id, qty_open 
                 FROM public.positions
-                WHERE user_id = p_user_id AND symbol = p_symbol AND status = 'open' AND side = v_pos_side
+                WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active') AND side = v_pos_side
                 ORDER BY entry_time ASC
                 FOR UPDATE
             LOOP
@@ -152,7 +152,8 @@ BEGIN
                     v_closed_qty := v_remaining_qty;
                     PERFORM public.reduce_position_internal(
                         v_pos.id, v_closed_qty, p_fill_price, p_ltp,
-                        0, p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                        round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
+                        p_idempotency_key || '_' || v_pos.id::text -- unique per lot
                     );
                     v_remaining_qty := 0;
                 ELSE
@@ -160,7 +161,8 @@ BEGIN
                     v_closed_qty := v_pos.qty_open;
                     PERFORM public.close_position_v2(
                         v_pos.id, v_closed_qty, p_fill_price,
-                        'FIFO_EXIT', 0, p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                        'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
+                        p_idempotency_key || '_' || v_pos.id::text -- unique per lot
                     );
                     v_remaining_qty := v_remaining_qty - v_closed_qty;
                 END IF;

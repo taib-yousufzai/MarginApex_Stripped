@@ -1527,7 +1527,7 @@ export default function PositionPage() {
                       <div className="ps-meta-row">
                         <div>
                           <div className="ps-meta-label">Avg Price</div>
-                          <div className="ps-meta-val">{fmtPrice((selectedPos.avg_price || selectedPos.entry_price) * (selectedPos.qty_open || selectedPos.qty_total), selectedPos.settlement)}</div>
+                          <div className="ps-meta-val">{fmtPrice(selectedPos.avg_price || selectedPos.entry_price, selectedPos.settlement)}</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                           <div className="ps-meta-label">Quantity</div>
