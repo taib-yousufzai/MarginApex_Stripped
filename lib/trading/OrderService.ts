@@ -156,7 +156,7 @@ export class OrderService {
     lossHoldSec: number
   ): string | null {
     if (isExit && activePosition && activePosition.entry_time && (orderType === 'MARKET' || orderType === 'SLM')) {
-      const entryPrice = Number(activePosition.entry_price || activePosition.avg_price || 0);
+      const entryPrice = Number(activePosition.avg_price || activePosition.entry_price || 0);
       const pnlValue = activePosition.side === 'BUY'
         ? (baseLtp - entryPrice) * Number(activePosition.qty_open)
         : (entryPrice - baseLtp) * Number(activePosition.qty_open);
