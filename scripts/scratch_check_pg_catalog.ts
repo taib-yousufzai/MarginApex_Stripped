@@ -14,14 +14,13 @@ const client = new Client({
 async function main() {
   await client.connect();
   console.log('Connected to DB');
-
-  const columnsRes = await client.query(`
-    SELECT column_name, data_type
-    FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'segment_settings';
+  const res = await client.query(`
+    SELECT DISTINCT strike_price
+    FROM public.instruments
+    WHERE name = 'BANKEX' AND option_type IN ('CE', 'PE') AND expiry = '2026-08-27'
+    ORDER BY strike_price::numeric ASC;
   `);
-  console.log('segment_settings columns:', columnsRes.rows.map(r => `${r.column_name}: ${r.data_type}`));
-
+  console.log('All BANKEX strikes:', JSON.stringify(res.rows.map(r => r.strike_price)));
   await client.end();
 }
 
