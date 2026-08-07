@@ -151,18 +151,30 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
             const peBidVal = peQuote && peQuote.bid !== undefined && peQuote.bid !== 0 ? peQuote.bid : null;
             const peAskVal = peQuote && peQuote.ask !== undefined && peQuote.ask !== 0 ? peQuote.ask : null;
 
-            let ceBidFinal = ceBidVal;
-            let ceAskFinal = ceAskVal;
-            let peBidFinal = peBidVal;
-            let peAskFinal = peAskVal;
+            let ceBidFinal = ceLtpVal ? ceLtpVal * 0.9995 : null;
+            let ceAskFinal = ceLtpVal ? ceLtpVal * 1.0005 : null;
+            let peBidFinal = peLtpVal ? peLtpVal * 0.9995 : null;
+            let peAskFinal = peLtpVal ? peLtpVal * 1.0005 : null;
 
             if (ceLtpVal && ceLtpVal > 0) {
-              if (ceBidVal && Math.abs(ceBidVal - ceLtpVal) / ceLtpVal > 0.15) ceBidFinal = null;
-              if (ceAskVal && Math.abs(ceAskVal - ceLtpVal) / ceLtpVal > 0.15) ceAskFinal = null;
+              const ceMinBid = ceLtpVal * 0.99;
+              const ceMaxAsk = ceLtpVal * 1.01;
+              if (ceBidVal && ceBidVal >= ceMinBid && ceBidVal <= ceLtpVal) {
+                ceBidFinal = ceBidVal;
+              }
+              if (ceAskVal && ceAskVal <= ceMaxAsk && ceAskVal >= ceLtpVal) {
+                ceAskFinal = ceAskVal;
+              }
             }
             if (peLtpVal && peLtpVal > 0) {
-              if (peBidVal && Math.abs(peBidVal - peLtpVal) / peLtpVal > 0.15) peBidFinal = null;
-              if (peAskVal && Math.abs(peAskVal - peLtpVal) / peLtpVal > 0.15) peAskFinal = null;
+              const peMinBid = peLtpVal * 0.99;
+              const peMaxAsk = peLtpVal * 1.01;
+              if (peBidVal && peBidVal >= peMinBid && peBidVal <= peLtpVal) {
+                peBidFinal = peBidVal;
+              }
+              if (peAskVal && peAskVal <= peMaxAsk && peAskVal >= peLtpVal) {
+                peAskFinal = peAskVal;
+              }
             }
 
             const ceBid = ceBidFinal ? ceBidFinal.toFixed(1) : '---';
