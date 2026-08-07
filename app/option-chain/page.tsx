@@ -190,6 +190,8 @@ function OptionChainContent() {
     }
   };
 
+  const lastSpotPriceRef = useRef<number>(0);
+
   // Toast State
   const [toast, setToast] = useState<{ msg: string; isError: boolean; visible: boolean }>({
     msg: '', isError: false, visible: false
@@ -263,7 +265,8 @@ function OptionChainContent() {
       setLoading(true);
       setLoadingError(null);
       try {
-        const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}`;
+        const spotPriceParam = lastSpotPriceRef.current > 0 ? `&spotPrice=${lastSpotPriceRef.current}` : '';
+        const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}${spotPriceParam}`;
         const json = await api.get<{ success: boolean; expiry: string; error?: string; strikes: any[]; expiries: string[]; underlyingPrice?: number; underlyingSymbol?: string }>(url);
         if (json.success) {
           setLocalCache(cacheKey, json);
@@ -315,6 +318,12 @@ function OptionChainContent() {
     }
     return data?.underlyingPrice || 0;
   }, [quotes, data]);
+
+  React.useEffect(() => {
+    if (spotPrice > 0) {
+      lastSpotPriceRef.current = spotPrice;
+    }
+  }, [spotPrice]);
 
   const handleTrade = (instrSymbol: string, side: 'BUY' | 'SELL') => {
     const strikeMatch = data?.strikes.find(s => s.ce?.symbol === instrSymbol || s.pe?.symbol === instrSymbol);

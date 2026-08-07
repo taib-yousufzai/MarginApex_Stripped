@@ -146,10 +146,15 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
             const ceLtpVal = ceQuote ? ceQuote.lastPrice : s.ce?.price;
             const peLtpVal = peQuote ? peQuote.lastPrice : s.pe?.price;
 
-            const ceBid = ceLtpVal ? ceLtpVal.toFixed(1) : '---';
-            const ceAsk = ceLtpVal ? ceLtpVal.toFixed(1) : '---';
-            const peBid = peLtpVal ? peLtpVal.toFixed(1) : '---';
-            const peAsk = peLtpVal ? peLtpVal.toFixed(1) : '---';
+            const ceBidVal = ceQuote && ceQuote.bid !== undefined && ceQuote.bid !== 0 ? ceQuote.bid : ceLtpVal;
+            const ceAskVal = ceQuote && ceQuote.ask !== undefined && ceQuote.ask !== 0 ? ceQuote.ask : ceLtpVal;
+            const peBidVal = peQuote && peQuote.bid !== undefined && peQuote.bid !== 0 ? peQuote.bid : peLtpVal;
+            const peAskVal = peQuote && peQuote.ask !== undefined && peQuote.ask !== 0 ? peQuote.ask : peLtpVal;
+
+            const ceBid = ceBidVal ? ceBidVal.toFixed(1) : '---';
+            const ceAsk = ceAskVal ? ceAskVal.toFixed(1) : '---';
+            const peBid = peBidVal ? peBidVal.toFixed(1) : '---';
+            const peAsk = peAskVal ? peAskVal.toFixed(1) : '---';
 
             const ceLtp = ceLtpVal ? `\u20b9${ceLtpVal.toFixed(1)}` : '---';
             const peLtp = peLtpVal ? `\u20b9${peLtpVal.toFixed(1)}` : '---';

@@ -132,13 +132,19 @@ export async function GET(request: Request) {
         const isMcx = ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI'].includes(symbol);
         const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
 
-        // Look up ATM price from Redis
         const kiteIdMap: Record<string, string> = {
           'NIFTY': 'NSE:NIFTY 50', 'BANKNIFTY': 'NSE:NIFTY BANK',
           'FINNIFTY': 'NSE:NIFTY FIN SERVICE', 'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',
           'SENSEX': 'BSE:SENSEX', 'BANKEX': 'BSE:BANKEX',
         };
         underlyingSymbol = kiteIdMap[symbol] ?? `MCX:${symbol}`;
+
+        const spotParam = searchParams.get('spotPrice');
+        if (spotParam) {
+          atmPrice = parseFloat(spotParam) || 0;
+        }
+
+        if (!atmPrice) {
 
         if (isMcx) {
           let baseSymbol = symbol;
@@ -193,7 +199,6 @@ export async function GET(request: Request) {
             const q = JSON.parse(cached);
             atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
           }
-          
           if (!atmPrice) {
             const altKey = underlyingSymbol.split(':')[1] || symbol;
             const altCached = await redis.hget('market:quotes', altKey);
@@ -203,8 +208,9 @@ export async function GET(request: Request) {
             }
           }
         }
+      }
 
-        if (!atmPrice && options.length > 0) {
+      if (!atmPrice && options.length > 0) {
           console.warn(`[option-chain] Redis ATM price unavailable for ${symbol}, falling back to median strike`);
           usedFallback = true;
           const middleIndex = Math.floor(options.length / 2);
