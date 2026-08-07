@@ -165,6 +165,27 @@ export async function GET(request: Request) {
               atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
             }
           }
+
+          if (!atmPrice) {
+            const directFutRes = await supabase
+              .from('instruments')
+              .select('tradingsymbol')
+              .eq('name', symbol)
+              .eq('segment', 'MCX-FUT')
+              .gte('expiry', today)
+              .order('expiry', { ascending: true })
+              .limit(1);
+            if (directFutRes.data && directFutRes.data.length > 0) {
+              const directFutSymbol = directFutRes.data[0].tradingsymbol;
+              const directUnderlyingSymbol = `MCX:${directFutSymbol}`;
+              const directFutCached = await redis.hget('market:quotes', directUnderlyingSymbol);
+              if (directFutCached) {
+                const q = JSON.parse(directFutCached);
+                atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
+                underlyingSymbol = directUnderlyingSymbol;
+              }
+            }
+          }
         } else {
           // For indices, rely on the kiteId cache
           const cached = await redis.hget('market:quotes', underlyingSymbol);

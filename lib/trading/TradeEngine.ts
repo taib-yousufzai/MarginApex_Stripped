@@ -38,6 +38,7 @@ export class TradeEngine {
     
     is_exit = is_exit === true || (is_exit as any) === 'true';
     kiteInst = kiteInst || symbol || '';
+    if (side) side = side.toUpperCase();
 
     let dbSegment = mapSegmentToDbSegment(segment);
     const symUp = symbol.toUpperCase();
