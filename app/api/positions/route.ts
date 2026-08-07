@@ -63,6 +63,23 @@ export async function GET(request: NextRequest) {
 
     if (posResult.error) throw posResult.error;
 
+    // For closed positions, locked_margin is 0 after close. Recover the original margin
+    // from the MARGIN_CREDIT ledger entry written by close_position_v2 (ref_id = 'MRG_RET_<position_id>').
+    let marginByPositionId: Record<string, number> = {};
+    if (statusParam?.toLowerCase() === 'closed' && (posResult.data?.length ?? 0) > 0) {
+      const positionIds = (posResult.data ?? []).map((p: any) => `MRG_RET_${p.id}`);
+      const { data: marginRows } = await admin
+        .from('transactions')
+        .select('ref_id, amount')
+        .eq('user_id', user.id)
+        .eq('type', 'MARGIN_CREDIT')
+        .in('ref_id', positionIds);
+      for (const row of marginRows ?? []) {
+        const posId = (row.ref_id as string).replace('MRG_RET_', '');
+        marginByPositionId[posId] = Number(row.amount);
+      }
+    }
+
     // Resolve synthetic futures symbols to their nearest active contract trading symbols (e.g. CRUDEOIL_FUT -> MCX:CRUDEOIL26JULFUT)
     const positions = await Promise.all((posResult.data ?? []).map(async (p) => {
       let resolvedKite = p.symbol;
@@ -107,6 +124,9 @@ export async function GET(request: NextRequest) {
         product_type: p.product_type || 'INTRADAY',
         kite_instrument: resolvedKite,
         brokerage: p.brokerage || 0,
+        // For closed positions, restore the original locked_margin from the ledger
+        // (close_position_v2 zeros it out; we recover it via the MARGIN_CREDIT transaction)
+        locked_margin: marginByPositionId[p.id] ?? p.locked_margin ?? 0,
       };
     }));
 
