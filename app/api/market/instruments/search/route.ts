@@ -797,6 +797,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Append matching COMEX items if search query matches name, symbol, or 'comex'
+    const comexSearchItems = [
+      { name: 'GOLD (COMEX)', symbol: 'GC=F', comexSymbol: 'GC=F', segment: 'COMEX - Futures' },
+      { name: 'SILVER (COMEX)', symbol: 'SI=F', comexSymbol: 'SI=F', segment: 'COMEX - Futures' },
+      { name: 'CRUDE OIL (COMEX)', symbol: 'CL=F', comexSymbol: 'CL=F', segment: 'COMEX - Futures' },
+      { name: 'COPPER (COMEX)', symbol: 'HG=F', comexSymbol: 'HG=F', segment: 'COMEX - Futures' },
+      { name: 'NATURAL GAS (COMEX)', symbol: 'NG=F', comexSymbol: 'NG=F', segment: 'COMEX - Futures' },
+    ];
+    const matchingComex = comexSearchItems
+      .filter(item => 
+        item.name.toLowerCase().includes(qLower) || 
+        item.symbol.toLowerCase().includes(qLower) ||
+        'comex'.includes(qLower)
+      )
+      .map(item => ({
+        name: item.name,
+        symbol: item.symbol,
+        kiteSymbol: '', // Pure COMEX has no kiteSymbol
+        comexSymbol: item.comexSymbol,
+        price: 0,
+        change: '0%',
+        segment: item.segment,
+        contractDate: 'Continuous',
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+      }));
+
+    results.push(...matchingComex);
+
     return NextResponse.json(results);
   } catch (err: any) {
     console.error('[GET /api/market/instruments/search] Unexpected error:', err);

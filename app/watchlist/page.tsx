@@ -328,8 +328,9 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
   const isCrypto = !!item.binanceSymbol;
-  const hasDualView = !!item.kiteSymbol && !!item.comexSymbol;
-  const showComex = hasDualView && priceView === 'comex';
+  const isPureComex = !!item.comexSymbol && !item.kiteSymbol;
+  const hasDualView = false; // Toggles removed completely
+  const showComex = isPureComex;
 
   let ltp = 0;
   let prevClose = 0;
@@ -727,9 +728,7 @@ function WatchlistContent() {
 
   // ── Detail sheet: resolve live quote from correct source ─────────────────
   const isCrypto = !!(selectedItem?.binanceSymbol);
-  const isComex = selectedItem && (selectedItem as any).preferredView
-    ? (selectedItem as any).preferredView === 'comex'
-    : !!(selectedItem?.comexSymbol);
+  const isComex = !!(selectedItem?.comexSymbol) && (!(selectedItem?.kiteSymbol) || (selectedItem as any).preferredView === 'comex');
 
   const currentKiteQuote = selectedItem?.kiteSymbol ? marketQuotes[selectedItem.kiteSymbol] : null;
   const currentBinanceQuote = selectedItem?.binanceSymbol ? marketQuotes[selectedItem.binanceSymbol] : null;
@@ -2258,14 +2257,17 @@ function WatchlistContent() {
           <div id="chartSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('chartSheet'); const overlay = document.getElementById('chartSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setChartItem(null); setIsBenchmarkChart(false); }}></div>
           <div id="chartSheet" className="trade-sheet" style={{ height: '100dvh', paddingBottom: '0', display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
-              {chartItem && (
-                <TradingChart
-                  key={`${(chartItem as any).preferredView === 'comex' ? chartItem.comexSymbol : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}-${(chartItem as any).preferredView === 'comex' ? 'COMEX' : chartItem.segment}`}
-                  symbol={(chartItem as any).preferredView === 'comex' ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
-                  segment={(chartItem as any).preferredView === 'comex' ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
-                  liveQuote={(chartItem as any).preferredView === 'comex' ? comexQuotes[chartItem.comexSymbol || ''] : (chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol])}
-                />
-              )}
+              {chartItem && (() => {
+                const isChartComex = !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
+                return (
+                  <TradingChart
+                    key={`${isChartComex ? chartItem.comexSymbol : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}-${isChartComex ? 'COMEX' : chartItem.segment}`}
+                    symbol={isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
+                    segment={isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
+                    liveQuote={isChartComex ? comexQuotes[chartItem.comexSymbol || ''] : (chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol])}
+                  />
+                );
+              })()}
             </div>
           </div>
 
