@@ -721,9 +721,10 @@ function WatchlistContent() {
 
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
 
-  const comexSymbols = watchlistItems
-    .map(i => i.comexSymbol)
-    .filter((s): s is string => !!s);
+  const comexSymbols = Array.from(new Set([
+    ...watchlistItems.map(i => i.comexSymbol).filter((s): s is string => !!s),
+    ...(selectedItem?.comexSymbol ? [selectedItem.comexSymbol] : [])
+  ]));
   const { quotes: comexQuotes } = useComexQuotes(comexSymbols, 1000);
 
   // ── Detail sheet: resolve live quote from correct source ─────────────────
