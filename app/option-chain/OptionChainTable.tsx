@@ -146,36 +146,20 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
             const ceLtpVal = ceQuote ? ceQuote.lastPrice : s.ce?.price;
             const peLtpVal = peQuote ? peQuote.lastPrice : s.pe?.price;
 
-            const ceBidVal = ceQuote && ceQuote.bid !== undefined && ceQuote.bid !== 0 ? ceQuote.bid : null;
-            const ceAskVal = ceQuote && ceQuote.ask !== undefined && ceQuote.ask !== 0 ? ceQuote.ask : null;
-            const peBidVal = peQuote && peQuote.bid !== undefined && peQuote.bid !== 0 ? peQuote.bid : null;
-            const peAskVal = peQuote && peQuote.ask !== undefined && peQuote.ask !== 0 ? peQuote.ask : null;
+            const ceBidVal = ceQuote?.bid && ceQuote.bid > 0 ? ceQuote.bid : null;
+            const ceAskVal = ceQuote?.ask && ceQuote.ask > 0 ? ceQuote.ask : null;
+            const peBidVal = peQuote?.bid && peQuote.bid > 0 ? peQuote.bid : null;
+            const peAskVal = peQuote?.ask && peQuote.ask > 0 ? peQuote.ask : null;
 
-            let ceBidFinal = ceLtpVal ? ceLtpVal * 0.9995 : null;
-            let ceAskFinal = ceLtpVal ? ceLtpVal * 1.0005 : null;
-            let peBidFinal = peLtpVal ? peLtpVal * 0.9995 : null;
-            let peAskFinal = peLtpVal ? peLtpVal * 1.0005 : null;
+            // Use real bid/ask if valid (both present and bid < ask).
+            // Fall back to a tight synthetic spread around LTP only when missing or crossed.
+            const ceHasValidSpread = ceBidVal && ceAskVal && ceBidVal < ceAskVal;
+            const peHasValidSpread = peBidVal && peAskVal && peBidVal < peAskVal;
 
-            if (ceLtpVal && ceLtpVal > 0) {
-              const ceMinBid = ceLtpVal * 0.99;
-              const ceMaxAsk = ceLtpVal * 1.01;
-              if (ceBidVal && ceBidVal >= ceMinBid && ceBidVal <= ceLtpVal) {
-                ceBidFinal = ceBidVal;
-              }
-              if (ceAskVal && ceAskVal <= ceMaxAsk && ceAskVal >= ceLtpVal) {
-                ceAskFinal = ceAskVal;
-              }
-            }
-            if (peLtpVal && peLtpVal > 0) {
-              const peMinBid = peLtpVal * 0.99;
-              const peMaxAsk = peLtpVal * 1.01;
-              if (peBidVal && peBidVal >= peMinBid && peBidVal <= peLtpVal) {
-                peBidFinal = peBidVal;
-              }
-              if (peAskVal && peAskVal <= peMaxAsk && peAskVal >= peLtpVal) {
-                peAskFinal = peAskVal;
-              }
-            }
+            const ceBidFinal = ceHasValidSpread ? ceBidVal : (ceLtpVal ? ceLtpVal * 0.9995 : null);
+            const ceAskFinal = ceHasValidSpread ? ceAskVal : (ceLtpVal ? ceLtpVal * 1.0005 : null);
+            const peBidFinal = peHasValidSpread ? peBidVal : (peLtpVal ? peLtpVal * 0.9995 : null);
+            const peAskFinal = peHasValidSpread ? peAskVal : (peLtpVal ? peLtpVal * 1.0005 : null);
 
             const ceBid = ceBidFinal ? ceBidFinal.toFixed(1) : '---';
             const ceAsk = ceAskFinal ? ceAskFinal.toFixed(1) : '---';

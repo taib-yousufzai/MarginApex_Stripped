@@ -778,14 +778,15 @@ function WatchlistContent() {
     rawAsk = currentKiteQuote.ask || currentLtp;
   }
 
+  // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
+  // Only fall back to a tight synthetic spread when prices are missing or crossed.
   if (currentLtp > 0) {
-    const bidDev = Math.abs(rawBid - currentLtp) / currentLtp;
-    const askDev = Math.abs(rawAsk - currentLtp) / currentLtp;
-    if (bidDev > 0.15 || rawBid <= 0) {
-      rawBid = currentLtp;
-    }
-    if (askDev > 0.15 || rawAsk <= 0) {
-      rawAsk = currentLtp;
+    const defaultBid = currentLtp * 0.9995;
+    const defaultAsk = currentLtp * 1.0005;
+    const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid < rawAsk;
+    if (!hasValidSpread) {
+      rawBid = defaultBid;
+      rawAsk = defaultAsk;
     }
   }
 
