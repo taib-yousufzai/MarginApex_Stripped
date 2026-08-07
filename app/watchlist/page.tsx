@@ -391,7 +391,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
       <div className="wc-content instr-row__content">
         <div className="instr-row__left" onClick={handleLeftClick} style={{ cursor: 'pointer' }}>
           <div className="instr-row__name-line">
-            <span className="instr-row__name">{showComex ? (comexQuote?.contractSymbol ?? item.comexName ?? item.name) : item.name}</span>
+            <span className="instr-row__name">{item.name}</span>
             <span className="exchange-badge" style={
               isCrypto ? { background: '#F0A500', color: '#fff' } :
                 showComex ? { background: '#4A148C', color: '#fff' } : {}
