@@ -186,6 +186,18 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       rawAsk = marketQuotes[computedKiteSymbol].ask || currentLtp;
     }
 
+    // Sanity check: if bid or ask deviates by more than 15% from LTP, fall back to LTP (illiquid contract)
+    if (currentLtp > 0) {
+      const bidDev = Math.abs(rawBid - currentLtp) / currentLtp;
+      const askDev = Math.abs(rawAsk - currentLtp) / currentLtp;
+      if (bidDev > 0.15 || rawBid <= 0) {
+        rawBid = currentLtp;
+      }
+      if (askDev > 0.15 || rawAsk <= 0) {
+        rawAsk = currentLtp;
+      }
+    }
+
     if (exitMode) {
       bidPrice = rawBid * (1 - buyExitBuffer / 100);
       askPrice = rawAsk * (1 + sellExitBuffer / 100);

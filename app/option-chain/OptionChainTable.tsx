@@ -151,10 +151,24 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
             const peBidVal = peQuote && peQuote.bid !== undefined && peQuote.bid !== 0 ? peQuote.bid : null;
             const peAskVal = peQuote && peQuote.ask !== undefined && peQuote.ask !== 0 ? peQuote.ask : null;
 
-            const ceBid = ceBidVal ? ceBidVal.toFixed(1) : '---';
-            const ceAsk = ceAskVal ? ceAskVal.toFixed(1) : '---';
-            const peBid = peBidVal ? peBidVal.toFixed(1) : '---';
-            const peAsk = peAskVal ? peAskVal.toFixed(1) : '---';
+            let ceBidFinal = ceBidVal;
+            let ceAskFinal = ceAskVal;
+            let peBidFinal = peBidVal;
+            let peAskFinal = peAskVal;
+
+            if (ceLtpVal && ceLtpVal > 0) {
+              if (ceBidVal && Math.abs(ceBidVal - ceLtpVal) / ceLtpVal > 0.15) ceBidFinal = null;
+              if (ceAskVal && Math.abs(ceAskVal - ceLtpVal) / ceLtpVal > 0.15) ceAskFinal = null;
+            }
+            if (peLtpVal && peLtpVal > 0) {
+              if (peBidVal && Math.abs(peBidVal - peLtpVal) / peLtpVal > 0.15) peBidFinal = null;
+              if (peAskVal && Math.abs(peAskVal - peLtpVal) / peLtpVal > 0.15) peAskFinal = null;
+            }
+
+            const ceBid = ceBidFinal ? ceBidFinal.toFixed(1) : '---';
+            const ceAsk = ceAskFinal ? ceAskFinal.toFixed(1) : '---';
+            const peBid = peBidFinal ? peBidFinal.toFixed(1) : '---';
+            const peAsk = peAskFinal ? peAskFinal.toFixed(1) : '---';
 
             const ceLtp = ceLtpVal ? `\u20b9${ceLtpVal.toFixed(1)}` : '---';
             const peLtp = peLtpVal ? `\u20b9${peLtpVal.toFixed(1)}` : '---';
