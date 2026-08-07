@@ -280,6 +280,16 @@ BEGIN
     END;
 
     SELECT balance INTO v_bal_after FROM public.profiles WHERE id = v_user;
+    
+    -- Ensure transaction visibility
+    DECLARE
+      r RECORD;
+    BEGIN
+      FOR r IN SELECT type, amount FROM public.transactions WHERE user_id = v_user LOOP
+        NULL;
+      END LOOP;
+    END;
+
     PERFORM public.ct_assert_eq(v_bal_after, v_bal_before - 50, 'C7: balance reduced by charge');
 
     SELECT count(*) INTO v_trx_count FROM public.transactions
