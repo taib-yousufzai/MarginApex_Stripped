@@ -260,7 +260,24 @@ export class TradeEngine {
       ? rawInstrumentLotSize
       : Number(scriptSetting?.lot_size || getLotSizeFallback(symbol, ctx.script_settings));
 
-    const isBlocked = ctx.is_blocked?.some((b: any) => b.symbol === symbol || b.symbol === kiteInst);
+    const isBlocked = ctx.is_blocked?.some((b: any) => {
+      const blockedUpper = b.symbol.toUpperCase();
+      const symbolUpper = symbol.toUpperCase();
+      const kiteInstUpper = kiteInst.toUpperCase();
+      const instNameUpper = instrumentDetail?.name?.toUpperCase() || '';
+      
+      const parsed = parseOptionSymbol(symbol);
+      const optionUnderlying = parsed?.underlying?.toUpperCase() || '';
+      
+      const isPrefixMatch = symbolUpper.startsWith(blockedUpper) || 
+                            kiteInstUpper.includes(blockedUpper);
+                            
+      return symbolUpper === blockedUpper || 
+             kiteInstUpper === blockedUpper || 
+             instNameUpper === blockedUpper ||
+             optionUnderlying === blockedUpper ||
+             isPrefixMatch;
+    });
     
     if (isBlocked) {
       throw new Error('Trading Not Allowed In This Script. Please Contact Admin.');

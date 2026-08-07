@@ -767,7 +767,15 @@ export async function GET(request: NextRequest) {
           .eq('user_id', user.id);
         if (blockedRows && blockedRows.length > 0) {
           const blockedSet = new Set(blockedRows.map((r: any) => r.symbol.toUpperCase()));
-          results = results.filter(r => !blockedSet.has((r.symbol || '').toUpperCase()));
+          results = results.filter(r => {
+            const sym = (r.symbol || '').toUpperCase();
+            const name = (r.name || '').toUpperCase();
+            if (blockedSet.has(sym) || blockedSet.has(name)) return false;
+            for (const blocked of blockedSet) {
+              if (sym.startsWith(blocked)) return false;
+            }
+            return true;
+          });
         }
 
         // Also filter out entire segments if they are blocked (trade_allowed = false)

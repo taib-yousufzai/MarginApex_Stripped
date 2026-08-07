@@ -213,7 +213,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         if (!staticProps[p.id]) {
           const dbSeg = mapSegmentWithSymbol(p.settlement || '', p.symbol);
           const segUpper = dbSeg.toUpperCase();
-          const isCrypto = segUpper.includes('CRYPTO') || (p.symbol && p.symbol.endsWith('USDT'));
+          const isCrypto = segUpper.includes('CRYPTO') || !!(p.symbol && p.symbol.endsWith('USDT'));
           const isComex = (p as any).preferredView === 'comex' || segUpper.includes('COMEX');
           
           let binanceSymbol = '';

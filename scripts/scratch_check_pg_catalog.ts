@@ -15,12 +15,11 @@ async function main() {
   await client.connect();
   console.log('Connected to DB');
   const res = await client.query(`
-    SELECT DISTINCT strike_price
-    FROM public.instruments
-    WHERE name = 'BANKEX' AND option_type IN ('CE', 'PE') AND expiry = '2026-08-27'
-    ORDER BY strike_price::numeric ASC;
+    SELECT user_id, segment, strike_range, side
+    FROM public.segment_settings
+    WHERE segment = 'MCX-OPT';
   `);
-  console.log('All BANKEX strikes:', JSON.stringify(res.rows.map(r => r.strike_price)));
+  console.log('segment_settings for MCX-OPT:', res.rows);
   await client.end();
 }
 
