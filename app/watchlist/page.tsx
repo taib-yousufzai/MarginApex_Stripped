@@ -98,10 +98,10 @@ const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
 // Rows with both kiteSymbol + comexSymbol show a ₹⇄$ toggle pill
 
 const DEFAULT_COMEX_ITEMS: WatchlistItem[] = [
-  { name: 'GOLD', symbol: 'MCX:GOLD26AUGFUT', kiteSymbol: 'MCX:GOLD26AUGFUT', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
-  { name: 'SILVER', symbol: 'MCX:SILVER26SEPFUT', kiteSymbol: 'MCX:SILVER26SEPFUT', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 0, high: 0, low: 0, close: 0 },
-  { name: 'CRUDEOIL', symbol: 'MCX:CRUDEOIL26AUGFUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
-  { name: 'COPPER', symbol: 'MCX:COPPER26AUGFUT', kiteSymbol: 'MCX:COPPER26AUGFUT', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'GOLD', symbol: 'MCX:GOLD26AUGFUT', kiteSymbol: 'MCX:GOLD26AUGFUT', comexSymbol: 'GC=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'SILVER', symbol: 'MCX:SILVER26SEPFUT', kiteSymbol: 'MCX:SILVER26SEPFUT', comexSymbol: 'SI=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'CRUDEOIL', symbol: 'MCX:CRUDEOIL26AUGFUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', comexSymbol: 'CL=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'COPPER', symbol: 'MCX:COPPER26AUGFUT', kiteSymbol: 'MCX:COPPER26AUGFUT', comexSymbol: 'HG=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
 ];
 
 export function getDefaultWatchlistItems(): WatchlistItem[] {
@@ -1162,6 +1162,18 @@ function WatchlistContent() {
         if (match && (item.name !== match.name || !item.comexName || item.name.includes('=F'))) {
           migrated = true;
           return { ...match };
+        }
+      }
+      // Backfill missing comexSymbol on known MCX commodity items
+      if (!item.comexSymbol && item.kiteSymbol?.startsWith('MCX:')) {
+        const COMEX_MAP: Record<string, string> = {
+          GOLD: 'GC=F', SILVER: 'SI=F', CRUDEOIL: 'CL=F', COPPER: 'HG=F', NATURALGAS: 'NG=F'
+        };
+        const baseName = (item.name || '').toUpperCase().replace(/\s*\(COMEX\)/i, '').trim();
+        const cSym = COMEX_MAP[baseName];
+        if (cSym) {
+          migrated = true;
+          return { ...item, comexSymbol: cSym };
         }
       }
       // Upgrade expired May 2026 contracts to active June 2026 contracts

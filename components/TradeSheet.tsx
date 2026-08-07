@@ -158,6 +158,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     currentLtp = marketQuotes[computedKiteSymbol].lastPrice;
     currentChangePercent = marketQuotes[computedKiteSymbol].changePercent;
   }
+  // Fallback: if still no price and comexSymbol exists, use COMEX USD price
+  if (currentLtp === 0 && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
+    currentLtp = comexQuotes[item.comexSymbol].lastPrice;
+    currentChangePercent = comexQuotes[item.comexSymbol].changePercent;
+  }
 
   const activeSide: 'BUY' | 'SELL' = (side === 'SELL' || side === 'BUY') ? side : 'BUY';
   const buySetting = dbSeg ? getSegment(dbSeg, 'BUY') : undefined;
