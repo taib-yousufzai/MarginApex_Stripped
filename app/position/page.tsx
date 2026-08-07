@@ -968,12 +968,6 @@ export default function PositionPage() {
                           </div>
                           {expandedPosId === group.key && (
                             <>
-                              {group.hold_lock_active && (
-                                <div className="pos-lock-banner" style={{ margin: '8px 12px 0 12px' }} onClick={e => e.stopPropagation()}>
-                                  <i className="fas fa-lock banner-icon" />
-                                  <span>Anti-Scalping lock active. Remaining: <HoldLockCountdown pos={group.representativePos} /></span>
-                                </div>
-                              )}
                               <div className="pos-card-actions" onClick={e => e.stopPropagation()}>
                               <button className="pca-btn pca-add" onClick={() => openAddMore(group.representativePos)}>
                                 <i className="fas fa-plus-circle" /> Add More
@@ -1157,12 +1151,6 @@ export default function PositionPage() {
                             </div>
                             {expandedPosId === pos.id && (pos.status === 'open' || pos.status === 'active') && (
                               <>
-                                {pos.hold_lock_active && (
-                                  <div className="pos-lock-banner" style={{ margin: '8px 12px 0 12px' }} onClick={e => e.stopPropagation()}>
-                                    <i className="fas fa-lock banner-icon" />
-                                    <span>Anti-Scalping lock active. Remaining: <HoldLockCountdown pos={pos} /></span>
-                                  </div>
-                                )}
                                 <div className="pos-card-actions" onClick={e => e.stopPropagation()}>
                                 <button className="pca-btn pca-add" onClick={() => openAddMore(actualPos)}>
                                   <i className="fas fa-plus-circle" /> Add More
@@ -1581,12 +1569,6 @@ export default function PositionPage() {
 
 
                       {/* P&L + Exit All */}
-                      {selectedPos.hold_lock_active && (
-                        <div className="pos-lock-banner" style={{ margin: '0 0 12px 0', width: '100%' }}>
-                          <i className="fas fa-lock banner-icon" />
-                          <span>Anti-Scalping lock active. Remaining: <HoldLockCountdown pos={selectedPos} /></span>
-                        </div>
-                      )}
                       <div className="ps-pnl-section">
                         <div>
                           <div className="ps-pnl-label">Current P&amp;L</div>
