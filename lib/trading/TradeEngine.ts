@@ -275,11 +275,15 @@ export class TradeEngine {
     const tradingMode = profile.trading_mode || 'normal';
     const settingsTable = tradingMode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
     const settingsLookupId = profile.parent_id ?? user.id;
-    const { data: userSegRows } = await admin
+    const { data: userSegRows, error: segRowsError } = await admin
       .from(settingsTable)
-      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit, intraday_commission_type, intraday_commission_value')
+      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit')
       .eq('user_id', settingsLookupId)
       .eq('segment', dbSegment);
+
+    if (segRowsError) {
+      console.error('[TradeEngine] Failed to fetch segment settings:', segRowsError.message);
+    }
 
     const userBuySetting  = userSegRows?.find((s: any) => s.side === 'BUY')  ?? null;
     const userSellSetting = userSegRows?.find((s: any) => s.side === 'SELL') ?? null;
@@ -459,8 +463,8 @@ export class TradeEngine {
       //   - Entry brokerage + exit brokerage are both charged at position open time (× 2)
       //   - No brokerage is charged again when the position is closed
       //   - Carry brokerage is separate and charged at INTRADAY → CARRY conversion
-      const commType = segSetting.intraday_commission_type || segSetting.commission_type || 'Per Crore';
-      const commVal = Number(segSetting.intraday_commission_value ?? segSetting.commission_value ?? 0);
+      const commType = segSetting.commission_type || 'Per Crore';
+      const commVal = Number(segSetting.commission_value ?? 0);
       const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
       brokerage = Math.round(singleLeg * 2 * 100) / 100; // both legs up front
     } else {
