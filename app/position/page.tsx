@@ -1402,6 +1402,18 @@ export default function PositionPage() {
                             {selectedPos.exit_time ? new Date(selectedPos.exit_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                           </div>
                         </div>
+                        <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Brokerage</div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>
+                            {fmtPrice(selectedPos.brokerage || 0, selectedPos.settlement)}
+                          </div>
+                        </div>
+                        <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Product Type</div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>
+                            {selectedPos.product_type || 'INTRADAY'}
+                          </div>
+                        </div>
                       </div>
 
 
@@ -1536,6 +1548,33 @@ export default function PositionPage() {
                         <div style={{ textAlign: 'right' }}>
                           <div className="ps-meta-label">Side</div>
                           <span className={`pos-badge ${selectedPos.side === 'BUY' ? 'long' : 'short'}`} style={{ fontSize: '0.75rem', padding: '4px 14px' }}>{selectedPos.side}</span>
+                        </div>
+                      </div>
+                      
+                      {/* Meta row 2 */}
+                      <div className="ps-meta-row" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-light, #e8ecf0)' }}>
+                        <div>
+                          <div className="ps-meta-label">Used Margin</div>
+                          <div className="ps-meta-val" style={{ fontSize: '0.9rem' }}>
+                            {fmtPrice(selectedPos.locked_margin || selectedPos.margin_required || 0, selectedPos.settlement)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div className="ps-meta-label">Brokerage</div>
+                          <div className="ps-meta-val" style={{ fontSize: '0.9rem' }}>
+                            {fmtPrice(selectedPos.brokerage || 0, selectedPos.settlement)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="ps-meta-label">Duration</div>
+                          <div className="ps-meta-val" style={{ fontSize: '0.9rem' }}>
+                            {(() => {
+                              const s = selectedPos.duration_seconds || 0;
+                              if (s < 60) return `${s}s`;
+                              if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+                              return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+                            })()}
+                          </div>
                         </div>
                       </div>
 
