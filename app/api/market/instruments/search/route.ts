@@ -526,14 +526,68 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            // Only restrict if we actually got cache data — otherwise pass through
+            // Only restrict if we actually got cache data — otherwise apply a dynamic fallback
             if (cacheHit && allowedSymbols.size > 0) {
               filteredOptions = filteredOptions.filter((r: any) =>
                 allowedSymbols.has((r.tradingsymbol || '').toUpperCase())
               );
+            } else {
+              // Fallback: If cache is missing, filter dynamically using 11 strikes centered around the ATM price
+              const underlyingIds = Array.from(new Set(filteredOptions.map((r: any) => getUnderlyingId(r.tradingsymbol))));
+              const priceMap = await fetchLivePrices(underlyingIds, request);
+
+              // Group options by underlying name
+              const groupedOptions: Record<string, any[]> = {};
+              for (const opt of filteredOptions) {
+                const name = (opt.name || opt.underlying_symbol || '').toUpperCase();
+                if (!groupedOptions[name]) groupedOptions[name] = [];
+                groupedOptions[name].push(opt);
+              }
+
+              let finalFilteredOptions: any[] = [];
+              for (const [underlying, opts] of Object.entries(groupedOptions)) {
+                const underlyingId = getUnderlyingId(opts[0].tradingsymbol);
+                const underlyingLtp = priceMap[underlyingId];
+                if (!underlyingLtp || underlyingLtp <= 0) {
+                  finalFilteredOptions.push(...opts);
+                  continue;
+                }
+
+                const uniqueStrikes = Array.from(new Set(opts.map(o => Number(o.strike_price || 0)))).sort((a, b) => a - b);
+                let closestIdx = 0;
+                let minDiff = Infinity;
+                for (let i = 0; i < uniqueStrikes.length; i++) {
+                  const diff = Math.abs(uniqueStrikes[i] - underlyingLtp);
+                  if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIdx = i;
+                  }
+                }
+
+                const rangeCount = 11;
+                const half = Math.floor(rangeCount / 2);
+                let startIdx = closestIdx - half;
+                let endIdx = closestIdx + half;
+
+                if (startIdx < 0) {
+                  endIdx += Math.abs(startIdx);
+                  startIdx = 0;
+                }
+                if (endIdx >= uniqueStrikes.length) {
+                  const excess = endIdx - (uniqueStrikes.length - 1);
+                  startIdx = Math.max(0, startIdx - excess);
+                  endIdx = uniqueStrikes.length - 1;
+                }
+
+                const allowedStrikes = new Set(uniqueStrikes.slice(startIdx, endIdx + 1));
+                finalFilteredOptions.push(...opts.filter(o => allowedStrikes.has(Number(o.strike_price || 0))));
+              }
+              filteredOptions = finalFilteredOptions;
             }
           }
-        } catch { /* non-fatal — don't break search if Redis is down */ }
+        } catch (e) {
+          console.error('[GET /api/market/instruments/search] Fallback filter error:', e);
+        }
       }
     }
 
