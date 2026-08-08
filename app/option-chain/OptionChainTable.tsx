@@ -146,10 +146,25 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
             const ceLtpVal = ceQuote ? ceQuote.lastPrice : s.ce?.price;
             const peLtpVal = peQuote ? peQuote.lastPrice : s.pe?.price;
 
-            const ceBid = ceLtpVal ? ceLtpVal.toFixed(1) : '---';
-            const ceAsk = ceLtpVal ? ceLtpVal.toFixed(1) : '---';
-            const peBid = peLtpVal ? peLtpVal.toFixed(1) : '---';
-            const peAsk = peLtpVal ? peLtpVal.toFixed(1) : '---';
+            const ceBidVal = ceQuote?.bid && ceQuote.bid > 0 ? ceQuote.bid : null;
+            const ceAskVal = ceQuote?.ask && ceQuote.ask > 0 ? ceQuote.ask : null;
+            const peBidVal = peQuote?.bid && peQuote.bid > 0 ? peQuote.bid : null;
+            const peAskVal = peQuote?.ask && peQuote.ask > 0 ? peQuote.ask : null;
+
+            // Use real bid/ask if valid (both present and bid < ask).
+            // Fall back to a tight synthetic spread around LTP only when missing or crossed.
+            const ceHasValidSpread = ceBidVal && ceAskVal && ceBidVal < ceAskVal;
+            const peHasValidSpread = peBidVal && peAskVal && peBidVal < peAskVal;
+
+            const ceBidFinal = ceHasValidSpread ? ceBidVal : (ceLtpVal ? ceLtpVal * 0.9995 : null);
+            const ceAskFinal = ceHasValidSpread ? ceAskVal : (ceLtpVal ? ceLtpVal * 1.0005 : null);
+            const peBidFinal = peHasValidSpread ? peBidVal : (peLtpVal ? peLtpVal * 0.9995 : null);
+            const peAskFinal = peHasValidSpread ? peAskVal : (peLtpVal ? peLtpVal * 1.0005 : null);
+
+            const ceBid = ceBidFinal ? ceBidFinal.toFixed(1) : '---';
+            const ceAsk = ceAskFinal ? ceAskFinal.toFixed(1) : '---';
+            const peBid = peBidFinal ? peBidFinal.toFixed(1) : '---';
+            const peAsk = peAskFinal ? peAskFinal.toFixed(1) : '---';
 
             const ceLtp = ceLtpVal ? `\u20b9${ceLtpVal.toFixed(1)}` : '---';
             const peLtp = peLtpVal ? `\u20b9${peLtpVal.toFixed(1)}` : '---';

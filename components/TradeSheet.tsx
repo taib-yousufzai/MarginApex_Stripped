@@ -158,6 +158,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     currentLtp = marketQuotes[computedKiteSymbol].lastPrice;
     currentChangePercent = marketQuotes[computedKiteSymbol].changePercent;
   }
+  // Fallback: if still no price and comexSymbol exists, use COMEX USD price
+  if (currentLtp === 0 && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
+    currentLtp = comexQuotes[item.comexSymbol].lastPrice;
+    currentChangePercent = comexQuotes[item.comexSymbol].changePercent;
+  }
 
   const activeSide: 'BUY' | 'SELL' = (side === 'SELL' || side === 'BUY') ? side : 'BUY';
   const buySetting = dbSeg ? getSegment(dbSeg, 'BUY') : undefined;
@@ -184,6 +189,18 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     } else if (computedKiteSymbol && marketQuotes[computedKiteSymbol]) {
       rawBid = marketQuotes[computedKiteSymbol].bid || currentLtp;
       rawAsk = marketQuotes[computedKiteSymbol].ask || currentLtp;
+    }
+
+    // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
+    // Only fall back to a tight synthetic spread when prices are missing or crossed.
+    if (currentLtp > 0) {
+      const defaultBid = currentLtp * 0.9995;
+      const defaultAsk = currentLtp * 1.0005;
+      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid < rawAsk;
+      if (!hasValidSpread) {
+        rawBid = defaultBid;
+        rawAsk = defaultAsk;
+      }
     }
 
     if (exitMode) {
@@ -846,6 +863,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             stop_loss: resolvedStopLoss,
             target: resolvedTarget,
             is_exit: true,
+            linked_position_id: linkedPosId || undefined,
           });
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new Event('position-closed'));
@@ -923,6 +941,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           stop_loss: resolvedStopLoss,
           target: resolvedTarget,
           is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
+          linked_position_id: linkedPosId || undefined,
         }).then((res) => {
           if (!res.success) {
             window.dispatchEvent(new CustomEvent('order_error', { detail: `${res.error}` }));

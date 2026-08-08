@@ -275,9 +275,9 @@ export default function OrderPage() {
                     >
                       <div className="ord-row ord-row-top">
                         <span className="ord-symbol">{order.symbol}</span>
-                        <span className={`ord-badge ${order.is_exit ? (isBuy ? 'short' : 'long') : (isBuy ? 'long' : 'short')}`}>
-                          <i className={`fas fa-arrow-${order.is_exit ? (isBuy ? 'down' : 'up') : (isBuy ? 'up' : 'down')}`} />
-                          {order.is_exit ? (isBuy ? 'SELL' : 'BUY') : order.side}{order.is_exit ? ' EXIT' : ''}
+                        <span className={`ord-badge ${order.is_exit ? 'short' : (isBuy ? 'long' : 'short')}`}>
+                          <i className={`fas fa-arrow-${order.is_exit ? 'up' : 'down'}`} />
+                          {order.is_exit ? (isBuy ? 'SELL EXIT' : 'BUY EXIT') : (isBuy ? 'BUY' : 'SELL')}
                         </span>
                       </div>
                       <div className="ord-row ord-row-price">
@@ -383,8 +383,9 @@ export default function OrderPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                       <div className="os-symbol" style={{ color: 'var(--text-primary, #1A1A1A)', margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>{selectedOrder.symbol}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span className={`ord-badge ${selectedOrder.side === 'BUY' ? 'long' : 'short'}`} style={{ fontSize: '0.65rem', padding: '2px 8px' }}>
-                          {selectedOrder.side === 'BUY' ? 'BUY' : 'SELL'}
+                        <span className={`ord-badge ${selectedOrder.is_exit ? 'short' : (selectedOrder.side === 'BUY' ? 'long' : 'short')}`} style={{ fontSize: '0.65rem', padding: '2px 8px' }}>
+                          <i className={`fas fa-arrow-${selectedOrder.is_exit ? 'up' : 'down'}`} style={{ marginRight: '4px' }} />
+                          {selectedOrder.is_exit ? (selectedOrder.side === 'BUY' ? 'SELL EXIT' : 'BUY EXIT') : selectedOrder.side}
                         </span>
                         {selectedOrder.product_type && (
                           <span className="ord-type-pill" style={{ fontSize: '0.65rem', padding: '2px 8px' }}>{selectedOrder.product_type}</span>

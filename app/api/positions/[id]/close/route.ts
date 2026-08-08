@@ -299,24 +299,42 @@ async function handleClosePosition(
   }
 
   // 1. MASSIVE PARALLEL FETCH (Speculative)
-  const [posResult, profileResult, hrResult, segSettingResult, kiteLtp] = await Promise.all([
+  const [posResult, profileResult, hrResult, kiteLtp] = await Promise.all([
     admin.from('positions').select('*').eq('id', positionId).eq('user_id', user.id).eq('status', 'open').single(),
     admin.from('profiles').select('parent_id, trading_mode').eq('id', user.id).single(),
     (!speculativeSegment.toUpperCase().includes('CRYPTO')) 
         ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', segmentId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-    // Initial speculative fetch: use child settings as a best-effort guess.
-    admin.from('segment_settings').select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
-        .eq('user_id', user.id)
-        .eq('segment', speculativeSegment)
-        .eq('side', speculativeSide)
-        .maybeSingle(),
     (clientPrice ? Promise.resolve(null) : fetchLtp(speculativeSymbol, speculativeSegment))
   ]);
 
   const { data: pos, error: posErr } = posResult;
   if (posErr || !pos) {
     return NextResponse.json({ error: 'Position not found or already closed' }, { status: 404 });
+  }
+
+  // 2. Fetch segment settings with user.id priority, falling back to parent_id if not found
+  const profile = profileResult.data;
+  const targetTable = profile?.trading_mode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
+  
+  let segSettingResult = await admin
+    .from(targetTable)
+    .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+    .eq('user_id', user.id)
+    .eq('segment', pos.settlement ?? '')
+    .eq('side', pos.side)
+    .maybeSingle();
+
+  if (segSettingResult.error || !segSettingResult.data) {
+    if (profile?.parent_id) {
+      segSettingResult = await admin
+        .from(targetTable)
+        .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+        .eq('user_id', profile.parent_id)
+        .eq('segment', pos.settlement ?? '')
+        .eq('side', pos.side)
+        .maybeSingle();
+    }
   }
 
   // Verify speculative parameters (fallback if mismatched)
@@ -336,20 +354,31 @@ async function handleClosePosition(
     else if (ex2 === 'COMEX' || segUp.includes('COMEX')) actualSegId = 'comex';
 
     const lookupId = profileResult.data?.parent_id ?? user.id;
-    const targetTable = profileResult.data?.trading_mode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
 
-    const [realHr, realSeg, realLtp] = await Promise.all([
+    const [realHr, realLtp] = await Promise.all([
       (!segUp.includes('CRYPTO'))
         ? admin.from('trading_hours').select('name, start_time, end_time, is_active').eq('id', actualSegId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      admin.from(targetTable)
-          .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
-          .eq('user_id', lookupId)
-          .eq('segment', pos.settlement ?? '')
-          .eq('side', pos.side)
-          .maybeSingle(),
       (clientPrice ? Promise.resolve(null) : fetchLtp(pos.symbol, pos.settlement ?? ''))
     ]);
+    
+    // Re-fetch settings for actual position
+    let realSeg = await admin.from(targetTable)
+        .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+        .eq('user_id', user.id)
+        .eq('segment', pos.settlement ?? '')
+        .eq('side', pos.side)
+        .maybeSingle();
+        
+    if ((realSeg.error || !realSeg.data) && profileResult.data?.parent_id) {
+       realSeg = await admin.from(targetTable)
+        .select('exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+        .eq('user_id', profileResult.data.parent_id)
+        .eq('segment', pos.settlement ?? '')
+        .eq('side', pos.side)
+        .maybeSingle();
+    }
+
     finalHrResult = realHr;
     finalSegSettingResult = realSeg;
     finalKiteLtp = realLtp;

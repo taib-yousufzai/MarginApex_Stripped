@@ -9,14 +9,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { getUserFromRequest, getAdminClient } from '@/lib/adminClient';
+import { getRedisClient } from '@/lib/redis';
 import {
   applyForexFilter,
   applyCryptoWhitelist,
   applyExpiryFilter,
   type Instrument,
 } from '@/lib/filterEngine';
-import { getRedisClient, isRedisMock } from '@/lib/redis';
+
 import { parseOptionSymbol } from '@/lib/positionStore';
+
+// MCX commodity underlyings — these trade on MCX, not NSE
+const MCX_UNDERLYINGS = new Set([
+  'GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'SILVERMIC',
+  'CRUDEOIL', 'CRUDEOILM', 'NATURALGAS', 'NATGASMINI',
+  'COPPER', 'ZINC', 'ZINCMINI', 'LEAD', 'LEADMINI',
+  'ALUMINIUM', 'ALUMINI',
+]);
 
 function getUnderlyingId(symbol: string): string {
   const parsed = parseOptionSymbol(symbol);
@@ -27,6 +36,8 @@ function getUnderlyingId(symbol: string): string {
   if (u === 'BANKEX') return 'BSE:BANKEX';
   if (u === 'MIDCPNIFTY') return 'NSE:NIFTY MID SELECT';
   if (u === 'NIFTY') return 'NSE:NIFTY 50';
+  // MCX commodities — use MCX prefix so Redis lookups hit the right key space
+  if (MCX_UNDERLYINGS.has(u)) return `MCX:${u}`;
   return `NSE:${u}`;
 }
 
@@ -35,9 +46,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
-
-// ATM kite IDs for underlying index/commodity lookup in Redis — kept for future use
-// const UNDERLYING_KITE_IDS and MCX_UNDERLYINGS removed; search now reads option chain cache directly
 
 // Known underlying symbols for smart parsing
 const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'BANKEX', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
@@ -469,8 +477,60 @@ export async function GET(request: NextRequest) {
 
         if (optionsWithLimit.length > 0) {
           perUserRangeApplied = true;
-          const underlyingIds = Array.from(new Set(optionsWithLimit.map((r: any) => getUnderlyingId(r.tradingsymbol))));
-          const priceMap = await fetchLivePrices(underlyingIds, request);
+          const today2 = new Date().toISOString().split('T')[0];
+          const redis = getRedisClient();
+
+          // Build a combined price map: non-MCX via fetchLivePrices, MCX via Redis nearest fut
+          const allUnderlyingIds = Array.from(new Set(optionsWithLimit.map((r: any) => getUnderlyingId(r.tradingsymbol))));
+          const nonMcxIds = allUnderlyingIds.filter(id => !id.startsWith('MCX:'));
+          const mcxIds = allUnderlyingIds.filter(id => id.startsWith('MCX:'));
+
+          const priceMap = nonMcxIds.length > 0
+            ? await fetchLivePrices(nonMcxIds, request)
+            : {};
+
+          // For MCX underlyings, look up nearest futures contract price via Redis
+          if (mcxIds.length > 0) {
+            const mcxBaseMap: Record<string, string> = {
+              'GOLDM': 'GOLD', 'SILVERM': 'SILVER', 'SILVERMIC': 'SILVER',
+              'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
+              'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
+            };
+            const mcxNames = mcxIds.map(id => id.replace('MCX:', ''));
+            const lookupNames = Array.from(new Set(mcxNames.map(n => mcxBaseMap[n] || n)));
+            const { data: mcxFuts } = await supabase
+              .from('instruments')
+              .select('tradingsymbol, name, exchange, expiry')
+              .eq('exchange', 'MCX')
+              .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+              .in('name', lookupNames)
+              .gte('expiry', today2)
+              .order('expiry', { ascending: true });
+
+            if (mcxFuts && mcxFuts.length > 0) {
+              const nearestFutMap = new Map<string, string>();
+              for (const f of mcxFuts) {
+                if (!nearestFutMap.has(f.name)) nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
+              }
+              for (const [baseName, kiteId] of nearestFutMap.entries()) {
+                let atmPrice = 0;
+                try {
+                  const cached = await redis.hget('market:quotes', kiteId);
+                  if (cached) { const q = JSON.parse(cached); atmPrice = q.last_price || q.ohlc?.close || q.close || 0; }
+                  if (!atmPrice) {
+                    const altCached = await redis.hget('market:quotes', kiteId.split(':')[1] || '');
+                    if (altCached) { const q = JSON.parse(altCached); atmPrice = q.last_price || q.ohlc?.close || q.close || 0; }
+                  }
+                } catch { /* ignore */ }
+                if (atmPrice > 0) {
+                  priceMap[`MCX:${baseName}`] = atmPrice;
+                  for (const [mini, base] of Object.entries(mcxBaseMap)) {
+                    if (base === baseName) priceMap[`MCX:${mini}`] = atmPrice;
+                  }
+                }
+              }
+            }
+          }
 
           filteredOptions = filteredOptions.filter((r: any) => {
             if (r.strike_price === null) return true;
@@ -489,51 +549,165 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // ── Admin-config strike range fallback (matches option chain logic) ─
-      // ── Match option chain exactly: read its Redis cache per underlying ──
-      // The option chain stores its filtered strike list under optionChain:SYMBOL_expiry.
-      // Reading that cache gives us the exact same strikes the user sees there —
-      // no risk of drift from different ATM snapshots or range calculations.
+      // ── Admin-config strike range fallback: always computed from live ATM ─
+      // IMPORTANT: We never use the Redis option chain cache as the source of truth
+      // for allowed strikes. The cache has a 60s TTL and may contain an old ATM
+      // snapshot (e.g. GOLDM at 150000 when the underlying has since moved to 118000).
+      // TradeEngine re-fetches the live underlying price at order-placement time and
+      // rejects anything outside the current 11-strike window — so the search filter
+      // must use the same live price to stay in sync.
       if (!perUserRangeApplied && filteredOptions.length > 0) {
         try {
+          const today2 = new Date().toISOString().split('T')[0];
           const redis = getRedisClient();
-          if (!isRedisMock()) {
-            // Collect unique underlying names from the options we're about to return
-            const underlyingNames = Array.from(new Set(
-              filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
-            ));
 
-            // Build an allowed tradingsymbol set from every option chain cache entry we can find
-            const allowedSymbols = new Set<string>();
-            let cacheHit = false;
+          // Build a map from underlying name → live price.
+          // For MCX commodities we look up the nearest futures contract in Redis
+          // (same approach as the library route) since `MCX:GOLD` is not a valid
+          // Redis quote key — only `MCX:GOLD26AUGFUT` would be.
+          const underlyingNames = Array.from(new Set(
+            filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
+          ));
 
-            for (const underlying of underlyingNames) {
-              // Try all cached expiry keys for this underlying
-              const keys = await redis.keys(`optionChain:${underlying}_*`);
-              for (const key of keys) {
+          const priceMap: Record<string, number> = {};
+
+          // Split into MCX and non-MCX underlyings
+          const mcxNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
+          const nonMcxNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
+
+          // Non-MCX: use existing fetchLivePrices (indexed by kite ID like NSE:NIFTY 50)
+          if (nonMcxNames.length > 0) {
+            // Derive one representative option tradingsymbol per underlying to get its kite ID
+            const repSymbols = nonMcxNames.map(name => {
+              const rep = filteredOptions.find((r: any) => (r.name || r.underlying_symbol || '').toUpperCase() === name);
+              return rep ? getUnderlyingId(rep.tradingsymbol) : null;
+            }).filter(Boolean) as string[];
+            const nonMcxPrices = await fetchLivePrices(repSymbols, request);
+            // Map back: underlyingId → price
+            for (const [kiteId, price] of Object.entries(nonMcxPrices)) {
+              priceMap[kiteId] = price;
+            }
+          }
+
+          // MCX: look up nearest futures contract from DB, then check Redis
+          if (mcxNames.length > 0) {
+            // For GOLDM/SILVERM/CRUDEOILM/NATGASMINI we look up the base commodity future
+            const mcxBaseMap: Record<string, string> = {
+              'GOLDM': 'GOLD', 'SILVERM': 'SILVER', 'SILVERMIC': 'SILVER',
+              'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
+              'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
+            };
+            const lookupNames = Array.from(new Set(mcxNames.map(n => mcxBaseMap[n] || n)));
+
+            const { data: mcxFuts } = await supabase
+              .from('instruments')
+              .select('tradingsymbol, name, exchange, expiry')
+              .eq('exchange', 'MCX')
+              .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+              .in('name', lookupNames)
+              .gte('expiry', today2)
+              .order('expiry', { ascending: true });
+
+            if (mcxFuts && mcxFuts.length > 0) {
+              // Nearest future per commodity name
+              const nearestFutMap = new Map<string, string>();
+              for (const f of mcxFuts) {
+                if (!nearestFutMap.has(f.name)) {
+                  nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
+                }
+              }
+
+              // Fetch prices from Redis for each nearest future
+              for (const [baseName, kiteId] of nearestFutMap.entries()) {
+                let atmPrice = 0;
                 try {
-                  const cached = await redis.get(key);
-                  if (!cached) continue;
-                  const chain = JSON.parse(cached);
-                  if (chain.strikes && Array.isArray(chain.strikes)) {
-                    for (const s of chain.strikes) {
-                      if (s.ce?.symbol) allowedSymbols.add(s.ce.symbol.toUpperCase());
-                      if (s.pe?.symbol) allowedSymbols.add(s.pe.symbol.toUpperCase());
-                    }
-                    cacheHit = true;
+                  const cached = await redis.hget('market:quotes', kiteId);
+                  if (cached) {
+                    const q = JSON.parse(cached);
+                    atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
                   }
-                } catch { /* skip bad cache entry */ }
+                  if (!atmPrice) {
+                    // Try just the tradingsymbol without exchange prefix
+                    const altKey = kiteId.split(':')[1] || '';
+                    if (altKey) {
+                      const altCached = await redis.hget('market:quotes', altKey);
+                      if (altCached) {
+                        const q = JSON.parse(altCached);
+                        atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
+                      }
+                    }
+                  }
+                } catch { /* ignore Redis errors */ }
+
+                if (atmPrice > 0) {
+                  // Store under both the base name key and any mini variants
+                  priceMap[`MCX:${baseName}`] = atmPrice;
+                  // Also cover mini variants that map to this base
+                  for (const [miniName, base] of Object.entries(mcxBaseMap)) {
+                    if (base === baseName) priceMap[`MCX:${miniName}`] = atmPrice;
+                  }
+                }
+              }
+            }
+          }
+
+          // Group options by underlying name
+          const groupedOptions: Record<string, any[]> = {};
+          for (const opt of filteredOptions) {
+            const name = (opt.name || opt.underlying_symbol || '').toUpperCase();
+            if (!groupedOptions[name]) groupedOptions[name] = [];
+            groupedOptions[name].push(opt);
+          }
+
+          let finalFilteredOptions: any[] = [];
+          for (const [underlyingName, opts] of Object.entries(groupedOptions)) {
+            // Resolve the price map key for this group
+            const underlyingId = MCX_UNDERLYINGS.has(underlyingName)
+              ? `MCX:${underlyingName}`
+              : getUnderlyingId(opts[0].tradingsymbol);
+            const underlyingLtp = priceMap[underlyingId];
+
+            // If we can't get the live price, pass all strikes through (fail open)
+            if (!underlyingLtp || underlyingLtp <= 0) {
+              finalFilteredOptions.push(...opts);
+              continue;
+            }
+
+            // Compute the allowed 11-strike window centered on the current ATM —
+            // identical algorithm to TradeEngine.ts lines 476–501
+            const uniqueStrikes = Array.from(new Set(opts.map(o => Number(o.strike_price || 0)))).sort((a, b) => a - b);
+            let closestIdx = 0;
+            let minDiff = Infinity;
+            for (let i = 0; i < uniqueStrikes.length; i++) {
+              const diff = Math.abs(uniqueStrikes[i] - underlyingLtp);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
               }
             }
 
-            // Only restrict if we actually got cache data — otherwise pass through
-            if (cacheHit && allowedSymbols.size > 0) {
-              filteredOptions = filteredOptions.filter((r: any) =>
-                allowedSymbols.has((r.tradingsymbol || '').toUpperCase())
-              );
+            const rangeCount = 11;
+            const half = Math.floor(rangeCount / 2);
+            let startIdx = closestIdx - half;
+            let endIdx = closestIdx + half;
+
+            if (startIdx < 0) {
+              endIdx += Math.abs(startIdx);
+              startIdx = 0;
             }
+            if (endIdx >= uniqueStrikes.length) {
+              const excess = endIdx - (uniqueStrikes.length - 1);
+              startIdx = Math.max(0, startIdx - excess);
+              endIdx = uniqueStrikes.length - 1;
+            }
+
+            const allowedStrikes = new Set(uniqueStrikes.slice(startIdx, endIdx + 1));
+            finalFilteredOptions.push(...opts.filter(o => allowedStrikes.has(Number(o.strike_price || 0))));
           }
-        } catch { /* non-fatal — don't break search if Redis is down */ }
+          filteredOptions = finalFilteredOptions;
+        } catch (e) {
+          console.error('[GET /api/market/instruments/search] Dynamic ATM filter error:', e);
+        }
       }
     }
 
@@ -713,7 +887,15 @@ export async function GET(request: NextRequest) {
           .eq('user_id', user.id);
         if (blockedRows && blockedRows.length > 0) {
           const blockedSet = new Set(blockedRows.map((r: any) => r.symbol.toUpperCase()));
-          results = results.filter(r => !blockedSet.has((r.symbol || '').toUpperCase()));
+          results = results.filter(r => {
+            const sym = (r.symbol || '').toUpperCase();
+            const name = (r.name || '').toUpperCase();
+            if (blockedSet.has(sym) || blockedSet.has(name)) return false;
+            for (const blocked of blockedSet) {
+              if (sym.startsWith(blocked)) return false;
+            }
+            return true;
+          });
         }
 
         // Also filter out entire segments if they are blocked (trade_allowed = false)
@@ -734,6 +916,37 @@ export async function GET(request: NextRequest) {
         // Non-fatal — if we can't fetch blocked scripts, show all results
       }
     }
+
+    // Append matching COMEX items if search query matches name, symbol, or 'comex'
+    const comexSearchItems = [
+      { name: 'GOLD', symbol: 'GC=F', comexSymbol: 'GC=F', segment: 'COMEX - Futures' },
+      { name: 'SILVER', symbol: 'SI=F', comexSymbol: 'SI=F', segment: 'COMEX - Futures' },
+      { name: 'CRUDEOIL', symbol: 'CL=F', comexSymbol: 'CL=F', segment: 'COMEX - Futures' },
+      { name: 'COPPER', symbol: 'HG=F', comexSymbol: 'HG=F', segment: 'COMEX - Futures' },
+      { name: 'NATURALGAS', symbol: 'NG=F', comexSymbol: 'NG=F', segment: 'COMEX - Futures' },
+    ];
+    const comexSearchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const matchingComex = comexSearchItems
+      .filter(item => {
+        const itemText = `${item.name} ${item.symbol} ${item.segment} comex`.toLowerCase();
+        return comexSearchTerms.every(term => itemText.includes(term));
+      })
+      .map(item => ({
+        name: item.name,
+        symbol: item.symbol,
+        kiteSymbol: '', // Pure COMEX has no kiteSymbol
+        comexSymbol: item.comexSymbol,
+        price: 0,
+        change: '0%',
+        segment: item.segment,
+        contractDate: 'Continuous',
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+      }));
+
+    results.push(...matchingComex);
 
     return NextResponse.json(results);
   } catch (err: any) {

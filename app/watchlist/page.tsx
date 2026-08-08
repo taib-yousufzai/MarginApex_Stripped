@@ -26,6 +26,7 @@ export interface WatchlistItem {
   kiteSymbol: string;
   binanceSymbol?: string;  // e.g. 'BTCUSDT' — crypto (Binance)
   comexSymbol?: string;  // e.g. 'GC=F'    — COMEX USD price (Yahoo Finance proxy, paired with kiteSymbol for MCX)
+  comexName?: string;
   price: number;
   change: string;
   segment: string;
@@ -97,10 +98,10 @@ const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
 // Rows with both kiteSymbol + comexSymbol show a ₹⇄$ toggle pill
 
 const DEFAULT_COMEX_ITEMS: WatchlistItem[] = [
-  { name: 'GOLD', comexName: 'Gold', symbol: 'MCX:GOLD26AUGFUT', kiteSymbol: 'MCX:GOLD26AUGFUT', comexSymbol: 'GC=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-  { name: 'SILVER', comexName: 'Silver', symbol: 'MCX:SILVER26SEPFUT', kiteSymbol: 'MCX:SILVER26SEPFUT', comexSymbol: 'SI=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-  { name: 'CRUDEOIL', comexName: 'Crude Oil', symbol: 'MCX:CRUDEOIL26AUGFUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', comexSymbol: 'CL=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
-  { name: 'COPPER', comexName: 'Copper', symbol: 'MCX:COPPER26AUGFUT', kiteSymbol: 'MCX:COPPER26AUGFUT', comexSymbol: 'HG=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'COI' },
+  { name: 'GOLD', symbol: 'MCX:GOLD26AUGFUT', kiteSymbol: 'MCX:GOLD26AUGFUT', comexSymbol: 'GC=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'SILVER', symbol: 'MCX:SILVER26SEPFUT', kiteSymbol: 'MCX:SILVER26SEPFUT', comexSymbol: 'SI=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'CRUDEOIL', symbol: 'MCX:CRUDEOIL26AUGFUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', comexSymbol: 'CL=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'COPPER', symbol: 'MCX:COPPER26AUGFUT', kiteSymbol: 'MCX:COPPER26AUGFUT', comexSymbol: 'HG=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
 ];
 
 export function getDefaultWatchlistItems(): WatchlistItem[] {
@@ -327,8 +328,9 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
   const isCrypto = !!item.binanceSymbol;
-  const hasDualView = !!item.kiteSymbol && !!item.comexSymbol;
-  const showComex = hasDualView && priceView === 'comex';
+  const isPureComex = !!item.comexSymbol && !item.kiteSymbol;
+  const hasDualView = false; // Toggles removed completely
+  const showComex = isPureComex;
 
   let ltp = 0;
   let prevClose = 0;
@@ -389,7 +391,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
       <div className="wc-content instr-row__content">
         <div className="instr-row__left" onClick={handleLeftClick} style={{ cursor: 'pointer' }}>
           <div className="instr-row__name-line">
-            <span className="instr-row__name">{showComex ? (comexQuote?.contractSymbol ?? item.comexName ?? item.name) : item.name}</span>
+            <span className="instr-row__name">{item.name}</span>
             <span className="exchange-badge" style={
               isCrypto ? { background: '#F0A500', color: '#fff' } :
                 showComex ? { background: '#4A148C', color: '#fff' } : {}
@@ -719,16 +721,15 @@ function WatchlistContent() {
 
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
 
-  const comexSymbols = watchlistItems
-    .map(i => i.comexSymbol)
-    .filter((s): s is string => !!s);
+  const comexSymbols = Array.from(new Set([
+    ...watchlistItems.map(i => i.comexSymbol).filter((s): s is string => !!s),
+    ...(selectedItem?.comexSymbol ? [selectedItem.comexSymbol] : [])
+  ]));
   const { quotes: comexQuotes } = useComexQuotes(comexSymbols, 1000);
 
   // ── Detail sheet: resolve live quote from correct source ─────────────────
   const isCrypto = !!(selectedItem?.binanceSymbol);
-  const isComex = selectedItem && (selectedItem as any).preferredView
-    ? (selectedItem as any).preferredView === 'comex'
-    : !!(selectedItem?.comexSymbol);
+  const isComex = !!(selectedItem?.comexSymbol) && (!(selectedItem?.kiteSymbol) || (selectedItem as any).preferredView === 'comex');
 
   const currentKiteQuote = selectedItem?.kiteSymbol ? marketQuotes[selectedItem.kiteSymbol] : null;
   const currentBinanceQuote = selectedItem?.binanceSymbol ? marketQuotes[selectedItem.binanceSymbol] : null;
@@ -776,6 +777,18 @@ function WatchlistContent() {
   } else if (currentKiteQuote) {
     rawBid = currentKiteQuote.bid || currentLtp;
     rawAsk = currentKiteQuote.ask || currentLtp;
+  }
+
+  // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
+  // Only fall back to a tight synthetic spread when prices are missing or crossed.
+  if (currentLtp > 0) {
+    const defaultBid = currentLtp * 0.9995;
+    const defaultAsk = currentLtp * 1.0005;
+    const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid < rawAsk;
+    if (!hasValidSpread) {
+      rawBid = defaultBid;
+      rawAsk = defaultAsk;
+    }
   }
 
 
@@ -1149,6 +1162,18 @@ function WatchlistContent() {
         if (match && (item.name !== match.name || !item.comexName || item.name.includes('=F'))) {
           migrated = true;
           return { ...match };
+        }
+      }
+      // Backfill missing comexSymbol on known MCX commodity items
+      if (!item.comexSymbol && item.kiteSymbol?.startsWith('MCX:')) {
+        const COMEX_MAP: Record<string, string> = {
+          GOLD: 'GC=F', SILVER: 'SI=F', CRUDEOIL: 'CL=F', COPPER: 'HG=F', NATURALGAS: 'NG=F'
+        };
+        const baseName = (item.name || '').toUpperCase().replace(/\s*\(COMEX\)/i, '').trim();
+        const cSym = COMEX_MAP[baseName];
+        if (cSym) {
+          migrated = true;
+          return { ...item, comexSymbol: cSym };
         }
       }
       // Upgrade expired May 2026 contracts to active June 2026 contracts
@@ -2245,14 +2270,17 @@ function WatchlistContent() {
           <div id="chartSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('chartSheet'); const overlay = document.getElementById('chartSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setChartItem(null); setIsBenchmarkChart(false); }}></div>
           <div id="chartSheet" className="trade-sheet" style={{ height: '100dvh', paddingBottom: '0', display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
-              {chartItem && (
-                <TradingChart
-                  key={`${(chartItem as any).preferredView === 'comex' ? chartItem.comexSymbol : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}-${(chartItem as any).preferredView === 'comex' ? 'COMEX' : chartItem.segment}`}
-                  symbol={(chartItem as any).preferredView === 'comex' ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
-                  segment={(chartItem as any).preferredView === 'comex' ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
-                  liveQuote={(chartItem as any).preferredView === 'comex' ? comexQuotes[chartItem.comexSymbol || ''] : (chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol])}
-                />
-              )}
+              {chartItem && (() => {
+                const isChartComex = !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
+                return (
+                  <TradingChart
+                    key={`${isChartComex ? chartItem.comexSymbol : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}-${isChartComex ? 'COMEX' : chartItem.segment}`}
+                    symbol={isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
+                    segment={isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
+                    liveQuote={isChartComex ? comexQuotes[chartItem.comexSymbol || ''] : (chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol])}
+                  />
+                );
+              })()}
             </div>
           </div>
 

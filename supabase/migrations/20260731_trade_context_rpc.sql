@@ -65,8 +65,7 @@ BEGIN
         'symbol', symbol
     )), '[]'::json) INTO v_is_blocked
     FROM public.user_blocked_scripts 
-    WHERE user_id = p_user_id 
-      AND symbol ILIKE ANY(p_symbols);
+    WHERE user_id = p_user_id;
 
     -- Return consolidated JSON payload
     RETURN json_build_object(

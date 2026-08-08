@@ -38,6 +38,7 @@ export class TradeEngine {
     
     is_exit = is_exit === true || (is_exit as any) === 'true';
     kiteInst = kiteInst || symbol || '';
+    if (side) side = side.toUpperCase();
 
     let dbSegment = mapSegmentToDbSegment(segment);
     const symUp = symbol.toUpperCase();
@@ -259,7 +260,24 @@ export class TradeEngine {
       ? rawInstrumentLotSize
       : Number(scriptSetting?.lot_size || getLotSizeFallback(symbol, ctx.script_settings));
 
-    const isBlocked = ctx.is_blocked?.some((b: any) => b.symbol === symbol || b.symbol === kiteInst);
+    const isBlocked = ctx.is_blocked?.some((b: any) => {
+      const blockedUpper = b.symbol.toUpperCase();
+      const symbolUpper = symbol.toUpperCase();
+      const kiteInstUpper = kiteInst.toUpperCase();
+      const instNameUpper = instrumentDetail?.name?.toUpperCase() || '';
+      
+      const parsed = parseOptionSymbol(symbol);
+      const optionUnderlying = parsed?.underlying?.toUpperCase() || '';
+      
+      const isPrefixMatch = symbolUpper.startsWith(blockedUpper) || 
+                            kiteInstUpper.includes(blockedUpper);
+                            
+      return symbolUpper === blockedUpper || 
+             kiteInstUpper === blockedUpper || 
+             instNameUpper === blockedUpper ||
+             optionUnderlying === blockedUpper ||
+             isPrefixMatch;
+    });
     
     if (isBlocked) {
       throw new Error('Trading Not Allowed In This Script. Please Contact Admin.');
@@ -431,8 +449,58 @@ export class TradeEngine {
     const limitsErr = OrderService.validateSegmentPriceLimits(order_type, clientPriceNum, kiteLtp, Number(segSetting.top_limit ?? 0), Number(segSetting.min_limit ?? 0));
     if (limitsErr) throw new Error(limitsErr);
 
-    const strikeErr = OrderService.validateStrikeRange(symbol, isOption, Number(segSetting.strike_range || 0), quotesMap[underlyingId]);
-    if (strikeErr) throw new Error(strikeErr);
+    if (isOption) {
+      const strikeRange = Number(segSetting.strike_range || 0);
+      const parsedOption = parseOptionSymbol(symbol);
+      const orderStrike = parsedOption ? parsedOption.strike : 0;
+      const underlyingPrice = quotesMap[underlyingId];
+
+      if (strikeRange <= 0 && instrumentDetail?.expiry && underlyingPrice > 0 && orderStrike > 0) {
+        const underlyingName = parsedOption?.underlying || symbol;
+        const { data: siblingStrikes } = await admin
+          .from('instruments')
+          .select('strike_price')
+          .eq('name', underlyingName)
+          .eq('expiry', instrumentDetail.expiry)
+          .in('option_type', ['CE', 'PE']);
+
+        if (siblingStrikes && siblingStrikes.length > 0) {
+          const uniqueStrikes = Array.from(new Set(siblingStrikes.map(s => Number(s.strike_price)))).sort((a, b) => a - b);
+          let closestIdx = 0;
+          let minDiff = Infinity;
+          for (let i = 0; i < uniqueStrikes.length; i++) {
+            const diff = Math.abs(uniqueStrikes[i] - underlyingPrice);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestIdx = i;
+            }
+          }
+
+          const rangeCount = 11;
+          const half = Math.floor(rangeCount / 2);
+          let startIdx = closestIdx - half;
+          let endIdx = closestIdx + half;
+
+          if (startIdx < 0) {
+            endIdx += Math.abs(startIdx);
+            startIdx = 0;
+          }
+          if (endIdx >= uniqueStrikes.length) {
+            const excess = endIdx - (uniqueStrikes.length - 1);
+            startIdx = Math.max(0, startIdx - excess);
+            endIdx = uniqueStrikes.length - 1;
+          }
+
+          const allowedStrikes = uniqueStrikes.slice(startIdx, endIdx + 1);
+          if (!allowedStrikes.includes(orderStrike)) {
+            throw new Error(`Strike price ${orderStrike} is out of range. Allowed range is ${allowedStrikes[0]} to ${allowedStrikes[allowedStrikes.length - 1]}.`);
+          }
+        }
+      } else if (strikeRange > 0) {
+        const strikeErr = OrderService.validateStrikeRange(symbol, isOption, strikeRange, underlyingPrice);
+        if (strikeErr) throw new Error(strikeErr);
+      }
+    }
 
     const holdErr = OrderService.validateHoldDuration(is_exit, order_type, activePosition, kiteLtp, Number(segSetting.profit_hold_sec ?? 120), Number(segSetting.loss_hold_sec ?? 0));
     if (holdErr) throw new Error(holdErr);

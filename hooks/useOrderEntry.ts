@@ -25,6 +25,7 @@ export interface OrderEntryState {
   stop_loss?: number;
   target?: number;
   is_exit?: boolean;
+  linked_position_id?: string | null;
 }
 
 export function useOrderEntry() {

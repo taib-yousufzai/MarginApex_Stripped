@@ -50,9 +50,9 @@ BEGIN
     
     SELECT COALESCE(sum(
         CASE 
-            WHEN type IN ('PNL_CREDIT', 'DEPOSIT') THEN amount
-            WHEN type IN ('PNL_DEBIT', 'BROKERAGE_DEBIT', 'BUFFER_FEE_DEBIT', 'WITHDRAWAL') THEN -amount
-            ELSE 0 
+            WHEN type IN ('DEPOSIT', 'PNL_CREDIT', 'MARGIN_ADJ_CREDIT') THEN amount
+            WHEN type IN ('MARGIN_DEBIT', 'MARGIN_CREDIT') THEN 0
+            ELSE -amount 
         END
     ), 0) INTO v_net_transactions
     FROM public.transactions

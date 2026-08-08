@@ -1387,7 +1387,7 @@ export default function PositionPage() {
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
                           <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Used Margin</div>
                           <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>
-                            {fmtPrice(selectedPos.margin_required || selectedPos.locked_margin || selectedPos.settlementAmount || 0, selectedPos.settlement)}
+                            {fmtPrice(selectedPos.locked_margin || selectedPos.margin_required || 0, selectedPos.settlement)}
                           </div>
                         </div>
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
@@ -1527,7 +1527,7 @@ export default function PositionPage() {
                       <div className="ps-meta-row">
                         <div>
                           <div className="ps-meta-label">Avg Price</div>
-                          <div className="ps-meta-val">{fmtPrice((selectedPos.avg_price || selectedPos.entry_price) * (selectedPos.qty_open || selectedPos.qty_total), selectedPos.settlement)}</div>
+                          <div className="ps-meta-val">{fmtPrice(selectedPos.avg_price || selectedPos.entry_price, selectedPos.settlement)}</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                           <div className="ps-meta-label">Quantity</div>

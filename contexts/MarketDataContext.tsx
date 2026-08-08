@@ -302,6 +302,56 @@ class MarketWSManager {
 
 const wsManager = new MarketWSManager();
 
+/**
+ * Single authoritative quote normalizer.
+ *
+ * Problem: Kite WebSocket ticks carry `bid`/`ask` that are sourced from market
+ * depth (best buy/sell price). For deep OTM options the bid side can be near
+ * zero (e.g. ₹360) while the last traded price is ₹5,339 — producing a
+ * catastrophically wrong displayed spread.
+ *
+ * Rule: if the raw bid or ask deviates from lastPrice by more than 50 %, it is
+ * unreliable depth data. Fall back to a tight synthetic ±0.05 % spread.
+ * This threshold is wide enough to cover legitimate wide spreads on illiquid
+ * instruments while catching the pathological OTM-option case.
+ */
+function normalizeQuote(q: any): QuoteData {
+  const close = q.ohlc?.close || q.close || 0;
+  let lastPrice = Number(q.last_price || close || 0);
+
+  // Clamp lastPrice to [bid, ask] only when both look reasonable
+  const rawBid = Number(q.bid ?? 0);
+  const rawAsk = Number(q.ask ?? 0);
+
+  // Sanity-check: depth-derived bid/ask must be within 50 % of lastPrice
+  const maxDeviation = 0.50;
+  const bidOk = rawBid > 0 && lastPrice > 0 && Math.abs(rawBid - lastPrice) / lastPrice <= maxDeviation;
+  const askOk = rawAsk > 0 && lastPrice > 0 && Math.abs(rawAsk - lastPrice) / lastPrice <= maxDeviation;
+  const spreadOk = bidOk && askOk && rawBid < rawAsk;
+
+  if (spreadOk) {
+    // Keep lastPrice inside [bid, ask]
+    if (lastPrice > rawAsk) lastPrice = rawAsk;
+    if (lastPrice < rawBid) lastPrice = rawBid;
+  }
+
+  const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : 0;
+
+  return {
+    lastPrice: parseFloat(Number(lastPrice).toFixed(8)),
+    change: lastPrice - close,
+    changePercent: parseFloat(changePercent.toFixed(2)),
+    open: q.ohlc?.open || q.open || 0,
+    high: q.ohlc?.high || q.high || 0,
+    low: q.ohlc?.low || q.low || 0,
+    close,
+    volume: q.volume || 0,
+    // Use real bid/ask only when the sanity check passes; otherwise synthesise
+    bid: spreadOk ? rawBid : lastPrice * 0.9995,
+    ask: spreadOk ? rawAsk : lastPrice * 1.0005,
+  };
+}
+
 export const MarketDataProvider = ({ children }: { children: React.ReactNode }) => {
   const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
   const [statusInfo, setStatusInfo] = useState({
@@ -337,54 +387,12 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
       } else if (type === 'quotes') {
         const mapped: Record<string, QuoteData> = {};
         for (const [key, quote] of Object.entries(data)) {
-          const q = quote as any;
-          const close = q.ohlc?.close || q.close || 0;
-          let finalPrice = q.last_price || close;
-          const bid = Number(q.bid || 0);
-          const ask = Number(q.ask || 0);
-          if (bid > 0 && ask > 0) {
-            if (finalPrice > ask) finalPrice = ask;
-            if (finalPrice < bid) finalPrice = bid;
-          }
-          const changePercent = close > 0 ? ((finalPrice - close) / close) * 100 : 0;
-          mapped[key] = {
-            lastPrice: parseFloat(Number(finalPrice).toFixed(8)),
-            change: finalPrice - close,
-            changePercent: parseFloat(changePercent.toFixed(2)),
-            open: q.ohlc?.open || q.open || 0,
-            high: q.ohlc?.high || q.high || 0,
-            low: q.ohlc?.low || q.low || 0,
-            close: close,
-            volume: q.volume || 0,
-            bid: (q.bid != null && q.bid > 0) ? q.bid : finalPrice * 0.9995,
-            ask: (q.ask != null && q.ask > 0) ? q.ask : finalPrice * 1.0005,
-          };
+          mapped[key] = normalizeQuote(quote as any);
         }
         Object.assign(pendingUpdatesRef.current, mapped);
       } else if (type === 'update') {
         const { symbol, quote: q } = data;
-        const close = q.ohlc?.close || q.close || 0;
-        let finalPrice = q.last_price || close;
-        const bid = Number(q.bid || 0);
-        const ask = Number(q.ask || 0);
-        if (bid > 0 && ask > 0) {
-          if (finalPrice > ask) finalPrice = ask;
-          if (finalPrice < bid) finalPrice = bid;
-        }
-        const changePercent = close > 0 ? ((finalPrice - close) / close) * 100 : 0;
-        const newQuote = {
-          lastPrice: parseFloat(Number(finalPrice).toFixed(8)),
-          change: finalPrice - close,
-          changePercent: parseFloat(changePercent.toFixed(2)),
-          open: q.ohlc?.open || q.open || 0,
-          high: q.ohlc?.high || q.high || 0,
-          low: q.ohlc?.low || q.low || 0,
-          close: close,
-          volume: q.volume || 0,
-          bid: (q.bid != null && q.bid > 0) ? q.bid : finalPrice * 0.9995,
-          ask: (q.ask != null && q.ask > 0) ? q.ask : finalPrice * 1.0005,
-        };
-        pendingUpdatesRef.current[symbol] = newQuote;
+        pendingUpdatesRef.current[symbol] = normalizeQuote(q);
       }
     };
 

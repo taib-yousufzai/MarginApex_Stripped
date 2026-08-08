@@ -92,7 +92,7 @@ BEGIN
         brokerage = brokerage + p_expected_brokerage,
         exit_price = p_close_price,
         locked_margin = locked_margin - v_margin_released,
-        margin_required = margin_required - v_margin_released,
+        margin_required = CASE WHEN (qty_open - p_close_qty) <= 0 THEN margin_required ELSE margin_required - v_margin_released END,
         status = CASE WHEN (qty_open - p_close_qty) <= 0 THEN 'closed' ELSE status END,
         closed_by = p_closed_by,
         exit_time = CASE WHEN (qty_open - p_close_qty) <= 0 THEN now() ELSE exit_time END,
