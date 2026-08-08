@@ -7,9 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getSharedKiteSession } from '@/lib/kiteSession';
 import { getUserFromRequest, getAdminClient } from '@/lib/adminClient';
-import { getRedisClient } from '@/lib/redis';
+import { fetchKiteQuotes } from '@/lib/datafeed/MarketDataService';
 import {
   applyForexFilter,
   applyCryptoWhitelist,
@@ -27,7 +26,7 @@ const MCX_UNDERLYINGS = new Set([
   'ALUMINIUM', 'ALUMINI',
 ]);
 
-// Mini/variant → base commodity mapping for MCX futures lookup
+// Mini/variant → base commodity for MCX futures lookup
 const MCX_BASE_MAP: Record<string, string> = {
   'GOLDM': 'GOLD', 'SILVERM': 'SILVER', 'SILVERMIC': 'SILVER',
   'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
@@ -35,131 +34,17 @@ const MCX_BASE_MAP: Record<string, string> = {
 };
 
 /**
- * For a set of MCX underlying names (e.g. ['GOLD', 'GOLDM', 'CRUDEOIL']),
- * queries the DB for the nearest active futures contract and returns a map of
- * underlyingName → live price (via Redis market:quotes, with Kite REST fallback).
+ * Resolve MCX underlying names → their nearest active futures kite ID.
+ * e.g. ['GOLD', 'GOLDM'] → { GOLD: 'MCX:GOLD26AUGFUT', GOLDM: 'MCX:GOLD26AUGFUT' }
  */
-async function fetchMcxUnderlyingPrices(underlyingNames: string[], today: string, request: NextRequest): Promise<Record<string, number>> {
-  const result: Record<string, number> = {};
-  if (underlyingNames.length === 0) return result;
-
-  // Resolve each name to its base commodity for futures lookup
-  const baseNames = Array.from(new Set(underlyingNames.map(n => MCX_BASE_MAP[n] || n)));
-
-  try {
-    const { data: mcxFuts } = await supabase
-      .from('instruments')
-      .select('tradingsymbol, name, exchange, expiry')
-      .eq('exchange', 'MCX')
-      .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
-      .in('name', baseNames)
-      .gte('expiry', today)
-      .order('expiry', { ascending: true });
-
-    if (!mcxFuts || mcxFuts.length === 0) return result;
-
-    // Build map: base name → nearest futures kite ID
-    const nearestFutMap = new Map<string, string>();
-    for (const f of mcxFuts) {
-      if (!nearestFutMap.has(f.name)) {
-        nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
-      }
-    }
-
-    // Fetch prices — Redis first, then Kite REST shared session as fallback
-    const redis = getRedisClient();
-    const missingKiteIds: string[] = [];
-
-    for (const [baseName, kiteId] of nearestFutMap.entries()) {
-      let price = 0;
-      try {
-        const cached = await redis.hget('market:quotes', kiteId);
-        if (cached) {
-          const q = JSON.parse(cached);
-          const quoteAge = q.timestamp ? Date.now() - new Date(q.timestamp).getTime() : 0;
-          // Reject stale quotes (>15s) — same threshold as fetchSpeedQuotes
-          if (quoteAge < 15000) {
-            price = q.last_price || q.ohlc?.close || q.close || 0;
-          }
-        }
-        if (!price) {
-          // Try without exchange prefix
-          const altKey = kiteId.split(':')[1] || '';
-          if (altKey) {
-            const altCached = await redis.hget('market:quotes', altKey);
-            if (altCached) {
-              const q = JSON.parse(altCached);
-              const quoteAge = q.timestamp ? Date.now() - new Date(q.timestamp).getTime() : 0;
-              if (quoteAge < 15000) {
-                price = q.last_price || q.ohlc?.close || q.close || 0;
-              }
-            }
-          }
-        }
-      } catch { /* ignore Redis errors */ }
-
-      if (price > 0) {
-        // Store under base name and all mini variants
-        result[baseName] = price;
-        for (const [mini, base] of Object.entries(MCX_BASE_MAP)) {
-          if (base === baseName) result[mini] = price;
-        }
-      } else {
-        missingKiteIds.push(kiteId);
-      }
-    }
-
-    // Kite REST fallback for any still-missing prices
-    if (missingKiteIds.length > 0) {
-      const apiKey = process.env.KITE_API_KEY;
-      if (apiKey) {
-        let accessToken = request.cookies.get('kite_access_token')?.value;
-        if (!accessToken) {
-          const session = await getSharedKiteSession();
-          accessToken = session?.accessToken;
-        }
-        if (accessToken) {
-          try {
-            const params = new URLSearchParams();
-            missingKiteIds.forEach(id => params.append('i', id));
-            const res = await fetch(`https://api.kite.trade/quote?${params.toString()}`, {
-              headers: { 'X-Kite-Version': '3', 'Authorization': `token ${apiKey}:${accessToken}` },
-              cache: 'no-store',
-            });
-            if (res.ok) {
-              const json = await res.json();
-              for (const [id, quote] of Object.entries(json.data || {})) {
-                const price = (quote as any).last_price ?? 0;
-                if (price > 0) {
-                  // Find which base name this kite ID belongs to
-                  for (const [baseName, kiteId] of nearestFutMap.entries()) {
-                    if (kiteId === id) {
-                      result[baseName] = price;
-                      for (const [mini, base] of Object.entries(MCX_BASE_MAP)) {
-                        if (base === baseName) result[mini] = price;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          } catch { /* ignore REST errors */ }
-        }
-      }
-    }
-  } catch { /* fail silently — caller handles missing entries */ }
-
-  return result;
-}
-
-async function resolveMcxUnderlyingKiteIds(underlyingNames: string[], today: string): Promise<Record<string, string>> {
+async function resolveMcxKiteIds(names: string[], today: string): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
-  if (underlyingNames.length === 0) return result;
+  if (names.length === 0) return result;
 
-  const baseNames = Array.from(new Set(underlyingNames.map(n => MCX_BASE_MAP[n] || n)));
+  const baseNames = Array.from(new Set(names.map(n => MCX_BASE_MAP[n] || n)));
 
   try {
-    const { data: mcxFuts } = await supabase
+    const { data: futs } = await supabase
       .from('instruments')
       .select('tradingsymbol, name, exchange, expiry')
       .eq('exchange', 'MCX')
@@ -168,18 +53,15 @@ async function resolveMcxUnderlyingKiteIds(underlyingNames: string[], today: str
       .gte('expiry', today)
       .order('expiry', { ascending: true });
 
-    if (!mcxFuts || mcxFuts.length === 0) return result;
+    if (!futs?.length) return result;
 
-    const nearestFutMap = new Map<string, string>();
-    for (const f of mcxFuts) {
-      if (!nearestFutMap.has(f.name)) {
-        nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
-      }
+    const nearestFut = new Map<string, string>();
+    for (const f of futs) {
+      if (!nearestFut.has(f.name)) nearestFut.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
     }
 
-    for (const name of underlyingNames) {
-      const base = MCX_BASE_MAP[name] || name;
-      const kiteId = nearestFutMap.get(base);
+    for (const name of names) {
+      const kiteId = nearestFut.get(MCX_BASE_MAP[name] || name);
       if (kiteId) result[name] = kiteId;
     }
   } catch { /* fail silently */ }
@@ -196,8 +78,9 @@ function getUnderlyingId(symbol: string): string {
   if (u === 'BANKEX') return 'BSE:BANKEX';
   if (u === 'MIDCPNIFTY') return 'NSE:NIFTY MID SELECT';
   if (u === 'NIFTY') return 'NSE:NIFTY 50';
-  // MCX commodities — use MCX prefix; resolved to actual futures symbol before price lookup
-  if (MCX_UNDERLYINGS.has(u)) return `MCX:${u}`;
+  if (MCX_UNDERLYINGS.has(u)) return `MCX:${u}`; // resolved to actual fut before price lookup
+  return `NSE:${u}`;
+}
   return `NSE:${u}`;
 }
 
@@ -625,169 +508,91 @@ export async function GET(request: NextRequest) {
         filteredOptions = filteredOptions.filter((r: any) => !r.expiry || activeSet.has(r.expiry));
       }
 
-      // ── Per-user strike range (from segment_settings.strike_range) ──────
-      let perUserRangeApplied = false;
-      if (user && userSegSettings.length > 0) {
-        const optionsWithLimit = filteredOptions.filter((r: any) => {
-          if (r.strike_price === null) return false;
-          const dbSeg = mapSegmentToDbSegment(r.segment || r.exchange || '');
-          const setting = userSegSettings.find(s => s.segment === dbSeg);
-          return setting && Number(setting.strike_range || 0) > 0;
-        });
-
-        if (optionsWithLimit.length > 0) {
-          const today2 = new Date().toISOString().split('T')[0];
-
-          // Collect all underlying names, split by MCX vs non-MCX
-          const allUnderlyingNames = Array.from(new Set(
-            optionsWithLimit.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
-          ));
-          const mcxUnderlyingNames = allUnderlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
-          const nonMcxUnderlyingIds = Array.from(new Set(
-            optionsWithLimit
-              .filter((r: any) => !MCX_UNDERLYINGS.has((r.name || r.underlying_symbol || '').toUpperCase()))
-              .map((r: any) => getUnderlyingId(r.tradingsymbol))
-          ));
-
-          // Fetch prices: MCX via Redis → Kite REST (dedicated function),
-          // non-MCX via fetchLivePrices (ticker daemon → Kite REST)
-          const [mcxPriceByName, nonMcxPriceMap] = await Promise.all([
-            fetchMcxUnderlyingPrices(mcxUnderlyingNames, today2, request),
-            nonMcxUnderlyingIds.length > 0 ? fetchLivePrices(nonMcxUnderlyingIds, request) : Promise.resolve({} as Record<string, number>),
-          ]);
-
-          // Build name → price lookup for all underlyings
-          const priceByName: Record<string, number> = { ...mcxPriceByName };
-          for (const opt of optionsWithLimit) {
-            const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
-            if (MCX_UNDERLYINGS.has(n)) continue;
-            const kiteId = getUnderlyingId(opt.tradingsymbol);
-            if (nonMcxPriceMap[kiteId] && !priceByName[n]) {
-              priceByName[n] = nonMcxPriceMap[kiteId];
-            }
-          }
-
-          filteredOptions = filteredOptions.filter((r: any) => {
-            if (r.strike_price === null) return true;
-            const dbSeg = mapSegmentToDbSegment(r.segment || r.exchange || '');
-            const setting = userSegSettings.find(s => s.segment === dbSeg);
-            const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
-            // strike_range = 0 means "use admin 11-strike window" — handled in the next block
-            if (strikeRange <= 0) return true;
-
-            const n = (r.name || r.underlying_symbol || '').toUpperCase();
-            const underlyingLtp = priceByName[n];
-            // No live price → drop this option (fail closed)
-            if (underlyingLtp === undefined || underlyingLtp <= 0) return false;
-
-            const diff = Math.abs(Number(r.strike_price) - underlyingLtp);
-            return diff <= strikeRange;
-          });
-          // Note: perUserRangeApplied stays false for segments with strike_range=0
-          // so the admin 11-strike fallback below will still run for those
-        }
-      }
-
-      // ── Admin-config strike range fallback: always computed from live ATM ─
-      // IMPORTANT: We never use the Redis option chain cache as the source of truth
-      // for allowed strikes. The cache has a 60s TTL and may contain an old ATM
-      // snapshot (e.g. GOLDM at 150000 when the underlying has since moved to 118000).
-      // TradeEngine re-fetches the live underlying price at order-placement time and
-      // rejects anything outside the current 11-strike window — so the search filter
-      // must use the same live price to stay in sync.
-      if (!perUserRangeApplied && filteredOptions.length > 0) {
+      // ── Strike range filtering: per-user distance check OR admin 11-strike window ──
+      // Use fetchKiteQuotes (same as TradeEngine) — the authoritative Kite REST price.
+      // Never use ticker daemon or Redis here; they can serve stale prices.
+      if (filteredOptions.length > 0) {
         try {
           const today2 = new Date().toISOString().split('T')[0];
 
-          // Collect all unique underlying names from the filtered options
+          // Collect unique underlying names and resolve their kite IDs
           const underlyingNames = Array.from(new Set(
             filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
           ));
+          const mcxNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
+          const nonMcxNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
 
-          const mcxUnderlyingNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
-          const nonMcxUnderlyingNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
+          // MCX: resolve to actual nearest futures kite ID (e.g. MCX:GOLD26AUGFUT)
+          const mcxKiteIdMap = await resolveMcxKiteIds(mcxNames, today2);
 
-          // Resolve MCX names → actual futures kite IDs (e.g. MCX:GOLD26AUGFUT)
-          // so fetchLivePrices can use its full Redis → ticker → Kite REST cascade.
-          const mcxKiteIdMap = await resolveMcxUnderlyingKiteIds(mcxUnderlyingNames, today2);
-
-          // Non-MCX: derive kite ID from one representative option tradingsymbol
+          // Non-MCX: derive from one representative option symbol
           const nonMcxKiteIds = Array.from(new Set(
-            nonMcxUnderlyingNames.map(name => {
+            nonMcxNames.map(name => {
               const rep = filteredOptions.find((r: any) => (r.name || r.underlying_symbol || '').toUpperCase() === name);
               return rep ? getUnderlyingId(rep.tradingsymbol) : null;
             }).filter(Boolean) as string[]
           ));
 
           const allKiteIds = [...nonMcxKiteIds, ...Object.values(mcxKiteIdMap)];
-          const kiteIdPriceMap = allKiteIds.length > 0
-            ? await fetchLivePrices(allKiteIds, request)
-            : {};
+          const kiteIdPriceMap = allKiteIds.length > 0 ? await fetchKiteQuotes(allKiteIds) : {};
 
-          // Build name → price lookup
+          // Build name → live price map
           const priceByName: Record<string, number> = {};
           for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
-            if (kiteIdPriceMap[kiteId]) priceByName[name] = kiteIdPriceMap[kiteId];
+            if (kiteIdPriceMap[kiteId] > 0) priceByName[name] = kiteIdPriceMap[kiteId];
           }
           for (const opt of filteredOptions) {
             const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
             if (MCX_UNDERLYINGS.has(n)) continue;
-            const kiteId = getUnderlyingId(opt.tradingsymbol);
-            if (kiteIdPriceMap[kiteId] && !priceByName[n]) {
-              priceByName[n] = kiteIdPriceMap[kiteId];
-            }
+            const kiteId = getUnderlyingId((opt as any).tradingsymbol);
+            if (kiteIdPriceMap[kiteId] > 0 && !priceByName[n]) priceByName[n] = kiteIdPriceMap[kiteId];
           }
 
-          // Group options by underlying name
-          const groupedOptions: Record<string, any[]> = {};
+          // Group by underlying name
+          const grouped: Record<string, any[]> = {};
           for (const opt of filteredOptions) {
-            const name = (opt.name || opt.underlying_symbol || '').toUpperCase();
-            if (!groupedOptions[name]) groupedOptions[name] = [];
-            groupedOptions[name].push(opt);
+            const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+            if (!grouped[n]) grouped[n] = [];
+            grouped[n].push(opt);
           }
 
-          let finalFilteredOptions: any[] = [];
-          for (const [underlyingName, opts] of Object.entries(groupedOptions)) {
-            const underlyingLtp = priceByName[underlyingName];
+          const kept: any[] = [];
+          for (const [name, opts] of Object.entries(grouped)) {
+            const ltp = priceByName[name];
+            if (!ltp || ltp <= 0) continue; // fail closed — no price, no show
 
-            // No live price → drop all options for this underlying.
-            // Fail closed: better to show nothing than show unvalidated strikes.
-            if (!underlyingLtp || underlyingLtp <= 0) continue;
+            // Check per-user strike_range first (distance-based)
+            const dbSeg = mapSegmentToDbSegment((opts[0] as any).segment || (opts[0] as any).exchange || '');
+            const setting = userSegSettings.find((s: any) => s.segment === dbSeg);
+            const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
 
-            // Compute the allowed 11-strike window centered on the current ATM —
-            // identical algorithm to TradeEngine.ts
-            const uniqueStrikes = Array.from(new Set(opts.map(o => Number(o.strike_price || 0)))).sort((a, b) => a - b);
-            let closestIdx = 0;
-            let minDiff = Infinity;
-            for (let i = 0; i < uniqueStrikes.length; i++) {
-              const diff = Math.abs(uniqueStrikes[i] - underlyingLtp);
-              if (diff < minDiff) {
-                minDiff = diff;
-                closestIdx = i;
+            if (strikeRange > 0) {
+              // Per-user: keep only options within strikeRange points of ltp
+              kept.push(...opts.filter(o => Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange));
+            } else {
+              // Admin 11-strike window — same algorithm as TradeEngine
+              const uniqueStrikes = Array.from(new Set(opts.map(o => Number((o as any).strike_price || 0))))
+                .filter(s => s > 0).sort((a, b) => a - b);
+              if (uniqueStrikes.length === 0) continue;
+
+              let closestIdx = 0, minDiff = Infinity;
+              for (let i = 0; i < uniqueStrikes.length; i++) {
+                const d = Math.abs(uniqueStrikes[i] - ltp);
+                if (d < minDiff) { minDiff = d; closestIdx = i; }
               }
-            }
 
-            const rangeCount = 11;
-            const half = Math.floor(rangeCount / 2);
-            let startIdx = closestIdx - half;
-            let endIdx = closestIdx + half;
+              const half = 5;
+              let lo = closestIdx - half, hi = closestIdx + half;
+              if (lo < 0) { hi += -lo; lo = 0; }
+              if (hi >= uniqueStrikes.length) { lo = Math.max(0, lo - (hi - (uniqueStrikes.length - 1))); hi = uniqueStrikes.length - 1; }
 
-            if (startIdx < 0) {
-              endIdx += Math.abs(startIdx);
-              startIdx = 0;
+              const allowed = new Set(uniqueStrikes.slice(lo, hi + 1));
+              kept.push(...opts.filter(o => allowed.has(Number((o as any).strike_price || 0))));
             }
-            if (endIdx >= uniqueStrikes.length) {
-              const excess = endIdx - (uniqueStrikes.length - 1);
-              startIdx = Math.max(0, startIdx - excess);
-              endIdx = uniqueStrikes.length - 1;
-            }
-
-            const allowedStrikes = new Set(uniqueStrikes.slice(startIdx, endIdx + 1));
-            finalFilteredOptions.push(...opts.filter(o => allowedStrikes.has(Number(o.strike_price || 0))));
           }
-          filteredOptions = finalFilteredOptions;
+          filteredOptions = kept as Instrument[];
         } catch (e) {
-          console.error('[GET /api/market/instruments/search] Dynamic ATM filter error:', e);
+          console.error('[search] strike range filter error:', e);
         }
       }
     }
