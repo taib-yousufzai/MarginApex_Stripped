@@ -131,7 +131,10 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   };
 
   return (
-    <div className="oct-wrap">
+    <div className="oct-wrap" style={{ position: 'relative' }}>
+      {/* Fixed ATM crosshair — always at vertical center of scroll container */}
+      <div className="atm-crosshair" aria-hidden="true" />
+
       {/* Single outer container */}
       <div className="oct-table">
 
@@ -259,6 +262,27 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
           padding: 0 0 80px 0;
         }
 
+        /* Fixed ATM crosshair — sits at 50% of the viewport, always centered */
+        .atm-crosshair {
+          position: fixed;
+          left: 0;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          height: 44px;
+          pointer-events: none;
+          z-index: 15;
+          border-top: 2px solid rgba(198, 46, 46, 0.6);
+          border-bottom: 2px solid rgba(198, 46, 46, 0.6);
+          background: rgba(198, 46, 46, 0.04);
+        }
+
+        :global(body.dark) .atm-crosshair {
+          border-top-color: rgba(248, 113, 113, 0.7);
+          border-bottom-color: rgba(248, 113, 113, 0.7);
+          background: rgba(248, 113, 113, 0.06);
+        }
+
         .oct-table {
           width: 100%;
           background: #fff;
@@ -381,8 +405,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
         .oct-row:active { opacity: 0.7; }
 
         .oct-row.atm {
-          border-top: 2px solid rgba(198,46,46,0.25);
-          border-bottom: 2px solid rgba(198,46,46,0.25);
+          /* border handled by the fixed crosshair overlay */
         }
 
         :global(body.dark) .oct-row { border-bottom-color: #1f1f1f; }
