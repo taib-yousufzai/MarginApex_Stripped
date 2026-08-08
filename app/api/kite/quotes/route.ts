@@ -132,6 +132,8 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
                 close: close,
               },
               net_change: q.last_price - close,
+              bid: q.bid ?? q.depth?.buy?.[0]?.price ?? null,
+              ask: q.ask ?? q.depth?.sell?.[0]?.price ?? null,
             };
             foundKiteIds.add(kiteId);
           }
@@ -172,6 +174,8 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
                   close: close,
                 },
                 net_change: q.last_price - close,
+                bid: q.bid ?? q.depth?.buy?.[0]?.price ?? null,
+                ask: q.ask ?? q.depth?.sell?.[0]?.price ?? null,
               };
               foundKiteIds.add(kiteId);
             }
@@ -227,6 +231,8 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
                 close: closePrice,
               },
               net_change: netChange,
+              bid: quote.bid ?? quote.depth?.buy?.[0]?.price ?? null,
+              ask: quote.ask ?? quote.depth?.sell?.[0]?.price ?? null,
             };
 
             const parts = kiteId.split(':');

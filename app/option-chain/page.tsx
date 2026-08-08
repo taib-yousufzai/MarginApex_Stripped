@@ -64,14 +64,15 @@ declare global {
 // Read cache safely from localStorage
 function getLocalCache(key: string) {
   if (typeof window === 'undefined') return null;
-  // First check memory
-  if (window.__optionChainCache?.[key]) return window.__optionChainCache[key];
-  // Then check localStorage
+  // Check in-memory cache first — 15 s TTL so the strike window stays current
+  const mem = window.__optionChainCache?.[key];
+  if (mem && mem.timestamp && (Date.now() - mem.timestamp < 1000 * 15)) return mem.data;
+  // Then fall back to localStorage with the same TTL
   try {
     const raw = localStorage.getItem(`oc_cache_${key}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.timestamp && (Date.now() - parsed.timestamp < 1000 * 60 * 60)) {
+      if (parsed && parsed.timestamp && (Date.now() - parsed.timestamp < 1000 * 15)) {
         return parsed.data;
       }
     }
@@ -82,7 +83,8 @@ function getLocalCache(key: string) {
 function setLocalCache(key: string, data: any) {
   if (typeof window === 'undefined') return;
   window.__optionChainCache = window.__optionChainCache || {};
-  window.__optionChainCache[key] = data;
+  // Store data with timestamp so both memory and disk share the same TTL
+  window.__optionChainCache[key] = { data, timestamp: Date.now() };
   try {
     localStorage.setItem(`oc_cache_${key}`, JSON.stringify({ data, timestamp: Date.now() }));
   } catch (e) {}

@@ -15,7 +15,7 @@ import {
   applyExpiryFilter,
   type Instrument,
 } from '@/lib/filterEngine';
-import { getRedisClient, isRedisMock } from '@/lib/redis';
+
 import { parseOptionSymbol } from '@/lib/positionStore';
 
 function getUnderlyingId(symbol: string): string {
@@ -489,104 +489,72 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // ── Admin-config strike range fallback (matches option chain logic) ─
-      // ── Match option chain exactly: read its Redis cache per underlying ──
-      // The option chain stores its filtered strike list under optionChain:SYMBOL_expiry.
-      // Reading that cache gives us the exact same strikes the user sees there —
-      // no risk of drift from different ATM snapshots or range calculations.
+      // ── Admin-config strike range fallback: always computed from live ATM ─
+      // IMPORTANT: We never use the Redis option chain cache as the source of truth
+      // for allowed strikes. The cache has a 60s TTL and may contain an old ATM
+      // snapshot (e.g. GOLDM at 150000 when the underlying has since moved to 118000).
+      // TradeEngine re-fetches the live underlying price at order-placement time and
+      // rejects anything outside the current 11-strike window — so the search filter
+      // must use the same live price to stay in sync.
       if (!perUserRangeApplied && filteredOptions.length > 0) {
         try {
-          const redis = getRedisClient();
-          if (!isRedisMock()) {
-            // Collect unique underlying names from the options we're about to return
-            const underlyingNames = Array.from(new Set(
-              filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
-            ));
+          // Always fetch the current live underlying price for each unique underlying
+          const underlyingIds = Array.from(new Set(filteredOptions.map((r: any) => getUnderlyingId(r.tradingsymbol))));
+          const priceMap = await fetchLivePrices(underlyingIds, request);
 
-            // Build an allowed tradingsymbol set from every option chain cache entry we can find
-            const allowedSymbols = new Set<string>();
-            let cacheHit = false;
-
-            for (const underlying of underlyingNames) {
-              // Try all cached expiry keys for this underlying
-              const keys = await redis.keys(`optionChain:${underlying}_*`);
-              for (const key of keys) {
-                try {
-                  const cached = await redis.get(key);
-                  if (!cached) continue;
-                  const chain = JSON.parse(cached);
-                  if (chain.strikes && Array.isArray(chain.strikes)) {
-                    for (const s of chain.strikes) {
-                      if (s.ce?.symbol) allowedSymbols.add(s.ce.symbol.toUpperCase());
-                      if (s.pe?.symbol) allowedSymbols.add(s.pe.symbol.toUpperCase());
-                    }
-                    cacheHit = true;
-                  }
-                } catch { /* skip bad cache entry */ }
-              }
-            }
-
-            // Only restrict if we actually got cache data — otherwise apply a dynamic fallback
-            if (cacheHit && allowedSymbols.size > 0) {
-              filteredOptions = filteredOptions.filter((r: any) =>
-                allowedSymbols.has((r.tradingsymbol || '').toUpperCase())
-              );
-            } else {
-              // Fallback: If cache is missing, filter dynamically using 11 strikes centered around the ATM price
-              const underlyingIds = Array.from(new Set(filteredOptions.map((r: any) => getUnderlyingId(r.tradingsymbol))));
-              const priceMap = await fetchLivePrices(underlyingIds, request);
-
-              // Group options by underlying name
-              const groupedOptions: Record<string, any[]> = {};
-              for (const opt of filteredOptions) {
-                const name = (opt.name || opt.underlying_symbol || '').toUpperCase();
-                if (!groupedOptions[name]) groupedOptions[name] = [];
-                groupedOptions[name].push(opt);
-              }
-
-              let finalFilteredOptions: any[] = [];
-              for (const [underlying, opts] of Object.entries(groupedOptions)) {
-                const underlyingId = getUnderlyingId(opts[0].tradingsymbol);
-                const underlyingLtp = priceMap[underlyingId];
-                if (!underlyingLtp || underlyingLtp <= 0) {
-                  finalFilteredOptions.push(...opts);
-                  continue;
-                }
-
-                const uniqueStrikes = Array.from(new Set(opts.map(o => Number(o.strike_price || 0)))).sort((a, b) => a - b);
-                let closestIdx = 0;
-                let minDiff = Infinity;
-                for (let i = 0; i < uniqueStrikes.length; i++) {
-                  const diff = Math.abs(uniqueStrikes[i] - underlyingLtp);
-                  if (diff < minDiff) {
-                    minDiff = diff;
-                    closestIdx = i;
-                  }
-                }
-
-                const rangeCount = 11;
-                const half = Math.floor(rangeCount / 2);
-                let startIdx = closestIdx - half;
-                let endIdx = closestIdx + half;
-
-                if (startIdx < 0) {
-                  endIdx += Math.abs(startIdx);
-                  startIdx = 0;
-                }
-                if (endIdx >= uniqueStrikes.length) {
-                  const excess = endIdx - (uniqueStrikes.length - 1);
-                  startIdx = Math.max(0, startIdx - excess);
-                  endIdx = uniqueStrikes.length - 1;
-                }
-
-                const allowedStrikes = new Set(uniqueStrikes.slice(startIdx, endIdx + 1));
-                finalFilteredOptions.push(...opts.filter(o => allowedStrikes.has(Number(o.strike_price || 0))));
-              }
-              filteredOptions = finalFilteredOptions;
-            }
+          // Group options by underlying name
+          const groupedOptions: Record<string, any[]> = {};
+          for (const opt of filteredOptions) {
+            const name = (opt.name || opt.underlying_symbol || '').toUpperCase();
+            if (!groupedOptions[name]) groupedOptions[name] = [];
+            groupedOptions[name].push(opt);
           }
+
+          let finalFilteredOptions: any[] = [];
+          for (const [, opts] of Object.entries(groupedOptions)) {
+            const underlyingId = getUnderlyingId(opts[0].tradingsymbol);
+            const underlyingLtp = priceMap[underlyingId];
+
+            // If we can't get the live price, pass all strikes through (fail open)
+            if (!underlyingLtp || underlyingLtp <= 0) {
+              finalFilteredOptions.push(...opts);
+              continue;
+            }
+
+            // Compute the allowed 11-strike window centered on the current ATM —
+            // identical algorithm to TradeEngine.ts lines 476–501
+            const uniqueStrikes = Array.from(new Set(opts.map(o => Number(o.strike_price || 0)))).sort((a, b) => a - b);
+            let closestIdx = 0;
+            let minDiff = Infinity;
+            for (let i = 0; i < uniqueStrikes.length; i++) {
+              const diff = Math.abs(uniqueStrikes[i] - underlyingLtp);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closestIdx = i;
+              }
+            }
+
+            const rangeCount = 11;
+            const half = Math.floor(rangeCount / 2);
+            let startIdx = closestIdx - half;
+            let endIdx = closestIdx + half;
+
+            if (startIdx < 0) {
+              endIdx += Math.abs(startIdx);
+              startIdx = 0;
+            }
+            if (endIdx >= uniqueStrikes.length) {
+              const excess = endIdx - (uniqueStrikes.length - 1);
+              startIdx = Math.max(0, startIdx - excess);
+              endIdx = uniqueStrikes.length - 1;
+            }
+
+            const allowedStrikes = new Set(uniqueStrikes.slice(startIdx, endIdx + 1));
+            finalFilteredOptions.push(...opts.filter(o => allowedStrikes.has(Number(o.strike_price || 0))));
+          }
+          filteredOptions = finalFilteredOptions;
         } catch (e) {
-          console.error('[GET /api/market/instruments/search] Fallback filter error:', e);
+          console.error('[GET /api/market/instruments/search] Dynamic ATM filter error:', e);
         }
       }
     }

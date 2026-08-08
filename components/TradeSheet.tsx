@@ -863,6 +863,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             stop_loss: resolvedStopLoss,
             target: resolvedTarget,
             is_exit: true,
+            linked_position_id: linkedPosId || undefined,
           });
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new Event('position-closed'));
@@ -940,6 +941,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           stop_loss: resolvedStopLoss,
           target: resolvedTarget,
           is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
+          linked_position_id: linkedPosId || undefined,
         }).then((res) => {
           if (!res.success) {
             window.dispatchEvent(new CustomEvent('order_error', { detail: `${res.error}` }));

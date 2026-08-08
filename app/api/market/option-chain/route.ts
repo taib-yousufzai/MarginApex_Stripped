@@ -37,7 +37,14 @@ export async function GET(request: Request) {
     const expiry = searchParams.get('expiry');
     const today = new Date().toISOString().split('T')[0];
     
-    const cacheKey = `optionChain:${symbol}_${expiry || 'default'}`;
+    // Derive a rough ATM bucket from the spotPrice query param (sent by the client
+    // after the first load).  Rounding to 1% of the price means the cache key changes
+    // automatically whenever the underlying moves enough to shift the strike window,
+    // making the cache self-invalidating on significant price moves.
+    const spotParam = searchParams.get('spotPrice');
+    const spotForBucket = parseFloat(spotParam || '0') || 0;
+    const atmBucket = spotForBucket > 0 ? Math.round(spotForBucket / (spotForBucket * 0.01)) * Math.round(spotForBucket * 0.01) : 0;
+    const cacheKey = `optionChain:${symbol}_${expiry || 'default'}_${atmBucket}`;
     const redis = getRedisClient();
 
     if (!isRedisMock()) {
@@ -141,7 +148,6 @@ export async function GET(request: Request) {
         };
         underlyingSymbol = kiteIdMap[symbol] ?? `MCX:${symbol}`;
 
-        const spotParam = searchParams.get('spotPrice');
         if (spotParam) {
           atmPrice = parseFloat(spotParam) || 0;
         }
@@ -272,11 +278,14 @@ export async function GET(request: Request) {
       underlyingSymbol: (typeof underlyingSymbol !== 'undefined') ? underlyingSymbol : finalUnderlyingSymbol
     };
 
-    // Store in cache only if we got a real spot price
+    // Cache for 10 s so the strike window refreshes quickly as the ATM moves.
+    // The cache key already encodes the ATM bucket, so a significant price move
+    // causes an automatic miss without waiting for the TTL to expire.
     if (!usedFallback && !isRedisMock()) {
       try {
-        await redis.setex(cacheKey, 60, JSON.stringify(responseData));
-        await redis.setex(`optionChain:${symbol}_${selectedExpiry}`, 60, JSON.stringify(responseData));
+        await redis.setex(cacheKey, 10, JSON.stringify(responseData));
+        // Also write under the legacy key format so older clients still benefit
+        await redis.setex(`optionChain:${symbol}_${selectedExpiry}`, 10, JSON.stringify(responseData));
       } catch (e) {
         console.error('Redis cache set error for option chain:', e);
       }
