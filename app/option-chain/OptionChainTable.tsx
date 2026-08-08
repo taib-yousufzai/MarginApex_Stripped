@@ -40,7 +40,25 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   const tableHeaderRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = React.useRef<HTMLElement | null>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
-  const hasScrolledRef = React.useRef(false);
+
+  // Reorder strikes so ATM is always the middle element.
+  // We take 5 strikes above ATM and 5 below (matching the 11-strike window).
+  // This means ATM is always rendered at the vertical center with no scrolling needed.
+  const centeredStrikes = React.useMemo(() => {
+    if (atmIndex < 0 || visibleStrikes.length === 0) return visibleStrikes;
+    const half = 5;
+    const lo = Math.max(0, atmIndex - half);
+    const hi = Math.min(visibleStrikes.length - 1, atmIndex + half);
+    return visibleStrikes.slice(lo, hi + 1);
+  }, [visibleStrikes, atmIndex]);
+
+  // Recompute atmIndex within the centered slice
+  const centeredAtmIndex = React.useMemo(() => {
+    if (atmIndex < 0 || visibleStrikes.length === 0) return -1;
+    const half = 5;
+    const lo = Math.max(0, atmIndex - half);
+    return atmIndex - lo;
+  }, [atmIndex, visibleStrikes]);
 
   // Filter strikes to only show those within the allowed range
   const visibleStrikes = React.useMemo(() => {
@@ -64,49 +82,10 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
   const atmStrike = atmIndex >= 0 ? visibleStrikes[atmIndex] : null;
 
-  // Reset so we do an instant scroll on the next data load
-  React.useEffect(() => {
-    hasScrolledRef.current = false;
-  }, [visibleStrikes]);
-
-  // Always keep the ATM row pinned to the vertical center of the scroll container.
-  // Uses manual offsetTop calculation so sticky headers are properly accounted for.
-  const scrollToAtm = React.useCallback((behavior: ScrollBehavior) => {
-    const el = atmRef.current;
-    const container = scrollContainerRef.current;
-    if (!el || !container) return;
-
-    // offsetTop relative to the scroll container
-    let offsetTop = 0;
-    let node: HTMLElement | null = el;
-    while (node && node !== container) {
-      offsetTop += node.offsetTop;
-      node = node.offsetParent as HTMLElement | null;
-    }
-
-    const containerHeight = container.clientHeight;
-    const elmHeight = el.offsetHeight;
-    // Desired scroll position: ATM row midpoint at container midpoint
-    const targetScroll = offsetTop - (containerHeight / 2) + (elmHeight / 2);
-    container.scrollTo({ top: Math.max(0, targetScroll), behavior });
-  }, []);
-
-  // Scroll ATM row to center ONCE when data first loads. Never auto-scrolls again
-  // so the user can freely scroll without being yanked back.
-  React.useEffect(() => {
-    if (!atmRef.current || visibleStrikes.length === 0 || spotPrice <= 0 || !atmStrike) return;
-    if (hasScrolledRef.current) return; // already scrolled once — don't re-trigger
-    hasScrolledRef.current = true;
-
-    const t = setTimeout(() => scrollToAtm('instant'), 120);
-    return () => clearTimeout(t);
-  }, [atmStrike, scrollToAtm]);
-
-
+  // Subheader floating detection only — no scroll logic
   React.useEffect(() => {
     const scrollEl = tableHeaderRef.current?.closest('.main-content') as HTMLElement | null;
     if (!scrollEl) return;
-    // Save reference so scrollToAtm can use it
     scrollContainerRef.current = scrollEl;
     const onScroll = () => {
       if (!tableHeaderRef.current) return;
@@ -132,10 +111,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   };
 
   return (
-    <div className="oct-wrap" style={{ position: 'relative' }}>
-      {/* Fixed ATM crosshair — always at vertical center of scroll container */}
-      <div className="atm-crosshair" aria-hidden="true" />
-
+    <div className="oct-wrap">
       {/* Single outer container */}
       <div className="oct-table">
 
@@ -161,10 +137,10 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
         {/* Data rows */}
         <div className="oct-body">
-          {visibleStrikes.map((s, index) => {
+          {centeredStrikes.map((s, index) => {
             const ceQuote = getQuote(s.ce?.id, s.ce?.token);
             const peQuote = getQuote(s.pe?.id, s.pe?.token);
-            const isAtm = index === atmIndex;
+            const isAtm = index === centeredAtmIndex;
 
             const ceLtpVal = ceQuote ? ceQuote.lastPrice : s.ce?.price;
             const peLtpVal = peQuote ? peQuote.lastPrice : s.pe?.price;
@@ -261,27 +237,6 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
         .oct-wrap {
           width: 100%;
           padding: 0 0 80px 0;
-        }
-
-        /* Fixed ATM crosshair — sits at 50% of the viewport, always centered */
-        .atm-crosshair {
-          position: fixed;
-          left: 0;
-          right: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          height: 44px;
-          pointer-events: none;
-          z-index: 15;
-          border-top: 2px solid rgba(198, 46, 46, 0.6);
-          border-bottom: 2px solid rgba(198, 46, 46, 0.6);
-          background: rgba(198, 46, 46, 0.04);
-        }
-
-        :global(body.dark) .atm-crosshair {
-          border-top-color: rgba(248, 113, 113, 0.7);
-          border-bottom-color: rgba(248, 113, 113, 0.7);
-          background: rgba(248, 113, 113, 0.06);
         }
 
         .oct-table {
@@ -406,7 +361,8 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
         .oct-row:active { opacity: 0.7; }
 
         .oct-row.atm {
-          /* border handled by the fixed crosshair overlay */
+          border-top: 2px solid rgba(198,46,46,0.5);
+          border-bottom: 2px solid rgba(198,46,46,0.5);
         }
 
         :global(body.dark) .oct-row { border-bottom-color: #1f1f1f; }
