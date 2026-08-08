@@ -483,16 +483,16 @@ export async function GET(request: NextRequest) {
     // Apply Filter Engine rules server-side before returning results
     const forexRows = rows.filter((r: any) => r.exchange === 'CDS' || r.segment === 'CDS');
     const cryptoRows = rows.filter((r: any) => r.segment === 'CRYPTO');
-    const optionRows = rows.filter((r: any) =>
-      !['CDS', 'CRYPTO'].includes(r.exchange) &&
-      r.segment !== 'CDS' && r.segment !== 'CRYPTO' &&
-      (r.option_type === 'CE' || r.option_type === 'PE')
-    );
-    const otherRows = rows.filter((r: any) =>
-      r.exchange !== 'CDS' && r.segment !== 'CDS' &&
-      r.segment !== 'CRYPTO' &&
-      r.option_type !== 'CE' && r.option_type !== 'PE'
-    );
+    // Remove all options (CE/PE) from search results — users access them via the option chain
+    const optionRows: any[] = [];
+    const otherRows = rows.filter((r: any) => {
+      if (r.exchange === 'CDS' || r.segment === 'CDS' || r.segment === 'CRYPTO') return false;
+      const sym = (r.tradingsymbol || '').toUpperCase();
+      if (r.option_type === 'CE' || r.option_type === 'PE') return false;
+      if (r.instrument_type === 'CE' || r.instrument_type === 'PE') return false;
+      if (sym.endsWith('CE') || sym.endsWith('PE')) return false;
+      return true;
+    });
 
     const filteredForex = applyForexFilter(forexRows as Instrument[]);
     const filteredCrypto = applyCryptoWhitelist(cryptoRows as Instrument[]);
