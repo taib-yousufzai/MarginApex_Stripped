@@ -62,6 +62,14 @@ class MockRedis {
     return result;
   }
 
+  public async hmget(key: string, ...fields: string[]): Promise<(string | null)[]> {
+    const hash = this.store.get(key);
+    if (hash instanceof Map) {
+      return fields.map(f => hash.get(f) || null);
+    }
+    return fields.map(() => null);
+  }
+
   private onMessageCallback: ((channel: string, message: string) => void) | null = null;
 
   public async publish(channel: string, message: string): Promise<number> {

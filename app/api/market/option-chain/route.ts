@@ -261,6 +261,39 @@ export async function GET(request: Request) {
 
     const sortedStrikes = Object.values(strikeMap).sort((a: any, b: any) => a.strike - b.strike);
 
+    // 7. Backfill Redis-cached prices so the client shows values immediately
+    //    (before the WebSocket quote feed delivers live data).
+    if (!isRedisMock()) {
+      try {
+        const allKiteIds: string[] = [];
+        sortedStrikes.forEach((row: any) => {
+          if (row.ce?.id) allKiteIds.push(row.ce.id);
+          if (row.pe?.id) allKiteIds.push(row.pe.id);
+        });
+        if (allKiteIds.length > 0) {
+          const cachedPrices = await redis.hmget('market:quotes', ...allKiteIds);
+          const priceMap: Record<string, number> = {};
+          allKiteIds.forEach((id, i) => {
+            const raw = cachedPrices[i];
+            if (raw) {
+              try {
+                const q = JSON.parse(raw as string);
+                const ltp = q.last_price || q.lastPrice || q.ltp || 0;
+                if (ltp > 0) priceMap[id] = ltp;
+              } catch { /* ignore parse errors */ }
+            }
+          });
+          sortedStrikes.forEach((row: any) => {
+            if (row.ce?.id && priceMap[row.ce.id]) row.ce.price = priceMap[row.ce.id];
+            if (row.pe?.id && priceMap[row.pe.id]) row.pe.price = priceMap[row.pe.id];
+          });
+        }
+      } catch (e) {
+        // Non-fatal — live WebSocket data will fill in the values
+        console.warn('[option-chain] Redis price backfill skipped:', e);
+      }
+    }
+
     const kiteIdMapFallback: Record<string, string> = {
       'NIFTY': 'NSE:NIFTY 50', 'BANKNIFTY': 'NSE:NIFTY BANK',
       'FINNIFTY': 'NSE:NIFTY FIN SERVICE', 'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',

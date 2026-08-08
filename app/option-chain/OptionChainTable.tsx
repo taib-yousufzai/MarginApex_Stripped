@@ -38,14 +38,21 @@ interface OptionChainTableProps {
 export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, priceMode = 'LTP', stickyTop = 58, hideMainHeader = false, strikeRange = 0 }: OptionChainTableProps) {
   const atmRef = React.useRef<HTMLDivElement>(null);
   const tableHeaderRef = React.useRef<HTMLDivElement>(null);
+  const scrollContainerRef = React.useRef<HTMLElement | null>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
   const isFirstScrollRef = React.useRef(true);
 
+  // Filter strikes to only show those within the allowed range
+  const visibleStrikes = React.useMemo(() => {
+    if (strikeRange <= 0 || spotPrice <= 0) return strikes;
+    return strikes.filter(s => Math.abs(s.strike - spotPrice) <= strikeRange);
+  }, [strikes, spotPrice, strikeRange]);
+
   const atmIndex = React.useMemo(() => {
-    if (spotPrice <= 0 || strikes.length === 0) return -1;
+    if (spotPrice <= 0 || visibleStrikes.length === 0) return -1;
     let bestIdx = 0;
     let minDiff = Infinity;
-    strikes.forEach((s, i) => {
+    visibleStrikes.forEach((s, i) => {
       const diff = Math.abs(s.strike - spotPrice);
       if (diff < minDiff) {
         minDiff = diff;
@@ -53,37 +60,53 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
       }
     });
     return bestIdx;
-  }, [strikes, spotPrice]);
+  }, [visibleStrikes, spotPrice]);
 
-  const atmStrike = atmIndex >= 0 ? strikes[atmIndex] : null;
+  const atmStrike = atmIndex >= 0 ? visibleStrikes[atmIndex] : null;
 
   // Reset so we do an instant scroll on the next data load
   React.useEffect(() => {
     isFirstScrollRef.current = true;
-  }, [strikes]);
+  }, [visibleStrikes]);
 
-  // Always keep the ATM row centered.
-  // Fires on first data load AND whenever the spot crosses into a new strike.
-  React.useEffect(() => {
-    if (!atmRef.current || strikes.length === 0 || spotPrice <= 0 || !atmStrike) return;
-
+  // Always keep the ATM row pinned to the vertical center of the scroll container.
+  // Uses manual offsetTop calculation so sticky headers are properly accounted for.
+  const scrollToAtm = React.useCallback((behavior: ScrollBehavior) => {
     const el = atmRef.current;
+    const container = scrollContainerRef.current;
+    if (!el || !container) return;
+
+    // offsetTop relative to the scroll container
+    let offsetTop = 0;
+    let node: HTMLElement | null = el;
+    while (node && node !== container) {
+      offsetTop += node.offsetTop;
+      node = node.offsetParent as HTMLElement | null;
+    }
+
+    const containerHeight = container.clientHeight;
+    const elmHeight = el.offsetHeight;
+    // Desired scroll position: ATM row midpoint at container midpoint
+    const targetScroll = offsetTop - (containerHeight / 2) + (elmHeight / 2);
+    container.scrollTo({ top: Math.max(0, targetScroll), behavior });
+  }, []);
+
+  React.useEffect(() => {
+    if (!atmRef.current || visibleStrikes.length === 0 || spotPrice <= 0 || !atmStrike) return;
+
     const behavior: ScrollBehavior = isFirstScrollRef.current ? 'instant' : 'smooth';
     isFirstScrollRef.current = false;
 
-    const doScroll = () => {
-      el.scrollIntoView({ block: 'center', behavior });
-    };
-
-    // Small delay so the DOM has finished painting before we measure
-    const t = setTimeout(doScroll, behavior === 'instant' ? 100 : 0);
+    const t = setTimeout(() => scrollToAtm(behavior), behavior === 'instant' ? 120 : 0);
     return () => clearTimeout(t);
-  }, [atmStrike]);
+  }, [atmStrike, scrollToAtm]);
 
 
   React.useEffect(() => {
     const scrollEl = tableHeaderRef.current?.closest('.main-content') as HTMLElement | null;
     if (!scrollEl) return;
+    // Save reference so scrollToAtm can use it
+    scrollContainerRef.current = scrollEl;
     const onScroll = () => {
       if (!tableHeaderRef.current) return;
       const rect = tableHeaderRef.current.getBoundingClientRect();
@@ -134,14 +157,10 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
         {/* Data rows */}
         <div className="oct-body">
-          {strikes.map((s, index) => {
+          {visibleStrikes.map((s, index) => {
             const ceQuote = getQuote(s.ce?.id, s.ce?.token);
             const peQuote = getQuote(s.pe?.id, s.pe?.token);
             const isAtm = index === atmIndex;
-
-            // Out-of-range: strike is more than strikeRange points from spot
-            const isOutOfRange = strikeRange > 0 && spotPrice > 0 &&
-              Math.abs(s.strike - spotPrice) > strikeRange;
 
             const ceLtpVal = ceQuote ? ceQuote.lastPrice : s.ce?.price;
             const peLtpVal = peQuote ? peQuote.lastPrice : s.pe?.price;
@@ -171,7 +190,6 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
             const handleTradeClick = (e: React.MouseEvent, symbol?: string, side?: 'BUY' | 'SELL') => {
               e.stopPropagation();
-              if (isOutOfRange) return; // silently block out-of-range trades in the UI
               if (symbol && side) onTrade(symbol, side);
             };
 
@@ -179,7 +197,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
               <div
                 key={s.strike}
                 ref={isAtm ? atmRef : null}
-                className={`oct-row${isAtm ? ' atm' : ''}${isOutOfRange ? ' out-of-range' : ''}`}
+                className={`oct-row${isAtm ? ' atm' : ''}`}
               >
                 {/* Calls */}
                 <div
@@ -361,13 +379,6 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
         }
         .oct-row:last-child { border-bottom: none; }
         .oct-row:active { opacity: 0.7; }
-        .oct-row.out-of-range {
-          opacity: 0.4;
-          background: #fdfdfd;
-        }
-        :global(body.dark) .oct-row.out-of-range {
-          background: #111;
-        }
 
         .oct-row.atm {
           border-top: 2px solid rgba(198,46,46,0.25);
