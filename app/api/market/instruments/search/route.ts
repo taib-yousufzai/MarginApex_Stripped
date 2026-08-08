@@ -81,8 +81,6 @@ function getUnderlyingId(symbol: string): string {
   if (MCX_UNDERLYINGS.has(u)) return `MCX:${u}`; // resolved to actual fut before price lookup
   return `NSE:${u}`;
 }
-  return `NSE:${u}`;
-}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
