@@ -27,7 +27,36 @@ interface ResolvedInstrument {
  */
 const memCache = new Map<string, ResolvedInstrument>();
 
+/**
+ * Statically known instrument tokens for the most-frequently viewed symbols.
+ * These never change and eliminate any DB/Redis round-trip for common indices,
+ * making resolution instant (<1ms) even on cold starts.
+ */
+const STATIC_TOKENS: Record<string, ResolvedInstrument> = {
+  'NIFTY':              { token: 256265,  canonicalId: 'NSE:NIFTY 50' },
+  'NIFTY 50':           { token: 256265,  canonicalId: 'NSE:NIFTY 50' },
+  'NSE:NIFTY 50':       { token: 256265,  canonicalId: 'NSE:NIFTY 50' },
+  'BANKNIFTY':          { token: 260105,  canonicalId: 'NSE:NIFTY BANK' },
+  'NIFTY BANK':         { token: 260105,  canonicalId: 'NSE:NIFTY BANK' },
+  'NSE:NIFTY BANK':     { token: 260105,  canonicalId: 'NSE:NIFTY BANK' },
+  'FINNIFTY':           { token: 257801,  canonicalId: 'NSE:NIFTY FIN SERVICE' },
+  'NSE:NIFTY FIN SERVICE': { token: 257801, canonicalId: 'NSE:NIFTY FIN SERVICE' },
+  'MIDCPNIFTY':         { token: 288009,  canonicalId: 'NSE:NIFTY MID SELECT' },
+  'NSE:NIFTY MID SELECT': { token: 288009, canonicalId: 'NSE:NIFTY MID SELECT' },
+  'SENSEX':             { token: 265,     canonicalId: 'BSE:SENSEX' },
+  'BSE:SENSEX':         { token: 265,     canonicalId: 'BSE:SENSEX' },
+  'BANKEX':             { token: 274441,  canonicalId: 'BSE:BANKEX' },
+  'BSE:BANKEX':         { token: 274441,  canonicalId: 'BSE:BANKEX' },
+};
+
 async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | null> {
+  // 0. Fastest path: compile-time static tokens (zero I/O, zero cache lookup)
+  const staticHit = STATIC_TOKENS[symbol] ?? STATIC_TOKENS[symbol.toUpperCase().trim()];
+  if (staticHit) {
+    memCache.set(symbol, staticHit); // backfill mem cache for subsequent paths
+    return staticHit;
+  }
+
   // 1. Fastest path: process-level in-memory cache (always checked first)
   const memHit = memCache.get(symbol);
   if (memHit) return memHit;
@@ -79,7 +108,8 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   const upperSymbol = cleanSymbol.toUpperCase().trim();
 
   // Handle index shortcuts (e.g. NIFTY, BANKNIFTY)
-  // The mapped canonical ID is known statically — zero extra DB round-trip.
+  // Covered by STATIC_TOKENS above for the common cases. This branch now only
+  // runs for unusual variants that didn't match the static map.
   const baseIndices: Record<string, string> = {
     'NIFTY': 'NSE:NIFTY 50',
     'NIFTY 50': 'NSE:NIFTY 50',

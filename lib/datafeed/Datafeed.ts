@@ -29,6 +29,8 @@ import { buildSymbolInfo } from './symbolResolver';
 export class Datafeed implements IBasicDataFeed {
   private readonly realtimeProvider: RealtimeProvider;
   private readonly lastBarCache = new Map<string, Bar>();
+  private firstBarFired = false;
+  onFirstBar?: (lastClose: number, prevClose: number | null) => void;
 
   constructor(private segment: string) {
     this.realtimeProvider = new RealtimeProvider();
@@ -36,6 +38,7 @@ export class Datafeed implements IBasicDataFeed {
 
   setSegment(segment: string) {
     this.segment = segment;
+    this.firstBarFired = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -103,8 +106,16 @@ export class Datafeed implements IBasicDataFeed {
       if (bars.length > 0 && (periodParams.firstDataRequest === undefined || periodParams.firstDataRequest)) {
         const lastBar = bars[bars.length - 1] as Bar;
         this.lastBarCache.set(resolution, lastBar);
-        // Cast to the RealtimeProvider's local Bar type — shape is identical.
         this.realtimeProvider.setLastBar(lastBar, resolution);
+
+        // Notify once so TradingChart can seed currentPrice / priceChange without a
+        // second HTTP fetch. The `firstDataRequest` guard ensures we only fire on the
+        // initial load, not on paginated history requests.
+        if (!this.firstBarFired) {
+          this.firstBarFired = true;
+          const prevClose = bars.length > 1 ? (bars[bars.length - 2] as Bar).close : null;
+          this.onFirstBar?.(lastBar.close, prevClose);
+        }
       }
       onResult(bars, { noData });
     } catch (err) {

@@ -29,6 +29,8 @@ interface ChartContainerProps {
   liveQuote?: any;
   loading: boolean;
   error: string | null;
+  /** Called once when the TV widget's first getBars response arrives with bars */
+  onFirstBar?: (lastClose: number, prevClose: number | null) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -52,6 +54,7 @@ export default function ChartContainer({
   liveQuote,
   loading,
   error,
+  onFirstBar,
 }: ChartContainerProps) {
   // ── Refs ──────────────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,6 +63,9 @@ export default function ChartContainer({
   const isReadyRef = useRef(false);
   const pendingRef = useRef<PendingChanges>({});
   const initTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onFirstBarRef = useRef(onFirstBar);
+  // Keep the callback ref current without re-running the init effect
+  useEffect(() => { onFirstBarRef.current = onFirstBar; }, [onFirstBar]);
 
   // ── State (drives overlay rendering only) ─────────────────────────────────
   const [chartStatus, setChartStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -96,6 +102,9 @@ export default function ChartContainer({
       if (!containerRef.current || tvWidgetRef.current) return;
 
       datafeedRef.current = new Datafeed(segment);
+      datafeedRef.current.onFirstBar = (lastClose, prevClose) => {
+        onFirstBarRef.current?.(lastClose, prevClose);
+      };
 
       let savedData;
       try {

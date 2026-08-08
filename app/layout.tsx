@@ -40,12 +40,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Font Awesome 6 */}
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
-        {/* Tabler Icons */}
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" />
-        {/* Google Fonts: Playfair Display + Inter */}
-        <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet" />
+        {/* Preload the charting library so it's ready before the chart component mounts */}
+        <link rel="preload" href="/charting_library/charting_library.standalone.js" as="script" />
+        {/* Font Awesome 6 — loaded async to avoid render-blocking */}
+        <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" media="print" onLoad="this.media='all'" />
+        {/* Tabler Icons — loaded async */}
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" media="print" onLoad="this.media='all'" />
+        {/* Google Fonts: Playfair Display + Inter — loaded async */}
+        <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet" media="print" onLoad="this.media='all'" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('marginApexTheme');if(t){document.documentElement.classList.add(t);var o=new MutationObserver(function(m,obs){if(document.body){document.body.classList.add(t);obs.disconnect();}});o.observe(document.documentElement,{childList:true});}}catch(e){}if('scrollRestoration' in history)history.scrollRestoration='manual';})();`

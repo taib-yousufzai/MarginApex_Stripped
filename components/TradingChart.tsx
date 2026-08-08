@@ -701,101 +701,22 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   }, [symbol]);
 
 
-  // Fetch Historical Data
+  // Historical data is fetched directly by the TV widget via Datafeed.getBars —
+  // no duplicate React-side fetch needed. We just reset price display state when
+  // the symbol/timeframe changes so the legend doesn't show stale values while
+  // the widget is loading its own data.
   useEffect(() => {
-    let isMounted = true;
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        let data: Candle[] = [];
-
-        if (isCrypto) {
-          const interval = getIntervalString();
-          const json = await api.get<any[]>(`/api/market/historical-crypto?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=500`);
-          if (!Array.isArray(json)) throw new Error('Failed to fetch');
-          data = json.map((k: any) => ({
-            timestamp: parseInt(k[0]),
-            open: parseFloat(k[1]),
-            high: parseFloat(k[2]),
-            low: parseFloat(k[3]),
-            close: parseFloat(k[4]),
-            volume: parseFloat(k[5]),
-          }));
-        } else {
-          const toDate = new Date();
-          let fromDate = new Date();
-
-          if (timeframe === 'day') {
-            fromDate.setFullYear(fromDate.getFullYear() - 1);
-          } else if (timeframe === '60m') {
-            fromDate.setDate(fromDate.getDate() - 30);
-          } else if (timeframe === '15m') {
-            fromDate.setDate(fromDate.getDate() - 10);
-          } else {
-            fromDate.setDate(fromDate.getDate() - 4);
-          }
-
-          const from = fromDate.toISOString().split('T')[0];
-          const to = toDate.toISOString().split('T')[0];
-          const interval = getIntervalString();
-
-          const json = await api.get<{ candles?: any[]; error?: string }>(`/api/market/historical?symbol=${encodeURIComponent(symbol)}&interval=${interval}&from=${from}&to=${to}`);
-
-          if (json.candles) {
-            data = json.candles.map((c: any) => {
-              const dt = new Date(c[0]);
-              return {
-                timestamp: dt.getTime(),
-                open: c[1],
-                high: c[2],
-                low: c[3],
-                close: c[4],
-                volume: c[5] || 0,
-              };
-            });
-          } else {
-            throw new Error(json.error || 'Failed to load historical data');
-          }
-        }
-
-        if (isMounted) {
-          const uniqueData = Array.from(new Map(data.map(item => [item.timestamp, item])).values());
-          uniqueData.sort((a, b) => a.timestamp - b.timestamp);
-
-          setHistoricalCandles(uniqueData);
-          if (uniqueData.length > 0) hasLoadedData.current = true;
-          setLoading(false);
-
-          if (uniqueData.length > 0) {
-            const last = uniqueData[uniqueData.length - 1];
-            setCurrentPrice(last.close);
-            setLimitPrice(last.close.toFixed(2));
-            if (uniqueData.length > 1) {
-              const prev = uniqueData[uniqueData.length - 2];
-              const change = last.close - prev.close;
-              setPriceChange(change);
-              setPriceChangePct((change / prev.close) * 100);
-            }
-          }
-        }
-      } catch (err: any) {
-        if (isMounted) {
-          setError(err.message);
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchData();
-
-    return () => { isMounted = false; };
+    setLoading(true);
+    setHistoricalCandles([]);
+    setCurrentPrice(0);
+    setPriceChange(0);
+    setPriceChangePct(0);
+    setError(null);
+    hasLoadedData.current = false;
   }, [symbol, timeframe, isCrypto]);
 
-  // Update with activeLiveQuote — only when the chart is showing an underlying (index/equity),
-  // not a derivative. When viewing an option/futures chart, activeLiveQuote is the underlying's
-  // price and must not overwrite currentPrice (which comes from the option's candle data).
+  // Update currentPrice/change with live quote once initial bar data has loaded.
+  // Guards against derivatives (CE/PE/FUT) where activeLiveQuote is the underlying.
   useEffect(() => {
     if (!activeLiveQuote || loading) return;
     if (symbol.includes('CE') || symbol.includes('PE') || symbol.includes('FUT')) return;
@@ -806,10 +727,9 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setCurrentPrice(lastPrice);
     if (limitPrice === '') setLimitPrice(lastPrice.toFixed(2));
 
-    const lastCandle = historicalCandles.length > 0 ? historicalCandles[historicalCandles.length - 1] : null;
-    setPriceChange(activeLiveQuote.change || (lastPrice - (lastCandle?.open || lastPrice)));
+    setPriceChange(activeLiveQuote.change || 0);
     setPriceChangePct(activeLiveQuote.changePercent || 0);
-  }, [activeLiveQuote, loading, historicalCandles]);
+  }, [activeLiveQuote, loading]);
 
   const displayExchange = isCrypto ? 'BINANCE' : (symbol.includes('SENSEX') || symbol.includes('BANKEX')) ? 'BSE' : 'NSE';
   const isUp = priceChange >= 0;
@@ -2151,6 +2071,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
               liveQuote={activeLiveQuote}
               loading={loading}
               error={error}
+              onFirstBar={(lastClose, prevClose) => {
+                setCurrentPrice(lastClose);
+                setLimitPrice(lastClose.toFixed(2));
+                if (prevClose !== null) {
+                  const change = lastClose - prevClose;
+                  setPriceChange(change);
+                  setPriceChangePct((change / prevClose) * 100);
+                }
+                hasLoadedData.current = true;
+                setLoading(false);
+              }}
             />
           </div>
         </div>
