@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getUserFromRequest, getAdminClient } from '@/lib/adminClient';
 import { fetchKiteQuotes } from '@/lib/datafeed/MarketDataService';
+import { getRedisClient, isRedisMock } from '@/lib/redis';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import {
   applyForexFilter,
@@ -544,19 +545,58 @@ export async function GET(request: NextRequest) {
           }).filter(Boolean) as string[]
         ));
 
+        // ── Price lookup: Redis first (same as option-chain API), then Kite fallback ──
         const allKiteIds = [...nonMcxKiteIds, ...Object.values(mcxKiteIdMap)];
-        const kiteIdPriceMap = allKiteIds.length > 0 ? await fetchKiteQuotes(allKiteIds) : {};
-
-        // Build underlying name → live price
         const priceByName: Record<string, number> = {};
-        for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
-          if (kiteIdPriceMap[kiteId] > 0) priceByName[name] = kiteIdPriceMap[kiteId];
-        }
-        for (const opt of filteredOptions) {
-          const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
-          if (MCX_UNDERLYINGS.has(n)) continue;
-          const kiteId = getUnderlyingId((opt as any).tradingsymbol);
-          if (kiteIdPriceMap[kiteId] > 0 && !priceByName[n]) priceByName[n] = kiteIdPriceMap[kiteId];
+
+        if (allKiteIds.length > 0) {
+          // 1. Try Redis batch lookup — fastest, same source as option chain
+          const redisHitIds = new Set<string>();
+          if (!isRedisMock()) {
+            try {
+              const redis = getRedisClient();
+              const cached = await redis.hmget('market:quotes', ...allKiteIds);
+              allKiteIds.forEach((kiteId, i) => {
+                const raw = cached[i];
+                if (raw) {
+                  try {
+                    const q = JSON.parse(raw as string);
+                    const lp = q.last_price || q.lastPrice || q.ltp || 0;
+                    if (lp > 0) {
+                      redisHitIds.add(kiteId);
+                      // Map kiteId back to underlying name
+                      for (const [name, kid] of Object.entries(mcxKiteIdMap)) {
+                        if (kid === kiteId) priceByName[name] = lp;
+                      }
+                      // Non-MCX: kiteId is directly the underlying kiteId
+                      for (const opt of filteredOptions) {
+                        const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+                        if (MCX_UNDERLYINGS.has(n)) continue;
+                        if (getUnderlyingId((opt as any).tradingsymbol) === kiteId && !priceByName[n]) {
+                          priceByName[n] = lp;
+                        }
+                      }
+                    }
+                  } catch { /* malformed cache entry */ }
+                }
+              });
+            } catch { /* Redis unavailable */ }
+          }
+
+          // 2. Kite REST fallback for anything Redis missed
+          const missingIds = allKiteIds.filter(id => !redisHitIds.has(id));
+          if (missingIds.length > 0) {
+            const kiteIdPriceMap = await fetchKiteQuotes(missingIds);
+            for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
+              if (!priceByName[name] && kiteIdPriceMap[kiteId] > 0) priceByName[name] = kiteIdPriceMap[kiteId];
+            }
+            for (const opt of filteredOptions) {
+              const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+              if (MCX_UNDERLYINGS.has(n)) continue;
+              const kiteId = getUnderlyingId((opt as any).tradingsymbol);
+              if (!priceByName[n] && kiteIdPriceMap[kiteId] > 0) priceByName[n] = kiteIdPriceMap[kiteId];
+            }
+          }
         }
 
         // Group by underlying name.
