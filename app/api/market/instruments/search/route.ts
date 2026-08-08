@@ -636,7 +636,6 @@ export async function GET(request: NextRequest) {
         });
 
         if (optionsWithLimit.length > 0) {
-          perUserRangeApplied = true;
           const today2 = new Date().toISOString().split('T')[0];
 
           // Collect all underlying names, split by MCX vs non-MCX
@@ -673,6 +672,7 @@ export async function GET(request: NextRequest) {
             const dbSeg = mapSegmentToDbSegment(r.segment || r.exchange || '');
             const setting = userSegSettings.find(s => s.segment === dbSeg);
             const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
+            // strike_range = 0 means "use admin 11-strike window" — handled in the next block
             if (strikeRange <= 0) return true;
 
             const n = (r.name || r.underlying_symbol || '').toUpperCase();
@@ -683,6 +683,8 @@ export async function GET(request: NextRequest) {
             const diff = Math.abs(Number(r.strike_price) - underlyingLtp);
             return diff <= strikeRange;
           });
+          // Note: perUserRangeApplied stays false for segments with strike_range=0
+          // so the admin 11-strike fallback below will still run for those
         }
       }
 
