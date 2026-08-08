@@ -515,136 +515,125 @@ export async function GET(request: NextRequest) {
     const filteredForex = applyForexFilter(forexRows as Instrument[]);
     const filteredCrypto = applyCryptoWhitelist(cryptoRows as Instrument[]);
     let filteredOptions = optionRows as Instrument[];
-    
+
+    // ── Per-underlying ATM window filter ─────────────────────────────────────
+    // Mirrors exactly what the option-chain API does:
+    //   1. Pin to nearest active expiry per underlying
+    //   2. Find the modal (dominant) strike step to drop sub-interval rows
+    //   3. Apply applyStrikeRangeFilter (11-strike ATM window) from filterEngine
     if (filteredOptions.length > 0) {
-      // NOTE: Do NOT apply a global applyExpiryFilter here — it would pick the
-      // single earliest expiry across ALL underlyings and drop everything else.
-      // Per-underlying expiry pinning is handled inside the strike range block below.
+      try {
+        const today2 = new Date().toISOString().split('T')[0];
+        const strikeConfig = await loadStrikeConfig(supabase);
 
-      // ── Strike range filtering: use the SAME filterEngine functions as the
-      // option chain API so the watchlist always shows exactly what the chain shows.
-      if (filteredOptions.length > 0) {
-        try {
-          const today2 = new Date().toISOString().split('T')[0];
-          const strikeConfig = await loadStrikeConfig(supabase);
+        // Collect unique underlying names
+        const underlyingNames = Array.from(new Set(
+          filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
+        ));
+        const mcxNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
+        const nonMcxNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
 
-          // Collect unique underlying names and resolve their kite IDs
-          const underlyingNames = Array.from(new Set(
-            filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
-          ));
-          const mcxNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
-          const nonMcxNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
+        // Resolve MCX underlyings → nearest futures kite ID for price lookup
+        const mcxKiteIdMap = await resolveMcxKiteIds(mcxNames, today2);
 
-          // MCX: resolve to actual nearest futures kite ID (e.g. MCX:GOLD26AUGFUT)
-          const mcxKiteIdMap = await resolveMcxKiteIds(mcxNames, today2);
+        // Resolve non-MCX underlyings → kite ID
+        const nonMcxKiteIds = Array.from(new Set(
+          nonMcxNames.map(name => {
+            const rep = filteredOptions.find((r: any) => (r.name || r.underlying_symbol || '').toUpperCase() === name);
+            return rep ? getUnderlyingId(rep.tradingsymbol) : null;
+          }).filter(Boolean) as string[]
+        ));
 
-          // Non-MCX: derive from one representative option symbol
-          const nonMcxKiteIds = Array.from(new Set(
-            nonMcxNames.map(name => {
-              const rep = filteredOptions.find((r: any) => (r.name || r.underlying_symbol || '').toUpperCase() === name);
-              return rep ? getUnderlyingId(rep.tradingsymbol) : null;
-            }).filter(Boolean) as string[]
-          ));
+        const allKiteIds = [...nonMcxKiteIds, ...Object.values(mcxKiteIdMap)];
+        const kiteIdPriceMap = allKiteIds.length > 0 ? await fetchKiteQuotes(allKiteIds) : {};
 
-          const allKiteIds = [...nonMcxKiteIds, ...Object.values(mcxKiteIdMap)];
-          const kiteIdPriceMap = allKiteIds.length > 0 ? await fetchKiteQuotes(allKiteIds) : {};
-
-          // Build name → live price map
-          const priceByName: Record<string, number> = {};
-          for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
-            if (kiteIdPriceMap[kiteId] > 0) priceByName[name] = kiteIdPriceMap[kiteId];
-          }
-          for (const opt of filteredOptions) {
-            const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
-            if (MCX_UNDERLYINGS.has(n)) continue;
-            const kiteId = getUnderlyingId((opt as any).tradingsymbol);
-            if (kiteIdPriceMap[kiteId] > 0 && !priceByName[n]) priceByName[n] = kiteIdPriceMap[kiteId];
-          }
-
-          // Group by underlying name
-          const grouped: Record<string, any[]> = {};
-          for (const opt of filteredOptions) {
-            const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
-            if (!grouped[n]) grouped[n] = [];
-            grouped[n].push(opt);
-          }
-
-          const kept: any[] = [];
-          for (const [name, opts] of Object.entries(grouped)) {
-            const ltp = priceByName[name];
-
-            // If we can't get a live price, fall back to the median strike as ATM proxy
-            // so the user still sees results (same fallback as the option chain API).
-            let effectiveLtp = ltp;
-            if (!effectiveLtp || effectiveLtp <= 0) {
-              const strikes = opts
-                .map(o => Number((o as any).strike_price || 0))
-                .filter(s => s > 0)
-                .sort((a, b) => a - b);
-              effectiveLtp = strikes.length > 0 ? strikes[Math.floor(strikes.length / 2)] : 0;
-            }
-            if (!effectiveLtp || effectiveLtp <= 0) continue;
-
-            // ── Narrow to nearest expiry for this underlying ──────────────
-            // Pin to the single nearest active expiry per underlying — exactly
-            // what the option chain API does. This prevents far-month expiries
-            // with different strike intervals from polluting the results.
-            const expiriesForName = Array.from(new Set(
-              opts.map(o => (o as any).expiry).filter(Boolean)
-            )).sort() as string[];
-            const activeForName = applyExpiryFilter(expiriesForName, today);
-            const nearestExpiry = activeForName[0] ?? expiriesForName[0] ?? null;
-            const nearestOpts = nearestExpiry
-              ? opts.filter(o => (o as any).expiry === nearestExpiry)
-              : opts;
-
-            // ── Find modal (most common) strike step ──────────────────────
-            // Even within one expiry, some symbols have sub-interval DB rows.
-            // Compute the step between consecutive unique strikes and keep only
-            // rows whose strike is a multiple of the dominant step.
-            const sortedStrikes = Array.from(new Set(
-              nearestOpts.map(o => Number((o as any).strike_price || 0)).filter(s => s > 0)
-            )).sort((a, b) => a - b);
-
-            let dominantStep = 0;
-            if (sortedStrikes.length > 1) {
-              const steps: number[] = [];
-              for (let i = 1; i < sortedStrikes.length; i++) {
-                steps.push(sortedStrikes[i] - sortedStrikes[i - 1]);
-              }
-              // Modal step = the step value that appears most often
-              const freq: Record<number, number> = {};
-              for (const s of steps) freq[s] = (freq[s] || 0) + 1;
-              dominantStep = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
-            }
-
-            const stepFilteredOpts = (dominantStep > 0)
-              ? nearestOpts.filter(o => Number((o as any).strike_price || 0) % dominantStep === 0)
-              : nearestOpts;
-
-            // Fallback: if step filter wiped everything, use unfiltered nearest-expiry opts
-            const optsToFilter = stepFilteredOpts.length > 0 ? stepFilteredOpts : nearestOpts;
-
-            // Check per-user strike_range first (distance-based)
-            const dbSeg = mapSegmentToDbSegment((optsToFilter[0] as any).segment || (optsToFilter[0] as any).exchange || '');
-            const setting = userSegSettings.find((s: any) => s.segment === dbSeg);
-            const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
-
-            if (strikeRange > 0) {
-              // Per-user: keep only options within strikeRange points of effectiveLtp
-              kept.push(...optsToFilter.filter(o => Math.abs(Number((o as any).strike_price || 0) - effectiveLtp) <= strikeRange));
-            } else {
-              // Use the same filterEngine function as the option chain API
-              const isMcx = MCX_UNDERLYINGS.has(name);
-              const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
-              const filtered = applyStrikeRangeFilter(optsToFilter as Instrument[], effectiveLtp, range);
-              kept.push(...filtered);
-            }
-          }
-          filteredOptions = kept as Instrument[];
-        } catch (e) {
-          console.error('[search] strike range filter error:', e);
+        // Build underlying name → live price
+        const priceByName: Record<string, number> = {};
+        for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
+          if (kiteIdPriceMap[kiteId] > 0) priceByName[name] = kiteIdPriceMap[kiteId];
         }
+        for (const opt of filteredOptions) {
+          const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+          if (MCX_UNDERLYINGS.has(n)) continue;
+          const kiteId = getUnderlyingId((opt as any).tradingsymbol);
+          if (kiteIdPriceMap[kiteId] > 0 && !priceByName[n]) priceByName[n] = kiteIdPriceMap[kiteId];
+        }
+
+        // Group by underlying name.
+        // For MCX underlyings, skip non-MCX exchange rows (e.g. NCO has sub-interval strikes).
+        const grouped: Record<string, any[]> = {};
+        for (const opt of filteredOptions) {
+          const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+          if (MCX_UNDERLYINGS.has(n) && (opt as any).exchange !== 'MCX') continue;
+          if (!grouped[n]) grouped[n] = [];
+          grouped[n].push(opt);
+        }
+
+        const kept: any[] = [];
+        for (const [name, opts] of Object.entries(grouped)) {
+          // Step 1: pin to nearest active expiry for this underlying
+          const expiriesForName = Array.from(new Set(
+            opts.map(o => (o as any).expiry).filter(Boolean)
+          )).sort() as string[];
+          const activeForName = applyExpiryFilter(expiriesForName, today2);
+          const nearestExpiry = activeForName[0] ?? expiriesForName[0] ?? null;
+          const nearestOpts = nearestExpiry
+            ? opts.filter(o => (o as any).expiry === nearestExpiry)
+            : opts;
+          if (nearestOpts.length === 0) continue;
+
+          // Step 2: resolve ATM price (live price preferred, median fallback)
+          let ltp = priceByName[name] ?? 0;
+          if (ltp <= 0) {
+            const strikes = nearestOpts
+              .map(o => Number((o as any).strike_price || 0))
+              .filter(s => s > 0)
+              .sort((a, b) => a - b);
+            ltp = strikes.length > 0 ? strikes[Math.floor(strikes.length / 2)] : 0;
+          }
+          if (ltp <= 0) continue;
+
+          // Step 3: find modal strike step and drop sub-interval rows
+          const sortedStrikes = Array.from(new Set(
+            nearestOpts.map(o => Number((o as any).strike_price || 0)).filter(s => s > 0)
+          )).sort((a, b) => a - b);
+
+          let dominantStep = 0;
+          if (sortedStrikes.length > 1) {
+            const freq: Record<number, number> = {};
+            for (let i = 1; i < sortedStrikes.length; i++) {
+              const step = sortedStrikes[i] - sortedStrikes[i - 1];
+              freq[step] = (freq[step] || 0) + 1;
+            }
+            dominantStep = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
+          }
+
+          const stepOpts = dominantStep > 0
+            ? nearestOpts.filter(o => Number((o as any).strike_price || 0) % dominantStep === 0)
+            : nearestOpts;
+          const optsToFilter = stepOpts.length > 0 ? stepOpts : nearestOpts;
+
+          // Step 4: apply ATM window (per-user strike_range or 11-strike default)
+          const dbSeg = mapSegmentToDbSegment((optsToFilter[0] as any).segment || (optsToFilter[0] as any).exchange || '');
+          const setting = userSegSettings.find((s: any) => s.segment === dbSeg);
+          const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
+
+          if (strikeRange > 0) {
+            kept.push(...optsToFilter.filter(o =>
+              Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange
+            ));
+          } else {
+            const isMcx = MCX_UNDERLYINGS.has(name);
+            const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
+            kept.push(...applyStrikeRangeFilter(optsToFilter as Instrument[], ltp, range));
+          }
+        }
+
+        filteredOptions = kept as Instrument[];
+      } catch (e) {
+        console.error('[search] strike range filter error:', e);
+        // Do NOT fall through to unfiltered options — return empty to avoid bad data
+        filteredOptions = [];
       }
     }
 
