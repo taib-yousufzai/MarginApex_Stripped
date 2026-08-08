@@ -14,6 +14,8 @@ import {
   applyForexFilter,
   applyCryptoWhitelist,
   applyExpiryFilter,
+  applyStrikeRangeFilter,
+  loadStrikeConfig,
   type Instrument,
 } from '@/lib/filterEngine';
 
@@ -520,12 +522,12 @@ export async function GET(request: NextRequest) {
         filteredOptions = filteredOptions.filter((r: any) => !r.expiry || activeSet.has(r.expiry));
       }
 
-      // ── Strike range filtering: per-user distance check OR admin 11-strike window ──
-      // Use fetchKiteQuotes (same as TradeEngine) — the authoritative Kite REST price.
-      // Never use ticker daemon or Redis here; they can serve stale prices.
+      // ── Strike range filtering: use the SAME filterEngine functions as the
+      // option chain API so the watchlist always shows exactly what the chain shows.
       if (filteredOptions.length > 0) {
         try {
           const today2 = new Date().toISOString().split('T')[0];
+          const strikeConfig = await loadStrikeConfig(supabase);
 
           // Collect unique underlying names and resolve their kite IDs
           const underlyingNames = Array.from(new Set(
@@ -582,60 +584,11 @@ export async function GET(request: NextRequest) {
               // Per-user: keep only options within strikeRange points of ltp
               kept.push(...opts.filter(o => Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange));
             } else {
-              // Admin 11-strike window — same algorithm as TradeEngine
-              // First, determine the expected strike step for this underlying so we
-              // skip sub-interval strikes (e.g. GOLD has 100-pt DB rows but trades
-              // in 500-pt steps; NIFTY has 50-pt rows but trades in 50-pt steps).
-              const STRIKE_STEPS: Record<string, number> = {
-                'GOLD':       500,
-                'GOLDM':      100,
-                'SILVER':     500,
-                'SILVERM':    100,
-                'SILVERMIC':  100,
-                'CRUDEOIL':   50,
-                'CRUDEOILM':  10,
-                'NATURALGAS': 10,
-                'NATGASMINI': 5,
-                'COPPER':     50,
-                'ZINC':       50,
-                'ZINCMINI':   10,
-                'LEAD':       50,
-                'LEADMINI':   10,
-                'ALUMINIUM':  50,
-                'ALUMINI':    10,
-                'NIFTY':      50,
-                'BANKNIFTY':  100,
-                'FINNIFTY':   50,
-                'MIDCPNIFTY': 25,
-                'SENSEX':     100,
-                'BANKEX':     100,
-              };
-              const expectedStep = STRIKE_STEPS[name] ?? 0;
-
-              let filteredStrikes = uniqueStrikes;
-              if (expectedStep > 0 && uniqueStrikes.length > 1) {
-                // Keep only strikes that are multiples of expectedStep
-                filteredStrikes = uniqueStrikes.filter(s => Math.round(s % expectedStep) === 0);
-                // If filtering removed everything (unusual symbol), fall back to all strikes
-                if (filteredStrikes.length === 0) filteredStrikes = uniqueStrikes;
-              }
-
-              const uniqueStrikes2 = filteredStrikes;
-              if (uniqueStrikes2.length === 0) continue;
-
-              let closestIdx = 0, minDiff = Infinity;
-              for (let i = 0; i < uniqueStrikes2.length; i++) {
-                const d = Math.abs(uniqueStrikes2[i] - ltp);
-                if (d < minDiff) { minDiff = d; closestIdx = i; }
-              }
-
-              const half = 5;
-              let lo = closestIdx - half, hi = closestIdx + half;
-              if (lo < 0) { hi += -lo; lo = 0; }
-              if (hi >= uniqueStrikes2.length) { lo = Math.max(0, lo - (hi - (uniqueStrikes2.length - 1))); hi = uniqueStrikes2.length - 1; }
-
-              const allowed = new Set(uniqueStrikes2.slice(lo, hi + 1));
-              kept.push(...opts.filter(o => allowed.has(Number((o as any).strike_price || 0))));
+              // Use the same filterEngine function as the option chain API
+              const isMcx = MCX_UNDERLYINGS.has(name);
+              const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
+              const filtered = applyStrikeRangeFilter(opts as Instrument[], ltp, range);
+              kept.push(...filtered);
             }
           }
           filteredOptions = kept as Instrument[];
