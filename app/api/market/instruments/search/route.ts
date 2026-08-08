@@ -494,8 +494,11 @@ export async function GET(request: NextRequest) {
     // Apply Filter Engine rules server-side before returning results
     const forexRows = rows.filter((r: any) => r.exchange === 'CDS' || r.segment === 'CDS');
     const cryptoRows = rows.filter((r: any) => r.segment === 'CRYPTO');
-    // Remove all options (CE/PE) from search results — users access them via the option chain
-    const optionRows: any[] = [];
+    const optionRows = rows.filter((r: any) => {
+      if (r.exchange === 'CDS' || r.segment === 'CDS' || r.segment === 'CRYPTO') return false;
+      const sym = (r.tradingsymbol || '').toUpperCase();
+      return r.option_type === 'CE' || r.option_type === 'PE' || r.instrument_type === 'CE' || r.instrument_type === 'PE' || sym.endsWith('CE') || sym.endsWith('PE');
+    });
     const otherRows = rows.filter((r: any) => {
       if (r.exchange === 'CDS' || r.segment === 'CDS' || r.segment === 'CRYPTO') return false;
       const sym = (r.tradingsymbol || '').toUpperCase();
