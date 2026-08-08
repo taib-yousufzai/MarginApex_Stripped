@@ -9,7 +9,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { getUserFromRequest, getAdminClient } from '@/lib/adminClient';
-import { getRedisClient } from '@/lib/redis';
 import {
   applyForexFilter,
   applyCryptoWhitelist,
@@ -27,6 +26,57 @@ const MCX_UNDERLYINGS = new Set([
   'ALUMINIUM', 'ALUMINI',
 ]);
 
+// Mini/variant → base commodity mapping for MCX futures lookup
+const MCX_BASE_MAP: Record<string, string> = {
+  'GOLDM': 'GOLD', 'SILVERM': 'SILVER', 'SILVERMIC': 'SILVER',
+  'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
+  'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
+};
+
+/**
+ * For a set of MCX underlying names (e.g. ['GOLD', 'GOLDM', 'CRUDEOIL']),
+ * queries the DB for the nearest active futures contract and returns a map of
+ * underlyingName → 'MCX:GOLD26AUGFUT' style kite ID.
+ * This allows fetchLivePrices to use its full Redis → ticker → Kite REST cascade.
+ */
+async function resolveMcxUnderlyingKiteIds(underlyingNames: string[], today: string): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  if (underlyingNames.length === 0) return result;
+
+  // Resolve each name to its base commodity for futures lookup
+  const baseNames = Array.from(new Set(underlyingNames.map(n => MCX_BASE_MAP[n] || n)));
+
+  try {
+    const { data: mcxFuts } = await supabase
+      .from('instruments')
+      .select('tradingsymbol, name, exchange, expiry')
+      .eq('exchange', 'MCX')
+      .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+      .in('name', baseNames)
+      .gte('expiry', today)
+      .order('expiry', { ascending: true });
+
+    if (!mcxFuts || mcxFuts.length === 0) return result;
+
+    // Build map: base name → nearest futures kite ID
+    const nearestFutMap = new Map<string, string>();
+    for (const f of mcxFuts) {
+      if (!nearestFutMap.has(f.name)) {
+        nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
+      }
+    }
+
+    // Expand back to all requested names (including mini variants)
+    for (const name of underlyingNames) {
+      const base = MCX_BASE_MAP[name] || name;
+      const kiteId = nearestFutMap.get(base);
+      if (kiteId) result[name] = kiteId;
+    }
+  } catch { /* fail silently — caller handles missing entries */ }
+
+  return result;
+}
+
 function getUnderlyingId(symbol: string): string {
   const parsed = parseOptionSymbol(symbol);
   const u = parsed?.underlying || 'NIFTY';
@@ -36,7 +86,7 @@ function getUnderlyingId(symbol: string): string {
   if (u === 'BANKEX') return 'BSE:BANKEX';
   if (u === 'MIDCPNIFTY') return 'NSE:NIFTY MID SELECT';
   if (u === 'NIFTY') return 'NSE:NIFTY 50';
-  // MCX commodities — use MCX prefix so Redis lookups hit the right key space
+  // MCX commodities — use MCX prefix; resolved to actual futures symbol before price lookup
   if (MCX_UNDERLYINGS.has(u)) return `MCX:${u}`;
   return `NSE:${u}`;
 }
@@ -478,57 +528,44 @@ export async function GET(request: NextRequest) {
         if (optionsWithLimit.length > 0) {
           perUserRangeApplied = true;
           const today2 = new Date().toISOString().split('T')[0];
-          const redis = getRedisClient();
 
-          // Build a combined price map: non-MCX via fetchLivePrices, MCX via Redis nearest fut
-          const allUnderlyingIds = Array.from(new Set(optionsWithLimit.map((r: any) => getUnderlyingId(r.tradingsymbol))));
-          const nonMcxIds = allUnderlyingIds.filter(id => !id.startsWith('MCX:'));
-          const mcxIds = allUnderlyingIds.filter(id => id.startsWith('MCX:'));
+          // Collect all underlying kite IDs, resolving MCX options to their
+          // actual nearest futures symbol so fetchLivePrices can use its full
+          // Redis → ticker daemon → Kite REST fallback chain.
+          const allUnderlyingNames = Array.from(new Set(
+            optionsWithLimit.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
+          ));
+          const mcxUnderlyingNames = allUnderlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
+          const nonMcxUnderlyingIds = Array.from(new Set(
+            optionsWithLimit
+              .filter((r: any) => !MCX_UNDERLYINGS.has((r.name || r.underlying_symbol || '').toUpperCase()))
+              .map((r: any) => getUnderlyingId(r.tradingsymbol))
+          ));
 
-          const priceMap = nonMcxIds.length > 0
-            ? await fetchLivePrices(nonMcxIds, request)
+          // Resolve MCX names → actual futures kite IDs (e.g. MCX:GOLD26AUGFUT)
+          const mcxKiteIdMap = await resolveMcxUnderlyingKiteIds(mcxUnderlyingNames, today2);
+
+          // Build price map using fetchLivePrices for everything (has full REST fallback)
+          const allKiteIds = [
+            ...nonMcxUnderlyingIds,
+            ...Object.values(mcxKiteIdMap),
+          ];
+          const kiteIdPriceMap = allKiteIds.length > 0
+            ? await fetchLivePrices(allKiteIds, request)
             : {};
 
-          // For MCX underlyings, look up nearest futures contract price via Redis
-          if (mcxIds.length > 0) {
-            const mcxBaseMap: Record<string, string> = {
-              'GOLDM': 'GOLD', 'SILVERM': 'SILVER', 'SILVERMIC': 'SILVER',
-              'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
-              'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
-            };
-            const mcxNames = mcxIds.map(id => id.replace('MCX:', ''));
-            const lookupNames = Array.from(new Set(mcxNames.map(n => mcxBaseMap[n] || n)));
-            const { data: mcxFuts } = await supabase
-              .from('instruments')
-              .select('tradingsymbol, name, exchange, expiry')
-              .eq('exchange', 'MCX')
-              .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
-              .in('name', lookupNames)
-              .gte('expiry', today2)
-              .order('expiry', { ascending: true });
-
-            if (mcxFuts && mcxFuts.length > 0) {
-              const nearestFutMap = new Map<string, string>();
-              for (const f of mcxFuts) {
-                if (!nearestFutMap.has(f.name)) nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
-              }
-              for (const [baseName, kiteId] of nearestFutMap.entries()) {
-                let atmPrice = 0;
-                try {
-                  const cached = await redis.hget('market:quotes', kiteId);
-                  if (cached) { const q = JSON.parse(cached); atmPrice = q.last_price || q.ohlc?.close || q.close || 0; }
-                  if (!atmPrice) {
-                    const altCached = await redis.hget('market:quotes', kiteId.split(':')[1] || '');
-                    if (altCached) { const q = JSON.parse(altCached); atmPrice = q.last_price || q.ohlc?.close || q.close || 0; }
-                  }
-                } catch { /* ignore */ }
-                if (atmPrice > 0) {
-                  priceMap[`MCX:${baseName}`] = atmPrice;
-                  for (const [mini, base] of Object.entries(mcxBaseMap)) {
-                    if (base === baseName) priceMap[`MCX:${mini}`] = atmPrice;
-                  }
-                }
-              }
+          // Build a lookup by underlying name (handles both MCX and non-MCX)
+          const priceByName: Record<string, number> = {};
+          for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
+            if (kiteIdPriceMap[kiteId]) priceByName[name] = kiteIdPriceMap[kiteId];
+          }
+          // For non-MCX, the kite ID is derived from the option symbol
+          for (const opt of optionsWithLimit) {
+            const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+            if (MCX_UNDERLYINGS.has(n)) continue;
+            const kiteId = getUnderlyingId(opt.tradingsymbol);
+            if (kiteIdPriceMap[kiteId] && !priceByName[n]) {
+              priceByName[n] = kiteIdPriceMap[kiteId];
             }
           }
 
@@ -539,8 +576,8 @@ export async function GET(request: NextRequest) {
             const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
             if (strikeRange <= 0) return true;
 
-            const underlyingId = getUnderlyingId(r.tradingsymbol);
-            const underlyingLtp = priceMap[underlyingId];
+            const n = (r.name || r.underlying_symbol || '').toUpperCase();
+            const underlyingLtp = priceByName[n];
             if (underlyingLtp === undefined || underlyingLtp <= 0) return true;
 
             const diff = Math.abs(Number(r.strike_price) - underlyingLtp);
@@ -559,95 +596,43 @@ export async function GET(request: NextRequest) {
       if (!perUserRangeApplied && filteredOptions.length > 0) {
         try {
           const today2 = new Date().toISOString().split('T')[0];
-          const redis = getRedisClient();
 
-          // Build a map from underlying name → live price.
-          // For MCX commodities we look up the nearest futures contract in Redis
-          // (same approach as the library route) since `MCX:GOLD` is not a valid
-          // Redis quote key — only `MCX:GOLD26AUGFUT` would be.
+          // Collect all unique underlying names from the filtered options
           const underlyingNames = Array.from(new Set(
             filteredOptions.map((r: any) => (r.name || r.underlying_symbol || '').toUpperCase()).filter(Boolean)
           ));
 
-          const priceMap: Record<string, number> = {};
+          const mcxUnderlyingNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
+          const nonMcxUnderlyingNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
 
-          // Split into MCX and non-MCX underlyings
-          const mcxNames = underlyingNames.filter(n => MCX_UNDERLYINGS.has(n));
-          const nonMcxNames = underlyingNames.filter(n => !MCX_UNDERLYINGS.has(n));
+          // Resolve MCX names → actual futures kite IDs (e.g. MCX:GOLD26AUGFUT)
+          // so fetchLivePrices can use its full Redis → ticker → Kite REST cascade.
+          const mcxKiteIdMap = await resolveMcxUnderlyingKiteIds(mcxUnderlyingNames, today2);
 
-          // Non-MCX: use existing fetchLivePrices (indexed by kite ID like NSE:NIFTY 50)
-          if (nonMcxNames.length > 0) {
-            // Derive one representative option tradingsymbol per underlying to get its kite ID
-            const repSymbols = nonMcxNames.map(name => {
+          // Non-MCX: derive kite ID from one representative option tradingsymbol
+          const nonMcxKiteIds = Array.from(new Set(
+            nonMcxUnderlyingNames.map(name => {
               const rep = filteredOptions.find((r: any) => (r.name || r.underlying_symbol || '').toUpperCase() === name);
               return rep ? getUnderlyingId(rep.tradingsymbol) : null;
-            }).filter(Boolean) as string[];
-            const nonMcxPrices = await fetchLivePrices(repSymbols, request);
-            // Map back: underlyingId → price
-            for (const [kiteId, price] of Object.entries(nonMcxPrices)) {
-              priceMap[kiteId] = price;
-            }
+            }).filter(Boolean) as string[]
+          ));
+
+          const allKiteIds = [...nonMcxKiteIds, ...Object.values(mcxKiteIdMap)];
+          const kiteIdPriceMap = allKiteIds.length > 0
+            ? await fetchLivePrices(allKiteIds, request)
+            : {};
+
+          // Build name → price lookup
+          const priceByName: Record<string, number> = {};
+          for (const [name, kiteId] of Object.entries(mcxKiteIdMap)) {
+            if (kiteIdPriceMap[kiteId]) priceByName[name] = kiteIdPriceMap[kiteId];
           }
-
-          // MCX: look up nearest futures contract from DB, then check Redis
-          if (mcxNames.length > 0) {
-            // For GOLDM/SILVERM/CRUDEOILM/NATGASMINI we look up the base commodity future
-            const mcxBaseMap: Record<string, string> = {
-              'GOLDM': 'GOLD', 'SILVERM': 'SILVER', 'SILVERMIC': 'SILVER',
-              'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
-              'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
-            };
-            const lookupNames = Array.from(new Set(mcxNames.map(n => mcxBaseMap[n] || n)));
-
-            const { data: mcxFuts } = await supabase
-              .from('instruments')
-              .select('tradingsymbol, name, exchange, expiry')
-              .eq('exchange', 'MCX')
-              .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
-              .in('name', lookupNames)
-              .gte('expiry', today2)
-              .order('expiry', { ascending: true });
-
-            if (mcxFuts && mcxFuts.length > 0) {
-              // Nearest future per commodity name
-              const nearestFutMap = new Map<string, string>();
-              for (const f of mcxFuts) {
-                if (!nearestFutMap.has(f.name)) {
-                  nearestFutMap.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
-                }
-              }
-
-              // Fetch prices from Redis for each nearest future
-              for (const [baseName, kiteId] of nearestFutMap.entries()) {
-                let atmPrice = 0;
-                try {
-                  const cached = await redis.hget('market:quotes', kiteId);
-                  if (cached) {
-                    const q = JSON.parse(cached);
-                    atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-                  }
-                  if (!atmPrice) {
-                    // Try just the tradingsymbol without exchange prefix
-                    const altKey = kiteId.split(':')[1] || '';
-                    if (altKey) {
-                      const altCached = await redis.hget('market:quotes', altKey);
-                      if (altCached) {
-                        const q = JSON.parse(altCached);
-                        atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-                      }
-                    }
-                  }
-                } catch { /* ignore Redis errors */ }
-
-                if (atmPrice > 0) {
-                  // Store under both the base name key and any mini variants
-                  priceMap[`MCX:${baseName}`] = atmPrice;
-                  // Also cover mini variants that map to this base
-                  for (const [miniName, base] of Object.entries(mcxBaseMap)) {
-                    if (base === baseName) priceMap[`MCX:${miniName}`] = atmPrice;
-                  }
-                }
-              }
+          for (const opt of filteredOptions) {
+            const n = (opt.name || opt.underlying_symbol || '').toUpperCase();
+            if (MCX_UNDERLYINGS.has(n)) continue;
+            const kiteId = getUnderlyingId(opt.tradingsymbol);
+            if (kiteIdPriceMap[kiteId] && !priceByName[n]) {
+              priceByName[n] = kiteIdPriceMap[kiteId];
             }
           }
 
@@ -661,11 +646,7 @@ export async function GET(request: NextRequest) {
 
           let finalFilteredOptions: any[] = [];
           for (const [underlyingName, opts] of Object.entries(groupedOptions)) {
-            // Resolve the price map key for this group
-            const underlyingId = MCX_UNDERLYINGS.has(underlyingName)
-              ? `MCX:${underlyingName}`
-              : getUnderlyingId(opts[0].tradingsymbol);
-            const underlyingLtp = priceMap[underlyingId];
+            const underlyingLtp = priceByName[underlyingName];
 
             // If we can't get the live price, pass all strikes through (fail open)
             if (!underlyingLtp || underlyingLtp <= 0) {
@@ -674,7 +655,7 @@ export async function GET(request: NextRequest) {
             }
 
             // Compute the allowed 11-strike window centered on the current ATM —
-            // identical algorithm to TradeEngine.ts lines 476–501
+            // identical algorithm to TradeEngine.ts
             const uniqueStrikes = Array.from(new Set(opts.map(o => Number(o.strike_price || 0)))).sort((a, b) => a - b);
             let closestIdx = 0;
             let minDiff = Infinity;
