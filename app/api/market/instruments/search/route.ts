@@ -389,6 +389,7 @@ export async function GET(request: NextRequest) {
         .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol')
         .eq('strike_price', parsed.strike)
         .gte('expiry', today)
+        .neq('exchange', 'NCO')
         .order('expiry', { ascending: true })
         .limit(150);
 
@@ -410,7 +411,8 @@ export async function GET(request: NextRequest) {
       let buildBaseFallbackQuery = () => {
         let qry = supabase
           .from('instruments')
-          .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol');
+          .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol')
+          .neq('exchange', 'NCO'); // NCO has sub-interval strike rows that pollute results
           
         let orParts = [];
 
