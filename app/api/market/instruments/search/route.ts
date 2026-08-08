@@ -575,19 +575,59 @@ export async function GET(request: NextRequest) {
             const ltp = priceByName[name];
             if (!ltp || ltp <= 0) continue; // fail closed — no price, no show
 
+            // ── Narrow to nearest expiry for this underlying ──────────────
+            // The search query fetches across all future expiries. Different
+            // expiries can have different strike intervals (e.g. GOLD near-month
+            // has 500-pt steps, far months may have 100-pt steps). Pin to the
+            // nearest expiry — exactly what the option chain API does.
+            const expiriesForName = Array.from(new Set(
+              opts.map(o => (o as any).expiry).filter(Boolean)
+            )).sort() as string[];
+            const nearestExpiry = expiriesForName[0] ?? null;
+            const nearestOpts = nearestExpiry
+              ? opts.filter(o => (o as any).expiry === nearestExpiry)
+              : opts;
+
+            // ── Find modal (most common) strike step ──────────────────────
+            // Even within one expiry, some symbols have sub-interval DB rows.
+            // Compute the step between consecutive unique strikes and keep only
+            // rows whose strike is a multiple of the dominant step.
+            const sortedStrikes = Array.from(new Set(
+              nearestOpts.map(o => Number((o as any).strike_price || 0)).filter(s => s > 0)
+            )).sort((a, b) => a - b);
+
+            let dominantStep = 0;
+            if (sortedStrikes.length > 1) {
+              const steps: number[] = [];
+              for (let i = 1; i < sortedStrikes.length; i++) {
+                steps.push(sortedStrikes[i] - sortedStrikes[i - 1]);
+              }
+              // Modal step = the step value that appears most often
+              const freq: Record<number, number> = {};
+              for (const s of steps) freq[s] = (freq[s] || 0) + 1;
+              dominantStep = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
+            }
+
+            const stepFilteredOpts = (dominantStep > 0)
+              ? nearestOpts.filter(o => Number((o as any).strike_price || 0) % dominantStep === 0)
+              : nearestOpts;
+
+            // Fallback: if step filter wiped everything, use unfiltered nearest-expiry opts
+            const optsToFilter = stepFilteredOpts.length > 0 ? stepFilteredOpts : nearestOpts;
+
             // Check per-user strike_range first (distance-based)
-            const dbSeg = mapSegmentToDbSegment((opts[0] as any).segment || (opts[0] as any).exchange || '');
+            const dbSeg = mapSegmentToDbSegment((optsToFilter[0] as any).segment || (optsToFilter[0] as any).exchange || '');
             const setting = userSegSettings.find((s: any) => s.segment === dbSeg);
             const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
 
             if (strikeRange > 0) {
               // Per-user: keep only options within strikeRange points of ltp
-              kept.push(...opts.filter(o => Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange));
+              kept.push(...optsToFilter.filter(o => Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange));
             } else {
               // Use the same filterEngine function as the option chain API
               const isMcx = MCX_UNDERLYINGS.has(name);
               const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
-              const filtered = applyStrikeRangeFilter(opts as Instrument[], ltp, range);
+              const filtered = applyStrikeRangeFilter(optsToFilter as Instrument[], ltp, range);
               kept.push(...filtered);
             }
           }
