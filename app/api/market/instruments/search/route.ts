@@ -670,7 +670,8 @@ export async function GET(request: NextRequest) {
 
             const n = (r.name || r.underlying_symbol || '').toUpperCase();
             const underlyingLtp = priceByName[n];
-            if (underlyingLtp === undefined || underlyingLtp <= 0) return true;
+            // No live price → drop this option (fail closed)
+            if (underlyingLtp === undefined || underlyingLtp <= 0) return false;
 
             const diff = Math.abs(Number(r.strike_price) - underlyingLtp);
             return diff <= strikeRange;
@@ -740,11 +741,9 @@ export async function GET(request: NextRequest) {
           for (const [underlyingName, opts] of Object.entries(groupedOptions)) {
             const underlyingLtp = priceByName[underlyingName];
 
-            // If we can't get the live price, pass all strikes through (fail open)
-            if (!underlyingLtp || underlyingLtp <= 0) {
-              finalFilteredOptions.push(...opts);
-              continue;
-            }
+            // No live price → drop all options for this underlying.
+            // Fail closed: better to show nothing than show unvalidated strikes.
+            if (!underlyingLtp || underlyingLtp <= 0) continue;
 
             // Compute the allowed 11-strike window centered on the current ATM —
             // identical algorithm to TradeEngine.ts
