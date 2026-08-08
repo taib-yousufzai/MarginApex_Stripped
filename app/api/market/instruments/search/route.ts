@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getUserFromRequest, getAdminClient } from '@/lib/adminClient';
 import { fetchKiteQuotes } from '@/lib/datafeed/MarketDataService';
+import { getSharedKiteSession } from '@/lib/kiteSession';
 import {
   applyForexFilter,
   applyCryptoWhitelist,
@@ -191,9 +192,12 @@ function buildDisplayName(tradingsymbol: string, underlying: string, strike: num
  * Fetch live last_price for a list of kite IDs like "NFO:NIFTY26MAY24050CE"
  * Checks local database cache first, and falls back to Kite REST on-demand for missing.
  */
-async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise<Record<string, number>> {
+async function fetchLivePrices(
+  kiteIds: string[],
+  request: NextRequest
+): Promise<Record<string, { price: number; high: number; low: number }>> {
   if (kiteIds.length === 0) return {};
-  const priceMap: Record<string, number> = {};
+  const quoteMap: Record<string, { price: number; high: number; low: number }> = {};
   const foundKiteIds = new Set<string>();
 
   try {
@@ -202,15 +206,17 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
       const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : null);
       const params = new URLSearchParams({ symbols: kiteIds.join(',') });
       if (!tickerUrl) throw new Error('No tickerUrl');
-      if (!tickerUrl) throw new Error('No tickerUrl');
-      if (!tickerUrl) throw new Error('No tickerUrl');
-      if (!tickerUrl) throw new Error('No tickerUrl');
       const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(50) });
       if (resTicker.ok) {
         const json = await resTicker.json();
         if (json.success && json.data) {
           for (const [key, val] of Object.entries(json.data)) {
-            priceMap[key] = (val as any).last_price;
+            const v = val as any;
+            quoteMap[key] = {
+              price: v.last_price ?? 0,
+              high: v.ohlc?.high ?? v.high ?? 0,
+              low: v.ohlc?.low ?? v.low ?? 0,
+            };
             foundKiteIds.add(key);
           }
         }
@@ -225,14 +231,14 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
     // 3. Fallback on-demand fetch from Kite REST API for missing instruments
     if (missingKiteIds.length > 0) {
       const apiKey = process.env.KITE_API_KEY;
-      if (!apiKey) return priceMap;
+      if (!apiKey) return quoteMap;
 
       let accessToken = request.cookies.get('kite_access_token')?.value;
       if (!accessToken) {
         const session = await getSharedKiteSession();
         accessToken = session?.accessToken;
       }
-      if (!accessToken) return priceMap;
+      if (!accessToken) return quoteMap;
 
       const batchSize = 100;
       const batches: string[][] = [];
@@ -252,6 +258,7 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
                 'Authorization': `token ${apiKey}:${accessToken}`,
               },
               cache: 'no-store',
+              signal: AbortSignal.timeout(3000),
             });
 
             if (res.ok) {
@@ -270,8 +277,12 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
       for (const resData of results) {
         for (const [id, quote] of Object.entries(resData)) {
           if (!quote) continue;
-          const ltp = (quote as any).last_price ?? 0;
-          priceMap[id] = ltp;
+          const q = quote as any;
+          quoteMap[id] = {
+            price: q.last_price ?? 0,
+            high: q.ohlc?.high ?? 0,
+            low: q.ohlc?.low ?? 0,
+          };
 
           const parts = id.split(':');
           const exchange = parts[0] || 'NSE';
@@ -279,7 +290,7 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
 
           instrumentUpserts.push({
             id,
-            instrument_token: (quote as any).instrument_token || 0,
+            instrument_token: q.instrument_token || 0,
             tradingsymbol,
             exchange,
             instrument_type: exchange === 'NFO' || exchange === 'MCX' || exchange === 'CDS' ? 'FUTOPT' : 'EQ',
@@ -289,7 +300,7 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
         }
       }
 
-      // Cache missing instruments in background (excluding raw ticks)
+      // Cache missing instruments in background
       if (instrumentUpserts.length > 0) {
         (async () => {
           try {
@@ -301,10 +312,10 @@ async function fetchLivePrices(kiteIds: string[], request: NextRequest): Promise
       }
     }
 
-    return priceMap;
+    return quoteMap;
   } catch (err) {
     console.error('[fetchLivePrices] Unexpected error:', err);
-    return priceMap;
+    return quoteMap;
   }
 }
 
@@ -701,7 +712,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch live prices for all results
     const kiteIds = validRows.map((inst: any) => `${inst.exchange}:${inst.tradingsymbol}`);
-    const priceMap = await fetchLivePrices(kiteIds, request);
+    const quoteMap = await fetchLivePrices(kiteIds, request);
 
     // Map to watchlist-compatible shape
     let results = validRows.map((inst: any) => {
@@ -735,7 +746,7 @@ export async function GET(request: NextRequest) {
       }
 
       const kiteId = `${inst.exchange}:${inst.tradingsymbol}`;
-      const livePrice = priceMap[kiteId] ?? 0;
+      const liveQuote = quoteMap[kiteId];
 
       const displayName = buildDisplayName(
         inst.tradingsymbol,
@@ -749,13 +760,13 @@ export async function GET(request: NextRequest) {
         name: displayName,
         symbol: inst.tradingsymbol,
         kiteSymbol: kiteId,
-        price: livePrice,
+        price: liveQuote?.price ?? 0,
         change: '0%',
         segment: segmentLabel,
         contractDate: formatUIExpiry(inst.expiry) || '',
         open: 0,
-        high: 0,
-        low: 0,
+        high: liveQuote?.high ?? 0,
+        low: liveQuote?.low ?? 0,
         close: 0,
       };
     });

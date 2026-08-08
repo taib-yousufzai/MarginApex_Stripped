@@ -66,59 +66,85 @@ export async function GET(request: Request) {
       targetExchanges = ['MCX'];
     }
 
-    // 2. Parallelize Expiries query (Removed failing RPC to speed up fallback)
-    const expiriesPromise = supabase
-      .from('instruments')
-      .select('expiry')
-      .eq('name', symbol)
-      .in('exchange', targetExchanges)
-      .not('expiry', 'is', null)
-      .gte('expiry', today)
-      .in('option_type', ['CE', 'PE'])
-      .order('expiry', { ascending: true });
-
-    // 3. Parallelize Options query (if expiry is known upfront)
-    let optionsPromise = null;
-    if (expiry) {
-      optionsPromise = supabase
-        .from('instruments')
-        .select('id, instrument_token, tradingsymbol, strike_price, option_type, exchange')
-        .eq('name', symbol)
-        .in('exchange', targetExchanges)
-        .eq('expiry', expiry)
-        .in('option_type', ['CE', 'PE'])
-        .order('strike_price', { ascending: true });
+    // 2. Fetch or Cache Expiries
+    const expiriesCacheKey = `optionChainExpiries:${symbol}`;
+    let allExpiries: string[] = [];
+    if (!isRedisMock()) {
+      try {
+        const cachedExpiries = await redis.get(expiriesCacheKey);
+        if (cachedExpiries) {
+          allExpiries = JSON.parse(cachedExpiries);
+        }
+      } catch (e) {
+        console.error('Redis expiries cache error:', e);
+      }
     }
 
-    // Wait for initial batch
-    const [expiriesRes, optionsRes] = await Promise.all([
-      expiriesPromise,
-      optionsPromise || Promise.resolve({ data: null, error: null })
-    ]);
+    if (allExpiries.length === 0) {
+      const expiriesRes = await supabase
+        .from('instruments')
+        .select('expiry')
+        .eq('name', symbol)
+        .in('exchange', targetExchanges)
+        .not('expiry', 'is', null)
+        .gte('expiry', today)
+        .in('option_type', ['CE', 'PE'])
+        .order('expiry', { ascending: true });
 
-    if (expiriesRes.error) throw expiriesRes.error;
+      if (expiriesRes.error) throw expiriesRes.error;
+      allExpiries = Array.from(new Set(expiriesRes.data.map((e: any) => e.expiry))) as string[];
 
-    const allExpiries = Array.from(new Set(expiriesRes.data.map((e: any) => e.expiry))) as string[];
-    // Collapse to nearest active expiry only (Requirement 4.2, 4.4)
+      if (allExpiries.length > 0 && !isRedisMock()) {
+        try {
+          await redis.setex(expiriesCacheKey, 3600, JSON.stringify(allExpiries));
+        } catch (e) {
+          console.error('Redis expiries cache set error:', e);
+        }
+      }
+    }
+
     const activeExpiries = applyExpiryFilter(allExpiries, today);
-    const uniqueExpiries = activeExpiries; // expose only the nearest active expiry
+    const uniqueExpiries = activeExpiries;
     const selectedExpiry = expiry || uniqueExpiries[0];
-    let options = optionsRes?.data;
+    let options: any[] | null = null;
 
-    // 4. Fetch Options if expiry was NOT known upfront (first page load)
-    if (!expiry && selectedExpiry) {
-      const secondRes = await supabase
-        .from('instruments')
-        .select('id, instrument_token, tradingsymbol, strike_price, option_type, exchange')
-        .eq('name', symbol)
-        .in('exchange', targetExchanges)
-        .eq('expiry', selectedExpiry)
-        .in('option_type', ['CE', 'PE'])
-        .order('strike_price', { ascending: true });
-      
-      if (secondRes.error) throw secondRes.error;
-      options = secondRes.data;
+    // 3. Fetch or Cache Options for Selected Expiry
+    if (selectedExpiry) {
+      const optionsCacheKey = `optionChainOptions:${symbol}_${selectedExpiry}`;
+      if (!isRedisMock()) {
+        try {
+          const cachedOptions = await redis.get(optionsCacheKey);
+          if (cachedOptions) {
+            options = JSON.parse(cachedOptions);
+          }
+        } catch (e) {
+          console.error('Redis options cache error:', e);
+        }
+      }
+
+      if (!options) {
+        const optionsRes = await supabase
+          .from('instruments')
+          .select('id, instrument_token, tradingsymbol, strike_price, option_type, exchange')
+          .eq('name', symbol)
+          .in('exchange', targetExchanges)
+          .eq('expiry', selectedExpiry)
+          .in('option_type', ['CE', 'PE'])
+          .order('strike_price', { ascending: true });
+
+        if (optionsRes.error) throw optionsRes.error;
+        options = optionsRes.data;
+
+        if (options && options.length > 0 && !isRedisMock()) {
+          try {
+            await redis.setex(optionsCacheKey, 3600, JSON.stringify(options));
+          } catch (e) {
+            console.error('Redis options cache set error:', e);
+          }
+        }
+      }
     }
+
 
     if (!selectedExpiry || !options) {
       return NextResponse.json({ 
