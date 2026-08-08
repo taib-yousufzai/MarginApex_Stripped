@@ -515,12 +515,9 @@ export async function GET(request: NextRequest) {
     let filteredOptions = optionRows as Instrument[];
     
     if (filteredOptions.length > 0) {
-      const expiries = [...new Set(filteredOptions.map((r: any) => r.expiry).filter(Boolean))] as string[];
-      const activeExpiries = applyExpiryFilter(expiries, today);
-      if (activeExpiries.length > 0) {
-        const activeSet = new Set(activeExpiries);
-        filteredOptions = filteredOptions.filter((r: any) => !r.expiry || activeSet.has(r.expiry));
-      }
+      // NOTE: Do NOT apply a global applyExpiryFilter here — it would pick the
+      // single earliest expiry across ALL underlyings and drop everything else.
+      // Per-underlying expiry pinning is handled inside the strike range block below.
 
       // ── Strike range filtering: use the SAME filterEngine functions as the
       // option chain API so the watchlist always shows exactly what the chain shows.
@@ -576,14 +573,14 @@ export async function GET(request: NextRequest) {
             if (!ltp || ltp <= 0) continue; // fail closed — no price, no show
 
             // ── Narrow to nearest expiry for this underlying ──────────────
-            // The search query fetches across all future expiries. Different
-            // expiries can have different strike intervals (e.g. GOLD near-month
-            // has 500-pt steps, far months may have 100-pt steps). Pin to the
-            // nearest expiry — exactly what the option chain API does.
+            // Pin to the single nearest active expiry per underlying — exactly
+            // what the option chain API does. This prevents far-month expiries
+            // with different strike intervals from polluting the results.
             const expiriesForName = Array.from(new Set(
               opts.map(o => (o as any).expiry).filter(Boolean)
             )).sort() as string[];
-            const nearestExpiry = expiriesForName[0] ?? null;
+            const activeForName = applyExpiryFilter(expiriesForName, today);
+            const nearestExpiry = activeForName[0] ?? expiriesForName[0] ?? null;
             const nearestOpts = nearestExpiry
               ? opts.filter(o => (o as any).expiry === nearestExpiry)
               : opts;
