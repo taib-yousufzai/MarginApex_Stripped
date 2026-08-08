@@ -61,33 +61,15 @@ declare global {
   }
 }
 
-// Read cache safely from localStorage
+// Read cache safely from localStorage — used only for expiry list, never for strikes
 function getLocalCache(key: string) {
-  if (typeof window === 'undefined') return null;
-  // Check in-memory cache first — 15 s TTL so the strike window stays current
-  const mem = window.__optionChainCache?.[key];
-  if (mem && mem.timestamp && (Date.now() - mem.timestamp < 1000 * 15)) return mem.data;
-  // Then fall back to localStorage with the same TTL
-  try {
-    const raw = localStorage.getItem(`oc_cache_${key}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.timestamp && (Date.now() - parsed.timestamp < 1000 * 15)) {
-        return parsed.data;
-      }
-    }
-  } catch (e) {}
+  // Always return null — we never serve stale option chain data from cache.
+  // The API is always called fresh so the ATM window reflects the current spot.
   return null;
 }
 
-function setLocalCache(key: string, data: any) {
-  if (typeof window === 'undefined') return;
-  window.__optionChainCache = window.__optionChainCache || {};
-  // Store data with timestamp so both memory and disk share the same TTL
-  window.__optionChainCache[key] = { data, timestamp: Date.now() };
-  try {
-    localStorage.setItem(`oc_cache_${key}`, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch (e) {}
+function setLocalCache(_key: string, _data: any) {
+  // No-op — caching disabled to ensure strikes are always fresh
 }
 
 function OptionChainContent() {

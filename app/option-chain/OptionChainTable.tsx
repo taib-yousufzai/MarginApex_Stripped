@@ -40,7 +40,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   const tableHeaderRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = React.useRef<HTMLElement | null>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
-  const isFirstScrollRef = React.useRef(true);
+  const hasScrolledRef = React.useRef(false);
 
   // Filter strikes to only show those within the allowed range
   const visibleStrikes = React.useMemo(() => {
@@ -66,7 +66,7 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
 
   // Reset so we do an instant scroll on the next data load
   React.useEffect(() => {
-    isFirstScrollRef.current = true;
+    hasScrolledRef.current = false;
   }, [visibleStrikes]);
 
   // Always keep the ATM row pinned to the vertical center of the scroll container.
@@ -91,13 +91,14 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
     container.scrollTo({ top: Math.max(0, targetScroll), behavior });
   }, []);
 
+  // Scroll ATM row to center ONCE when data first loads. Never auto-scrolls again
+  // so the user can freely scroll without being yanked back.
   React.useEffect(() => {
     if (!atmRef.current || visibleStrikes.length === 0 || spotPrice <= 0 || !atmStrike) return;
+    if (hasScrolledRef.current) return; // already scrolled once — don't re-trigger
+    hasScrolledRef.current = true;
 
-    const behavior: ScrollBehavior = isFirstScrollRef.current ? 'instant' : 'smooth';
-    isFirstScrollRef.current = false;
-
-    const t = setTimeout(() => scrollToAtm(behavior), behavior === 'instant' ? 120 : 0);
+    const t = setTimeout(() => scrollToAtm('instant'), 120);
     return () => clearTimeout(t);
   }, [atmStrike, scrollToAtm]);
 
