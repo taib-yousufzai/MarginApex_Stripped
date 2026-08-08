@@ -426,7 +426,8 @@ export async function GET(request: NextRequest) {
         .gte('expiry', today)
         .neq('exchange', 'NCO')
         .order('expiry', { ascending: true })
-        .limit(150);
+        .order('strike_price', { ascending: true })
+        .limit(500);
 
       if (parsed.optionType) qry = qry.eq('option_type', parsed.optionType);
 
@@ -471,7 +472,8 @@ export async function GET(request: NextRequest) {
 
         qry = qry
           .order('expiry', { ascending: true })
-          .limit(300); // Increased limit to ensure we get enough candidates for proper sorting
+          .order('strike_price', { ascending: true })
+          .limit(500); // must exceed largest single-expiry row count (GOLD has 348)
 
         return applyTabFilter(qry);
       };
