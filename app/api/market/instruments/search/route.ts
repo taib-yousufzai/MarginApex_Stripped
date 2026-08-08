@@ -38,8 +38,10 @@ const MCX_BASE_MAP: Record<string, string> = {
 };
 
 /**
- * Resolve MCX underlying names → their nearest active futures kite ID.
- * e.g. ['GOLD', 'GOLDM'] → { GOLD: 'MCX:GOLD26AUGFUT', GOLDM: 'MCX:GOLD26AUGFUT' }
+ * Resolve MCX underlying names → their nearest LIVE futures kite ID.
+ * Prefers the future that has a recent live price in Redis over the
+ * nearest-expiry future (which may be rolling off and have stale data).
+ * e.g. ['GOLD', 'GOLDM'] → { GOLD: 'MCX:GOLD26OCTFUT', GOLDM: 'MCX:GOLD26OCTFUT' }
  */
 async function resolveMcxKiteIds(names: string[], today: string): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
@@ -59,14 +61,46 @@ async function resolveMcxKiteIds(names: string[], today: string): Promise<Record
 
     if (!futs?.length) return result;
 
-    const nearestFut = new Map<string, string>();
+    // Group candidates by base name (all expiries)
+    const byName = new Map<string, string[]>();
     for (const f of futs) {
-      if (!nearestFut.has(f.name)) nearestFut.set(f.name, `${f.exchange}:${f.tradingsymbol}`);
+      const kiteId = `${f.exchange}:${f.tradingsymbol}`;
+      if (!byName.has(f.name)) byName.set(f.name, []);
+      byName.get(f.name)!.push(kiteId);
     }
 
-    for (const name of names) {
-      const kiteId = nearestFut.get(MCX_BASE_MAP[name] || name);
-      if (kiteId) result[name] = kiteId;
+    // For each base name, pick the future with a live Redis price.
+    // Fall back to nearest expiry if Redis has no data for any of them.
+    const allCandidates = Array.from(byName.values()).flat();
+
+    let redisPrices: Record<string, number> = {};
+    if (!isRedisMock() && allCandidates.length > 0) {
+      try {
+        const redis = getRedisClient();
+        const cached = await redis.hmget('market:quotes', ...allCandidates);
+        allCandidates.forEach((kiteId, i) => {
+          const raw = cached[i];
+          if (raw) {
+            try {
+              const q = JSON.parse(raw as string);
+              const lp = q.last_price || 0;
+              if (lp > 0) redisPrices[kiteId] = lp;
+            } catch { /* ignore */ }
+          }
+        });
+      } catch { /* Redis unavailable */ }
+    }
+
+    for (const [baseName, candidates] of byName.entries()) {
+      // Prefer the candidate with a live Redis price; fall back to first (nearest expiry)
+      const live = candidates.find(k => redisPrices[k] > 0);
+      const chosen = live ?? candidates[0];
+      // Map back to all original names that resolve to this base
+      for (const name of names) {
+        if ((MCX_BASE_MAP[name] || name) === baseName) {
+          result[name] = chosen;
+        }
+      }
     }
   } catch { /* fail silently */ }
 
