@@ -1386,11 +1386,38 @@ function WatchlistContent() {
     };
   }, [watchlistItems, activeTab, userId]);
 
-  const openTradeSheet = (item: WatchlistItem, side: 'BUY' | 'SELL' | 'BOTH' = 'BOTH') => {
+  const openTradeSheet = async (item: WatchlistItem, side: 'BUY' | 'SELL' | 'BOTH' = 'BOTH') => {
     if (isSpotIndex(item)) {
       showToast('Indices cannot be traded directly. Trade their Futures or Options.', true);
       return;
     }
+
+    // ── Strike range pre-check for option instruments ────────────────────
+    // Check before opening the sheet so the user never gets the post-order error.
+    const sym = (item.symbol || '').toUpperCase();
+    const isOption = sym.endsWith('CE') || sym.endsWith('PE');
+    if (isOption) {
+      try {
+        const token = (window as any).__accessToken || '';
+        const res = await fetch(
+          `/api/market/strike-range-check?symbol=${encodeURIComponent(sym)}`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.allowed === false) {
+            setErrorModalMsg(
+              `Strike price ${data.strike} is out of range. Allowed range is ${data.min} to ${data.max}.`
+            );
+            return;
+          }
+        }
+      } catch {
+        // Network error → fail open, let TradeEngine catch it
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
+
     setTradeSide(side);
     setSelectedItem(item);
     // Reset defaults or set based on item type
