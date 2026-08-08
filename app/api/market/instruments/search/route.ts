@@ -76,7 +76,11 @@ async function fetchMcxUnderlyingPrices(underlyingNames: string[], today: string
         const cached = await redis.hget('market:quotes', kiteId);
         if (cached) {
           const q = JSON.parse(cached);
-          price = q.last_price || q.ohlc?.close || q.close || 0;
+          const quoteAge = q.timestamp ? Date.now() - new Date(q.timestamp).getTime() : 0;
+          // Reject stale quotes (>15s) — same threshold as fetchSpeedQuotes
+          if (quoteAge < 15000) {
+            price = q.last_price || q.ohlc?.close || q.close || 0;
+          }
         }
         if (!price) {
           // Try without exchange prefix
@@ -85,7 +89,10 @@ async function fetchMcxUnderlyingPrices(underlyingNames: string[], today: string
             const altCached = await redis.hget('market:quotes', altKey);
             if (altCached) {
               const q = JSON.parse(altCached);
-              price = q.last_price || q.ohlc?.close || q.close || 0;
+              const quoteAge = q.timestamp ? Date.now() - new Date(q.timestamp).getTime() : 0;
+              if (quoteAge < 15000) {
+                price = q.last_price || q.ohlc?.close || q.close || 0;
+              }
             }
           }
         }
