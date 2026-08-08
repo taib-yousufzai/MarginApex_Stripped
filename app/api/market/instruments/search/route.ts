@@ -570,7 +570,18 @@ export async function GET(request: NextRequest) {
           const kept: any[] = [];
           for (const [name, opts] of Object.entries(grouped)) {
             const ltp = priceByName[name];
-            if (!ltp || ltp <= 0) continue; // fail closed — no price, no show
+
+            // If we can't get a live price, fall back to the median strike as ATM proxy
+            // so the user still sees results (same fallback as the option chain API).
+            let effectiveLtp = ltp;
+            if (!effectiveLtp || effectiveLtp <= 0) {
+              const strikes = opts
+                .map(o => Number((o as any).strike_price || 0))
+                .filter(s => s > 0)
+                .sort((a, b) => a - b);
+              effectiveLtp = strikes.length > 0 ? strikes[Math.floor(strikes.length / 2)] : 0;
+            }
+            if (!effectiveLtp || effectiveLtp <= 0) continue;
 
             // ── Narrow to nearest expiry for this underlying ──────────────
             // Pin to the single nearest active expiry per underlying — exactly
@@ -618,13 +629,13 @@ export async function GET(request: NextRequest) {
             const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
 
             if (strikeRange > 0) {
-              // Per-user: keep only options within strikeRange points of ltp
-              kept.push(...optsToFilter.filter(o => Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange));
+              // Per-user: keep only options within strikeRange points of effectiveLtp
+              kept.push(...optsToFilter.filter(o => Math.abs(Number((o as any).strike_price || 0) - effectiveLtp) <= strikeRange));
             } else {
               // Use the same filterEngine function as the option chain API
               const isMcx = MCX_UNDERLYINGS.has(name);
               const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
-              const filtered = applyStrikeRangeFilter(optsToFilter as Instrument[], ltp, range);
+              const filtered = applyStrikeRangeFilter(optsToFilter as Instrument[], effectiveLtp, range);
               kept.push(...filtered);
             }
           }
