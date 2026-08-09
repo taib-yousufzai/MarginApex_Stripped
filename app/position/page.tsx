@@ -34,6 +34,10 @@ export default function PositionPage() {
       }
     });
   }, []);
+
+  // Preload the TradeSheet dynamic-import chunk on page mount so the first Exit tap
+  // never blocks on a network round-trip to fetch the JS bundle.
+  useEffect(() => { import('@/components/TradeSheet'); }, []);
   const { positions, loading: posLoading, error: posError, refresh, updatePositionLocally,
     removePositionLocally,
     restorePositionLocally,
@@ -198,6 +202,10 @@ export default function PositionPage() {
   const [isFetchingPreview, setIsFetchingPreview] = useState(false);
   // Track positions currently being converted to prevent double-taps / race conditions
   const convertingIdsRef = useRef<Set<string>>(new Set());
+  // Synchronous guard: prevents rapid taps from opening multiple TradeSheets before
+  // React has committed the first state update. Must be a ref (not state) so it is
+  // readable and settable within the same synchronous execution frame.
+  const isOpeningTradeSheetRef = useRef(false);
   // ── Mobile Back Button Interception ──
   useMobileBack(isSheetOpen, () => {
     setIsSheetOpen(false);
@@ -248,23 +256,33 @@ export default function PositionPage() {
   };
 
   const openTradeExit = (pos: EnrichedPosition, isPartial: boolean) => {
+    // Synchronous guard: if a TradeSheet open is already in flight, ignore the tap.
+    // This must be a ref check — setState is asynchronous and would not protect against
+    // rapid repeated taps within the same event loop tick.
+    if (isOpeningTradeSheetRef.current) return;
+    isOpeningTradeSheetRef.current = true;
+
+    // Close the detail bottom-sheet if open, then populate and open TradeSheet immediately.
+    // React batches all these setState calls into a single render — no artificial delay needed.
     closeSheet();
-    setTimeout(() => {
-      setTradeSheetItem({
-        name: pos.symbol,
-        symbol: pos.symbol,
-        kiteSymbol: pos.kite_instrument || pos.symbol,
-        segment: pos.settlement || 'INR',
-        price: pos.current_ltp,
-        change: `${pos.pnl_percent >= 0 ? '+' : ''}${pos.pnl_percent.toFixed(2)}%`,
-      });
-      setTradeSheetSide(pos.side === 'BUY' ? 'SELL' : 'BUY');
-      setTradeSheetExitMode(true);
-      setTradeSheetProductType(pos.product_type as 'INTRADAY' | 'CARRY');
-      setTradeSheetIsAddMore(false);
-      setTradeSheetLinkedPosId(pos.id);
-      setTradeSheetInitialExitQty(isPartial ? pos.qty : undefined);
-    }, 80);
+    setTradeSheetItem({
+      name: pos.symbol,
+      symbol: pos.symbol,
+      kiteSymbol: pos.kite_instrument || pos.symbol,
+      segment: pos.settlement || 'INR',
+      price: pos.current_ltp,
+      change: `${pos.pnl_percent >= 0 ? '+' : ''}${pos.pnl_percent.toFixed(2)}%`,
+    });
+    setTradeSheetSide(pos.side === 'BUY' ? 'SELL' : 'BUY');
+    setTradeSheetExitMode(true);
+    setTradeSheetProductType(pos.product_type as 'INTRADAY' | 'CARRY');
+    setTradeSheetIsAddMore(false);
+    setTradeSheetLinkedPosId(pos.id);
+    setTradeSheetInitialExitQty(isPartial ? pos.qty : undefined);
+
+    // Release guard after the next paint — by that point React has committed
+    // the state update and the TradeSheet is visible.
+    requestAnimationFrame(() => { isOpeningTradeSheetRef.current = false; });
   };
 
   const openGroupTradeExit = (group: GroupedPosition) => {

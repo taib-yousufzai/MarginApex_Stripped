@@ -19,6 +19,8 @@
 
 .vscode
 .kiro
+.kimi
+.agent
 
 # production
 /build
