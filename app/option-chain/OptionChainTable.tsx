@@ -278,12 +278,12 @@ export default function OptionChainTable({
         .oct-wrap { width: 100%; padding: 0 0 80px 0; }
 
         .oct-table {
-          width: 100%; background: #fff; border-radius: 20px;
-          overflow: clip; border: 1px solid #e8eaf0;
-          box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+          width: 100%; background: #fff; border-radius: 0;
+          overflow: hidden; border: none;
+          box-shadow: none;
           font-family: 'Inter', sans-serif;
         }
-        :global(body.dark) .oct-table { background: #141414; border-color: #2a2a2a; box-shadow: 0 2px 16px rgba(0,0,0,0.4); }
+        :global(body.dark) .oct-table { background: #141414; }
 
         .oct-head { display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 0.925rem; font-weight: 800; letter-spacing: 0.5px; }
         .oct-head-calls  { background: #edf7f0; color: #000; text-align: center; padding: 14px 0 18px; }
@@ -298,11 +298,9 @@ export default function OptionChainTable({
           font-size: 0.845rem; font-weight: 700;
           position: sticky; top: ${stickyTop}px; z-index: 20;
           border-bottom: 1px solid #e8eaf0;
-          transition: border-radius 0.15s, box-shadow 0.15s;
+          transition: box-shadow 0.15s;
         }
-        .oct-subhead.floating { border-radius: 20px 20px 0 0; box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden; }
-        .oct-subhead.floating .oct-sub-calls { border-radius: 20px 0 0 0; }
-        .oct-subhead.floating .oct-sub-puts  { border-radius: 0 20px 0 0; }
+        .oct-subhead.floating { box-shadow: 0 4px 16px rgba(0,0,0,0.1); overflow: hidden; }
         :global(body.dark) .oct-subhead { border-bottom-color: #252525; }
         :global(body.dark) .oct-subhead.floating { box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
 
