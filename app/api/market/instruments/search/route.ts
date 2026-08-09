@@ -694,11 +694,15 @@ export async function GET(request: NextRequest) {
           const setting = userSegSettings.find((s: any) => s.segment === dbSeg);
           const strikeRange = setting ? Number(setting.strike_range || 0) : 0;
 
-          if (strikeRange > 0) {
+          if (setting && strikeRange === 0) {
+            // User explicitly chose "All" (strike_range = 0) — keep all strikes
+            kept.push(...optsToFilter);
+          } else if (strikeRange > 0) {
             kept.push(...optsToFilter.filter(o =>
               Math.abs(Number((o as any).strike_price || 0) - ltp) <= strikeRange
             ));
           } else {
+            // No user setting — apply default ATM window
             const isMcx = MCX_UNDERLYINGS.has(name);
             const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
             kept.push(...applyStrikeRangeFilter(optsToFilter as Instrument[], ltp, range));

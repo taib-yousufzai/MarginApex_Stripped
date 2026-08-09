@@ -427,8 +427,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                 })}
               </div>
             </>
-          )}
-        </div>
+          </div>
       )}
     </div>
   );
