@@ -67,9 +67,20 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const { balance: availableBalance } = useBalance();
   const [toast, setToast] = useState<string | null>(null);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
-  const [orderError, setOrderError] = useState<string | null>(null);
   const [qtyError, setQtyError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ── Explicit order lifecycle state ──────────────────────────────────────
+  // Replaces independent isSubmitting + orderError booleans/strings that could
+  // simultaneously describe contradictory states (e.g. processing=true while
+  // errorMsg is set). Only one state is active at a time.
+  type OrderState = 'idle' | 'processing' | 'error';
+  const [orderState, setOrderState] = useState<OrderState>('idle');
+  const [orderErrorMsg, setOrderErrorMsg] = useState<string | null>(null);
+
+  // Derived convenience aliases kept for JSX readability
+  const isSubmitting = orderState === 'processing';
+  const orderError   = orderState === 'error' ? orderErrorMsg : null;
+  // isBusy gates the BUY/SELL footer buttons — also checks the hook's own loading flag
   const isBusy = placingOrder || isSubmitting;
   const isExpired = useMemo(() => {
     if (!item?.expiry || exitMode || isModify) return false;
@@ -488,10 +499,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const isExecutingRef = useRef(false);
 
   const handlePlace = async (placeSide: 'BUY' | 'SELL') => {
-    if (isExecutingRef.current || isSubmitting) return;
+    // Synchronous guard — isExecutingRef is checked before any await so no
+    // concurrent call can slip through during a React render cycle.
+    // Also reject if the UI is already showing an error (user must dismiss first).
+    if (isExecutingRef.current || orderState !== 'idle') return;
     isExecutingRef.current = true;
-    setIsSubmitting(true);
-    setOrderError(null);
+    setOrderState('processing');
     let handedOffToOrderFlow = false;
     try {
       if (!item) return;
@@ -886,14 +899,16 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             }, 1500);
           } else {
             const errMsg = res.error || 'Order failed. Please try again.';
-            setOrderError(errMsg);
+            setOrderErrorMsg(errMsg);
+            setOrderState('error');
             window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
             window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
           const errMsg = err.message || 'Order failed. Please try again.';
-          setOrderError(errMsg);
+          setOrderErrorMsg(errMsg);
+          setOrderState('error');
           window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
           window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
           window.dispatchEvent(new Event('order_failed'));
@@ -901,7 +916,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           window.dispatchEvent(new Event('exit-overlay-end'));
         }
       } else {
-        // Buy/Sell flow: show the global loader overlay
+        // Buy/Sell flow: show the global loader overlay.
+        // Only fire global-loader-start now — we are confirmed in 'processing' state
+        // so there is no competing error modal visible.
         handedOffToOrderFlow = true;
         window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
 
@@ -957,17 +974,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             handleCloseAnimation();
           } else {
             const errMsg = res.error || 'Order failed. Please try again.';
-            setOrderError(errMsg);
-            // Do NOT dispatch order_error here — the inline orderError modal inside
-            // TradeSheet is already visible. Dispatching the event would also trigger
-            // the parent's <ErrorModal>, causing two stacked error dialogs.
+            setOrderErrorMsg(errMsg);
+            setOrderState('error');
+            // Do NOT dispatch order_error here — the inline error modal inside
+            // TradeSheet is already visible. Dispatching it would also trigger the
+            // parent's <ErrorModal>, causing two stacked error dialogs.
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
             window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
           const errMsg = err.message || 'Order failed. Please try again.';
-          setOrderError(errMsg);
-          // Same reason: do not double-surface via order_error event in the normal path.
+          setOrderErrorMsg(errMsg);
+          setOrderState('error');
+          // Same reason: do not double-surface via order_error in the normal path.
           window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
           window.dispatchEvent(new Event('order_failed'));
         } finally {
@@ -977,8 +996,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     } catch (e) {
       console.error('[TradeSheet handlePlace] Unexpected exception:', e);
     } finally {
+      // Always release the execution lock — exactly once, whether success or failure.
       isExecutingRef.current = false;
-      setIsSubmitting(false);
+      // Only reset to idle if we didn't land in error state (error state is
+      // cleared explicitly by the Dismiss button so the user sees the message).
+      setOrderState(prev => prev === 'error' ? 'error' : 'idle');
     }
   };
 
@@ -1749,7 +1771,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
               {orderError}
             </p>
             <button 
-              onClick={() => setOrderError(null)}
+              onClick={() => { setOrderState('idle'); setOrderErrorMsg(null); }}
               style={{
                 width: '100%',
                 padding: '12px',

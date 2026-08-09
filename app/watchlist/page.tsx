@@ -1395,75 +1395,75 @@ function WatchlistContent() {
   }, [watchlistItems, activeTab, userId]);
 
   const openTradeSheet = async (item: WatchlistItem, side: 'BUY' | 'SELL' | 'BOTH' = 'BOTH') => {
-    // Synchronous guard: reject any re-entrant call that arrives before React has
-    // committed the first state update (covers rapid taps and onClick+onTouchEnd
-    // double-fire on the same gesture).
-    if (isOpeningTradeSheetRef.current) return;
-    isOpeningTradeSheetRef.current = true;
-
-    if (isSpotIndex(item)) {
-      showToast('Indices cannot be traded directly. Trade their Futures or Options.', true);
-      isOpeningTradeSheetRef.current = false;
+    // Guard covers the entire async operation — not just one animation frame.
+    // Also short-circuit if the sheet is already open (second tap while open).
+    if (isOpeningTradeSheetRef.current || isTradeSheetOpen) {
+      setDetailOpeningSide(null);
       return;
     }
+    isOpeningTradeSheetRef.current = true;
 
-    // ── Open the sheet immediately so the slide-up animation starts on tap ──
-    // State resets and the sheet open happen synchronously here, before any
-    // async work, so the user sees the animation with zero perceived delay.
-    setTradeSide(side);
-    setSelectedItem(item);
-    const computedLot = getWatchlistLotSize(item);
-    setOrderQty(computedLot);
-    setQtyInput(String(computedLot));
-    setOrderUnit('qty');
-    setOrderType('MARKET');
-    setProductType('INTRADAY');
-    setSlTpOpen(false);
-    setSlPrice('');
-    setTpPrice('');
-
-    // Close detail sheet if open
-    const detailSheet = document.getElementById('detailSheet');
-    const detailOverlay = document.getElementById('detailSheetOverlay');
-    if (detailSheet) detailSheet.classList.remove('open');
-    if (detailOverlay) detailOverlay.classList.remove('active');
-
-    setIsTradeSheetOpen(true);
-    // Clear the button loading state — sheet is now committed and animating in.
-    setDetailOpeningSide(null);
-    // Release the dup-tap guard after the next paint (sheet is now committed).
-    requestAnimationFrame(() => { isOpeningTradeSheetRef.current = false; });
-
-    // ── Strike range pre-check (runs after sheet is already open) ────────
-    // For options only. If out-of-range, close the sheet and show the error.
-    // Non-option instruments skip this entirely — no network round-trip on open.
-    const sym = (item.symbol || '').toUpperCase();
-    const isOption = sym.endsWith('CE') || sym.endsWith('PE');
-    if (isOption) {
-      try {
-        const token = (window as any).__accessToken || '';
-        const res = await fetch(
-          `/api/market/strike-range-check?symbol=${encodeURIComponent(sym)}`,
-          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.allowed === false) {
-            // Close the sheet and show the error modal
-            setIsTradeSheetOpen(false);
-            setSelectedItem(null);
-            setDetailOpeningSide(null);
-            setErrorModalMsg(
-              `Strike price ${data.strike} is out of range. Allowed range is ${data.min} to ${data.max}.`
-            );
-            return;
-          }
-        }
-      } catch {
-        // Network error → fail open, let TradeEngine catch it at order time
+    try {
+      if (isSpotIndex(item)) {
+        showToast('Indices cannot be traded directly. Trade their Futures or Options.', true);
+        return;
       }
+
+      // ── Open the sheet immediately so the slide-up animation starts on tap ──
+      setTradeSide(side);
+      setSelectedItem(item);
+      const computedLot = getWatchlistLotSize(item);
+      setOrderQty(computedLot);
+      setQtyInput(String(computedLot));
+      setOrderUnit('qty');
+      setOrderType('MARKET');
+      setProductType('INTRADAY');
+      setSlTpOpen(false);
+      setSlPrice('');
+      setTpPrice('');
+
+      // Close detail sheet if open
+      const detailSheet = document.getElementById('detailSheet');
+      const detailOverlay = document.getElementById('detailSheetOverlay');
+      if (detailSheet) detailSheet.classList.remove('open');
+      if (detailOverlay) detailOverlay.classList.remove('active');
+
+      setIsTradeSheetOpen(true);
+      setDetailOpeningSide(null);
+
+      // ── Strike range pre-check (runs after sheet is already open) ────────
+      // For options only. If out-of-range, close the sheet and show the error.
+      // Non-option instruments skip this entirely — no network round-trip on open.
+      const sym = (item.symbol || '').toUpperCase();
+      const isOption = sym.endsWith('CE') || sym.endsWith('PE');
+      if (isOption) {
+        try {
+          const token = (window as any).__accessToken || '';
+          const res = await fetch(
+            `/api/market/strike-range-check?symbol=${encodeURIComponent(sym)}`,
+            { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.allowed === false) {
+              setIsTradeSheetOpen(false);
+              setSelectedItem(null);
+              setDetailOpeningSide(null);
+              setErrorModalMsg(
+                `Strike price ${data.strike} is out of range. Allowed range is ${data.min} to ${data.max}.`
+              );
+              return;
+            }
+          }
+        } catch {
+          // Network error → fail open, let TradeEngine catch it at order time
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+    } finally {
+      // Lock released only after all async work is done — including the fetch.
+      isOpeningTradeSheetRef.current = false;
     }
-    // ─────────────────────────────────────────────────────────────────────
   };
 
   const closeTradeSheet = () => {
