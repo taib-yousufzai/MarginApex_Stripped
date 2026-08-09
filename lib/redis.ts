@@ -109,6 +109,10 @@ class MockRedis {
 }
 
 const redisUrl = process.env.REDIS_URL;
+const globalForRedis = globalThis as unknown as {
+  realClient: Redis | undefined;
+};
+
 let realClient: any = null;
 const mockClient = new MockRedis();
 let isMock = !redisUrl;
@@ -121,24 +125,27 @@ let pubSubReconnectCount = 0;
 
 if (redisUrl) {
   try {
-    logger.info('Connecting to Valkey/Redis instance...');
-    realClient = new Redis(redisUrl, {
-      maxRetriesPerRequest: null, // Allow infinite reconnect attempts
-      retryStrategy(times) {
-        reconnectCount++;
-        lastReconnectAt = new Date();
-        logger.warn({ times }, 'Valkey command client reconnecting...');
-        return Math.min(times * 100, 2000);
-      }
-    });
+    if (!globalForRedis.realClient) {
+      logger.info('Connecting to Valkey/Redis instance...');
+      globalForRedis.realClient = new Redis(redisUrl, {
+        maxRetriesPerRequest: null, // Allow infinite reconnect attempts
+        retryStrategy(times) {
+          reconnectCount++;
+          lastReconnectAt = new Date();
+          logger.warn({ times }, 'Valkey command client reconnecting...');
+          return Math.min(times * 100, 2000);
+        }
+      });
 
-    realClient.on('error', (err: any) => {
-      logger.error({ err }, 'Valkey command client connection error');
-    });
+      globalForRedis.realClient.on('error', (err: any) => {
+        logger.error({ err }, 'Valkey command client connection error');
+      });
 
-    realClient.on('connect', () => {
-      logger.info('Valkey command client connected successfully.');
-    });
+      globalForRedis.realClient.on('connect', () => {
+        logger.info('Valkey command client connected successfully.');
+      });
+    }
+    realClient = globalForRedis.realClient;
   } catch (err) {
     logger.error({ err }, 'Could not initialize Valkey client. Falling back to Mock.');
     isMock = true;

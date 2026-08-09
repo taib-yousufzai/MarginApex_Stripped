@@ -191,12 +191,25 @@ export default function OptionChainTable({
     return best;
   }, [visibleStrikes, spotPrice]);
 
-  // Center ATM row in the body div before paint
-  React.useLayoutEffect(() => {
-    const el = atmRef.current, body = tableBodyRef.current;
-    if (!el || !body || atmIndex < 0) return;
-    body.scrollTop = el.offsetTop - body.clientHeight / 2 + el.offsetHeight / 2;
-  }, [visibleStrikes, atmIndex]);
+  const strikeInterval = React.useMemo(() => {
+    if (strikes.length < 2) return 100;
+    return strikes[1].strike - strikes[0].strike;
+  }, [strikes]);
+
+  const centeredStrikes = React.useMemo(() => {
+    if (atmIndex < 0 || visibleStrikes.length === 0) return visibleStrikes;
+    const atmStrike = visibleStrikes[atmIndex].strike;
+    const half = 5;
+    const result: StrikeData[] = [];
+    for (let i = -half; i <= half; i++) {
+      const strikeVal = atmStrike + (i * strikeInterval);
+      const existing = visibleStrikes.find(s => s.strike === strikeVal);
+      result.push(existing || { strike: strikeVal });
+    }
+    return result;
+  }, [visibleStrikes, atmIndex, strikeInterval]);
+
+  const centeredAtmIndex = atmIndex >= 0 ? 5 : -1;
 
   // Subheader floating
   React.useEffect(() => {
@@ -251,7 +264,7 @@ export default function OptionChainTable({
             ? Array.from({ length: SKELETON_COUNT }, (_, i) => (
                 <SkeletonRow key={i} isCenter={i === Math.floor(SKELETON_COUNT / 2)} />
               ))
-            : visibleStrikes.map((s, index) => (
+            : centeredStrikes.map((s, index) => (
                 <StrikeRow
                   key={s.strike}
                   strike={s.strike}
@@ -259,7 +272,7 @@ export default function OptionChainTable({
                   peSymbol={s.pe?.symbol} peStaticPrice={s.pe?.price}
                   ceQuote={getQuote(s.ce?.id, s.ce?.token)}
                   peQuote={getQuote(s.pe?.id, s.pe?.token)}
-                  isAtm={index === atmIndex}
+                  isAtm={index === centeredAtmIndex}
                   atmRef={atmRef}
                   priceMode={priceMode}
                   onTrade={stableOnTrade}

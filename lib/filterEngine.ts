@@ -143,23 +143,18 @@ export function isForexOption(instrument: Instrument): boolean {
 export function applyForexFilter(instruments: Instrument[]): Instrument[] {
   const result: Instrument[] = [];
   const isDev = process.env.NODE_ENV !== 'production';
-  const timestamp = isDev ? new Date().toISOString() : '';
+  let excludedCount = 0;
 
   for (const instrument of instruments) {
     if (isForexOption(instrument)) {
-      if (isDev) {
-        const log: FilterLog = {
-          event: 'instrument_excluded',
-          symbol: instrument.tradingsymbol,
-          rule: 'FOREX_OPTIONS',
-          segment: instrument.segment ?? instrument.exchange ?? '',
-          timestamp,
-        };
-        console.log(JSON.stringify(log));
-      }
+      excludedCount++;
     } else {
       result.push(instrument);
     }
+  }
+
+  if (isDev && excludedCount > 0) {
+    console.log(`[filterEngine] Excluded ${excludedCount} instruments due to FOREX_OPTIONS`);
   }
 
   return result;
@@ -178,7 +173,7 @@ export function applyForexFilter(instruments: Instrument[]): Instrument[] {
 export function applyCryptoWhitelist(instruments: Instrument[]): Instrument[] {
   const result: Instrument[] = [];
   const isDev = process.env.NODE_ENV !== 'production';
-  const timestamp = isDev ? new Date().toISOString() : '';
+  let excludedCount = 0;
 
   for (const instrument of instruments) {
     const symbolRaw = instrument.underlying_symbol ?? instrument.name ?? '';
@@ -186,16 +181,13 @@ export function applyCryptoWhitelist(instruments: Instrument[]): Instrument[] {
 
     if (CRYPTO_WHITELIST.has(symbol)) {
       result.push(instrument);
-    } else if (isDev) {
-      const log: FilterLog = {
-        event: 'instrument_excluded',
-        symbol: instrument.tradingsymbol,
-        rule: 'CRYPTO_WHITELIST',
-        segment: instrument.segment ?? instrument.exchange ?? '',
-        timestamp,
-      };
-      console.log(JSON.stringify(log));
+    } else {
+      excludedCount++;
     }
+  }
+
+  if (isDev && excludedCount > 0) {
+    console.log(`[filterEngine] Excluded ${excludedCount} instruments due to CRYPTO_WHITELIST`);
   }
 
   return result;
@@ -249,17 +241,7 @@ export function applyStrikeRangeFilter(
   const excluded = options.filter((i) => !selectedStrikes.has(i.strike_price ?? 0));
 
   if (process.env.NODE_ENV !== 'production' && excluded.length > 0) {
-    const timestamp = new Date().toISOString();
-    for (const instrument of excluded) {
-      const log: FilterLog = {
-        event: 'instrument_excluded',
-        symbol: instrument.tradingsymbol,
-        rule: 'STRIKE_RANGE',
-        segment: instrument.segment ?? instrument.exchange ?? '',
-        timestamp,
-      };
-      console.log(JSON.stringify(log));
-    }
+    console.log(`[filterEngine] Excluded ${excluded.length} instruments due to STRIKE_RANGE`);
   }
 
   return [...others, ...kept];
