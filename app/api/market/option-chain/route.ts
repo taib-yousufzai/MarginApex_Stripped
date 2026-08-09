@@ -17,71 +17,89 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-// Helper function to map option symbol to DB key segment
-function getOptionChainSegment(sym: string): string {
-  const s = sym.toUpperCase().trim();
-  if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].includes(s)) {
-    return 'INDEX-OPT';
-  }
-  if (['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI'].includes(s)) {
-    return 'MCX-OPT';
-  }
-  return 'STOCK-OPT';
-}
+const MCX_SYMBOLS = new Set([
+  'GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS',
+  'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI',
+]);
+
+const INDEX_KITE_MAP: Record<string, string> = {
+  'NIFTY':      'NSE:NIFTY 50',
+  'BANKNIFTY':  'NSE:NIFTY BANK',
+  'FINNIFTY':   'NSE:NIFTY FIN SERVICE',
+  'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',
+  'SENSEX':     'BSE:SENSEX',
+  'BANKEX':     'BSE:BANKEX',
+};
+
+const MCX_BASE_MAP: Record<string, string> = {
+  GOLDM: 'GOLD', SILVERM: 'SILVER', CRUDEOILM: 'CRUDEOIL', NATGASMINI: 'NATURALGAS',
+};
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     let symbol = (searchParams.get('symbol') || 'NIFTY').toUpperCase();
     if (symbol === 'MIDCAP') symbol = 'MIDCPNIFTY';
-    const expiry = searchParams.get('expiry');
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Derive a rough ATM bucket from the spotPrice query param (sent by the client
-    // after the first load).  Rounding to 1% of the price means the cache key changes
-    // automatically whenever the underlying moves enough to shift the strike window,
-    // making the cache self-invalidating on significant price moves.
+
+    const expiry    = searchParams.get('expiry');
     const spotParam = searchParams.get('spotPrice');
+    const today     = new Date().toISOString().split('T')[0];
+    const isMcx     = MCX_SYMBOLS.has(symbol);
+    const targetExchanges = isMcx ? ['MCX'] : ['NFO', 'BFO'];
+
     const spotForBucket = parseFloat(spotParam || '0') || 0;
-    const atmBucket = spotForBucket > 0 ? Math.round(spotForBucket / (spotForBucket * 0.01)) * Math.round(spotForBucket * 0.01) : 0;
+    const atmBucket = spotForBucket > 0
+      ? Math.round(spotForBucket / (spotForBucket * 0.01)) * Math.round(spotForBucket * 0.01)
+      : 0;
     const cacheKey = `optionChain:${symbol}_${expiry || 'default'}_${atmBucket}`;
     const redis = getRedisClient();
 
+    // ── 1. Full response cache (10s TTL) ──────────────────────────────────────
     if (!isRedisMock()) {
       try {
         const cached = await redis.get(cacheKey);
-        if (cached) {
-          return NextResponse.json(JSON.parse(cached));
-        }
-      } catch (e) {
-        console.error('Redis cache error for option chain:', e);
-      }
+        if (cached) return NextResponse.json(JSON.parse(cached));
+      } catch { /* fall through */ }
     }
 
-    let usedFallback = false;
-    let atmPrice = 0;
+    // ── 2. Helper functions ───────────────────────────────────────────────────
 
-    let targetExchanges = ['NFO', 'BFO'];
-    if (['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI'].includes(symbol)) {
-      targetExchanges = ['MCX'];
-    }
-
-    // 2. Fetch or Cache Expiries
-    const expiriesCacheKey = `optionChainExpiries:${symbol}`;
-    let allExpiries: string[] = [];
-    if (!isRedisMock()) {
+    // Resolve MCX underlying → the future with a live Redis price
+    async function resolveMcxUnderlyingId(): Promise<string> {
+      const baseSymbol = MCX_BASE_MAP[symbol] ?? symbol;
       try {
-        const cachedExpiries = await redis.get(expiriesCacheKey);
-        if (cachedExpiries) {
-          allExpiries = JSON.parse(cachedExpiries);
+        const { data: futs } = await supabase
+          .from('instruments')
+          .select('tradingsymbol')
+          .eq('name', baseSymbol)
+          .eq('segment', 'MCX-FUT')
+          .gte('expiry', today)
+          .order('expiry', { ascending: true })
+          .limit(5);
+        if (!futs?.length) return `MCX:${symbol}`;
+        const candidates = futs.map((f: any) => `MCX:${f.tradingsymbol}`);
+        if (!isRedisMock()) {
+          const prices = await redis.hmget('market:quotes', ...candidates);
+          const live = candidates.find((_: string, i: number) => {
+            try { return !!(prices[i] && JSON.parse(prices[i] as string).last_price > 0); }
+            catch { return false; }
+          });
+          if (live) return live;
         }
-      } catch (e) {
-        console.error('Redis expiries cache error:', e);
-      }
+        return candidates[0];
+      } catch { return `MCX:${symbol}`; }
     }
 
-    if (allExpiries.length === 0) {
-      const expiriesRes = await supabase
+    // Fetch expiries (Redis 1h cache → Supabase)
+    async function getExpiries(): Promise<string[]> {
+      const k = `optionChainExpiries:${symbol}`;
+      if (!isRedisMock()) {
+        try {
+          const cached = await redis.get(k);
+          if (cached) return JSON.parse(cached);
+        } catch { /* fall through */ }
+      }
+      const { data, error } = await supabase
         .from('instruments')
         .select('expiry')
         .eq('name', symbol)
@@ -90,205 +108,107 @@ export async function GET(request: Request) {
         .gte('expiry', today)
         .in('option_type', ['CE', 'PE'])
         .order('expiry', { ascending: true });
-
-      if (expiriesRes.error) throw expiriesRes.error;
-      allExpiries = Array.from(new Set(expiriesRes.data.map((e: any) => e.expiry))) as string[];
-
-      if (allExpiries.length > 0 && !isRedisMock()) {
-        try {
-          await redis.setex(expiriesCacheKey, 3600, JSON.stringify(allExpiries));
-        } catch (e) {
-          console.error('Redis expiries cache set error:', e);
-        }
-      }
+      if (error) throw error;
+      const expiries = Array.from(new Set(data.map((e: any) => e.expiry))) as string[];
+      if (expiries.length > 0 && !isRedisMock())
+        redis.setex(k, 3600, JSON.stringify(expiries)).catch(() => {});
+      return expiries;
     }
 
-    const activeExpiries = applyExpiryFilter(allExpiries, today);
-    const uniqueExpiries = activeExpiries;
-    const selectedExpiry = expiry || uniqueExpiries[0];
-    let options: any[] | null = null;
-
-    // 3. Fetch or Cache Options for Selected Expiry
-    if (selectedExpiry) {
-      const optionsCacheKey = `optionChainOptions:${symbol}_${selectedExpiry}`;
+    // Fetch options for a given expiry (Redis 1h cache → Supabase)
+    async function getOptions(forExpiry: string): Promise<any[]> {
+      const k = `optionChainOptions:${symbol}_${forExpiry}`;
       if (!isRedisMock()) {
         try {
-          const cachedOptions = await redis.get(optionsCacheKey);
-          if (cachedOptions) {
-            options = JSON.parse(cachedOptions);
-          }
-        } catch (e) {
-          console.error('Redis options cache error:', e);
-        }
+          const cached = await redis.get(k);
+          if (cached) return JSON.parse(cached);
+        } catch { /* fall through */ }
       }
-
-      if (!options) {
-        const optionsRes = await supabase
-          .from('instruments')
-          .select('id, instrument_token, tradingsymbol, strike_price, option_type, exchange')
-          .eq('name', symbol)
-          .in('exchange', targetExchanges)
-          .eq('expiry', selectedExpiry)
-          .in('option_type', ['CE', 'PE'])
-          .order('strike_price', { ascending: true });
-
-        if (optionsRes.error) throw optionsRes.error;
-        options = optionsRes.data;
-
-        if (options && options.length > 0 && !isRedisMock()) {
-          try {
-            await redis.setex(optionsCacheKey, 3600, JSON.stringify(options));
-          } catch (e) {
-            console.error('Redis options cache set error:', e);
-          }
-        }
-      }
+      const { data, error } = await supabase
+        .from('instruments')
+        .select('id, instrument_token, tradingsymbol, strike_price, option_type, exchange')
+        .eq('name', symbol)
+        .in('exchange', targetExchanges)
+        .eq('expiry', forExpiry)
+        .in('option_type', ['CE', 'PE'])
+        .order('strike_price', { ascending: true });
+      if (error) throw error;
+      if (data?.length && !isRedisMock())
+        redis.setex(k, 3600, JSON.stringify(data)).catch(() => {});
+      return data ?? [];
     }
 
+    // ── 3. Parallel fetch: expiries + strike config + MCX future resolver ─────
+    let underlyingKiteId = INDEX_KITE_MAP[symbol] ?? `MCX:${symbol}`;
 
-    if (!selectedExpiry || !options) {
-      return NextResponse.json({ 
-        success: true, 
-        expiries: uniqueExpiries, 
-        strikes: [],
-        message: 'No options found for this symbol' 
+    const [allExpiries, strikeConfig, resolvedMcxId] = await Promise.all([
+      getExpiries(),
+      loadStrikeConfig(supabase),
+      isMcx ? resolveMcxUnderlyingId() : Promise.resolve(''),
+    ]);
+
+    if (isMcx) underlyingKiteId = resolvedMcxId;
+
+    const activeExpiries  = applyExpiryFilter(allExpiries, today);
+    const selectedExpiry  = expiry || activeExpiries[0];
+
+    if (!selectedExpiry) {
+      return NextResponse.json({
+        success: true, expiries: activeExpiries, strikes: [],
+        message: 'No options found for this symbol',
       });
     }
 
-    let underlyingSymbol: string | undefined = undefined;
+    // ── 4. Parallel fetch: options rows + ATM price from Redis ────────────────
+    const [options, atmRedisRaw] = await Promise.all([
+      getOptions(selectedExpiry),
+      isRedisMock()
+        ? Promise.resolve(null)
+        : redis.hget('market:quotes', underlyingKiteId).catch(() => null),
+    ]);
 
-    // 5. Apply strike range filter using Redis ATM price
-    if (options && options.length > 0) {
-      try {
-        const strikeConfig = await loadStrikeConfig(supabase);
-
-        // Determine the segment to pick the right strike range
-        const isIndex = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].includes(symbol);
-        const isMcx = ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI'].includes(symbol);
-        const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
-
-        const kiteIdMap: Record<string, string> = {
-          'NIFTY': 'NSE:NIFTY 50', 'BANKNIFTY': 'NSE:NIFTY BANK',
-          'FINNIFTY': 'NSE:NIFTY FIN SERVICE', 'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',
-          'SENSEX': 'BSE:SENSEX', 'BANKEX': 'BSE:BANKEX',
-        };
-        underlyingSymbol = kiteIdMap[symbol] ?? `MCX:${symbol}`;
-
-        if (spotParam) {
-          atmPrice = parseFloat(spotParam) || 0;
-        }
-
-        if (!atmPrice) {
-
-        if (isMcx) {
-          let baseSymbol = symbol;
-          if (symbol === 'GOLDM') baseSymbol = 'GOLD';
-          else if (symbol === 'SILVERM') baseSymbol = 'SILVER';
-          else if (symbol === 'CRUDEOILM') baseSymbol = 'CRUDEOIL';
-          else if (symbol === 'NATGASMINI') baseSymbol = 'NATURALGAS';
-
-          const futRes = await supabase
-            .from('instruments')
-            .select('tradingsymbol')
-            .eq('name', baseSymbol)
-            .eq('segment', 'MCX-FUT')
-            .gte('expiry', today)
-            .order('expiry', { ascending: true })
-            .limit(1);
-
-          if (futRes.data && futRes.data.length > 0) {
-            const futSymbol = futRes.data[0].tradingsymbol;
-            underlyingSymbol = `MCX:${futSymbol}`;
-            const futCached = await redis.hget('market:quotes', underlyingSymbol);
-            if (futCached) {
-              const q = JSON.parse(futCached);
-              atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-            }
-          }
-
-          if (!atmPrice) {
-            const directFutRes = await supabase
-              .from('instruments')
-              .select('tradingsymbol')
-              .eq('name', symbol)
-              .eq('segment', 'MCX-FUT')
-              .gte('expiry', today)
-              .order('expiry', { ascending: true })
-              .limit(1);
-            if (directFutRes.data && directFutRes.data.length > 0) {
-              const directFutSymbol = directFutRes.data[0].tradingsymbol;
-              const directUnderlyingSymbol = `MCX:${directFutSymbol}`;
-              const directFutCached = await redis.hget('market:quotes', directUnderlyingSymbol);
-              if (directFutCached) {
-                const q = JSON.parse(directFutCached);
-                atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-                underlyingSymbol = directUnderlyingSymbol;
-              }
-            }
-          }
-        } else {
-          // For indices, rely on the kiteId cache
-          const cached = await redis.hget('market:quotes', underlyingSymbol);
-          if (cached) {
-            const q = JSON.parse(cached);
-            atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-          }
-          if (!atmPrice) {
-            const altKey = underlyingSymbol.split(':')[1] || symbol;
-            const altCached = await redis.hget('market:quotes', altKey);
-            if (altCached) {
-              const q = JSON.parse(altCached);
-              atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-            }
-          }
-        }
-      }
-
-      if (!atmPrice && options.length > 0) {
-          console.warn(`[option-chain] Redis ATM price unavailable for ${symbol}, falling back to median strike`);
-          usedFallback = true;
-          const middleIndex = Math.floor(options.length / 2);
-          atmPrice = (options as any[])[middleIndex]?.strike_price || 0;
-        }
-        if (atmPrice) {
-          if (isMcx) {
-            options = applyMcxStrikeRangeFilter(options as any[], atmPrice) as any[];
-          } else {
-            options = applyStrikeRangeFilter(options as any[], atmPrice, range) as any[];
-          }
-        }
-      } catch (e) {
-        console.error(`[option-chain] Strike range filter error for ${symbol}:`, e);
-      }
+    if (!options.length) {
+      return NextResponse.json({
+        success: true, expiries: activeExpiries, strikes: [],
+        message: 'No options found for this symbol',
+      });
     }
 
-    // 6. Group by strike price
+    // ── 5. Resolve ATM price ──────────────────────────────────────────────────
+    let atmPrice = spotParam ? parseFloat(spotParam) || 0 : 0;
+    if (!atmPrice && atmRedisRaw) {
+      try { atmPrice = JSON.parse(atmRedisRaw as string).last_price || 0; } catch { /* ignore */ }
+    }
+    let usedFallback = false;
+    if (!atmPrice) {
+      console.warn(`[option-chain] No ATM price for ${symbol}, using median strike fallback`);
+      usedFallback = true;
+      atmPrice = options[Math.floor(options.length / 2)]?.strike_price || 0;
+    }
+
+    // ── 6. Apply strike range filter ──────────────────────────────────────────
+    const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
+    const filteredOptions: any[] = atmPrice
+      ? (isMcx
+          ? applyMcxStrikeRangeFilter(options as Instrument[], atmPrice) as any[]
+          : applyStrikeRangeFilter(options as Instrument[], atmPrice, range) as any[])
+      : options;
+
+    // ── 7. Group by strike ────────────────────────────────────────────────────
     const strikeMap: Record<number, any> = {};
-    options.forEach(opt => {
+    for (const opt of filteredOptions) {
       const strike = opt.strike_price;
-      if (!strikeMap[strike]) {
-        strikeMap[strike] = { strike };
-      }
+      if (!strikeMap[strike]) strikeMap[strike] = { strike };
       const kiteId = `${opt.exchange}:${opt.tradingsymbol}`;
       if (opt.option_type === 'CE') {
-        strikeMap[strike].ce = {
-          token: opt.instrument_token,
-          symbol: opt.tradingsymbol,
-          id: kiteId
-        };
+        strikeMap[strike].ce = { token: opt.instrument_token, symbol: opt.tradingsymbol, id: kiteId };
       } else {
-        strikeMap[strike].pe = {
-          token: opt.instrument_token,
-          symbol: opt.tradingsymbol,
-          id: kiteId
-        };
+        strikeMap[strike].pe = { token: opt.instrument_token, symbol: opt.tradingsymbol, id: kiteId };
       }
-    });
-
+    }
     const sortedStrikes = Object.values(strikeMap).sort((a: any, b: any) => a.strike - b.strike);
 
-    // 7. Backfill Redis-cached prices so the client shows values immediately
-    //    (before the WebSocket quote feed delivers live data).
+    // ── 8. Backfill Redis prices (single hmget) ───────────────────────────────
     if (!isRedisMock()) {
       try {
         const allKiteIds: string[] = [];
@@ -297,60 +217,40 @@ export async function GET(request: Request) {
           if (row.pe?.id) allKiteIds.push(row.pe.id);
         });
         if (allKiteIds.length > 0) {
-          const cachedPrices = await redis.hmget('market:quotes', ...allKiteIds);
+          const prices = await redis.hmget('market:quotes', ...allKiteIds);
           const priceMap: Record<string, number> = {};
           allKiteIds.forEach((id, i) => {
-            const raw = cachedPrices[i];
-            if (raw) {
-              try {
-                const q = JSON.parse(raw as string);
-                const ltp = q.last_price || q.lastPrice || q.ltp || 0;
-                if (ltp > 0) priceMap[id] = ltp;
-              } catch { /* ignore parse errors */ }
-            }
+            try {
+              const q = JSON.parse(prices[i] as string);
+              const ltp = q.last_price || q.lastPrice || 0;
+              if (ltp > 0) priceMap[id] = ltp;
+            } catch { /* malformed entry */ }
           });
           sortedStrikes.forEach((row: any) => {
             if (row.ce?.id && priceMap[row.ce.id]) row.ce.price = priceMap[row.ce.id];
             if (row.pe?.id && priceMap[row.pe.id]) row.pe.price = priceMap[row.pe.id];
           });
         }
-      } catch (e) {
-        // Non-fatal — live WebSocket data will fill in the values
-        console.warn('[option-chain] Redis price backfill skipped:', e);
-      }
+      } catch { /* non-fatal — WebSocket will deliver live prices */ }
     }
 
-    const kiteIdMapFallback: Record<string, string> = {
-      'NIFTY': 'NSE:NIFTY 50', 'BANKNIFTY': 'NSE:NIFTY BANK',
-      'FINNIFTY': 'NSE:NIFTY FIN SERVICE', 'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',
-      'SENSEX': 'BSE:SENSEX', 'BANKEX': 'BSE:BANKEX',
-    };
-    let finalUnderlyingSymbol = underlyingSymbol || kiteIdMapFallback[symbol] || `MCX:${symbol}`;
-
+    // ── 9. Build response & cache (fire-and-forget) ───────────────────────────
     const responseData = {
-      success: true,
-      symbol,
+      success: true, symbol,
       expiry: selectedExpiry,
-      expiries: uniqueExpiries,
+      expiries: activeExpiries,
       strikes: sortedStrikes,
       underlyingPrice: atmPrice,
-      underlyingSymbol: (typeof underlyingSymbol !== 'undefined') ? underlyingSymbol : finalUnderlyingSymbol
+      underlyingSymbol: underlyingKiteId,
     };
 
-    // Cache for 10 s so the strike window refreshes quickly as the ATM moves.
-    // The cache key already encodes the ATM bucket, so a significant price move
-    // causes an automatic miss without waiting for the TTL to expire.
     if (!usedFallback && !isRedisMock()) {
-      try {
-        await redis.setex(cacheKey, 10, JSON.stringify(responseData));
-        // Also write under the legacy key format so older clients still benefit
-        await redis.setex(`optionChain:${symbol}_${selectedExpiry}`, 10, JSON.stringify(responseData));
-      } catch (e) {
-        console.error('Redis cache set error for option chain:', e);
-      }
+      redis.setex(cacheKey, 10, JSON.stringify(responseData)).catch(() => {});
+      redis.setex(`optionChain:${symbol}_${selectedExpiry}`, 10, JSON.stringify(responseData)).catch(() => {});
     }
 
     return NextResponse.json(responseData);
+
   } catch (error: any) {
     console.error('[Option Chain API] Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
