@@ -373,8 +373,6 @@ export default function HistoryPage() {
                     </div>
                   ) : (
                     filteredData.map((item) => {
-                      const isPositive = item.pnl >= 0;
-                      const pnlPercent = item.entryPrice ? ((item.pnl / (item.entryPrice * item.qty)) * 100).toFixed(2) : "0.00";
 
                       return (
                         <div key={item.id} className="history-card" style={{ cursor: 'pointer' }} onClick={() => router.push(`/watchlist?symbol=${encodeURIComponent(item.scriptName)}&action=detail`)}>
@@ -393,15 +391,29 @@ export default function HistoryPage() {
                                 )}
                               </div>
                             </div>
-                            <div className={currentTab === 'position' ? `pnl ${isPositive ? 'positive' : 'negative'}` : 'price-value'}>
-                              {currentTab === 'position' ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                  <span>{`${isPositive ? '+' : ''}${formatPrice(item.pnl)}`}</span>
-                                  <span style={{ fontSize: '0.7rem', fontWeight: 600, marginTop: '2px' }}>
-                                    {`(${isPositive ? '+' : ''}${pnlPercent}%)`}
-                                  </span>
-                                </div>
-                              ) : (
+                            <div className={currentTab === 'position' ? `pnl ${(item.pnl - (item.brokerage || 0)) >= 0 ? 'positive' : 'negative'}` : 'price-value'}>
+                              {currentTab === 'position' ? (() => {
+                                // Net P&L = gross P&L − brokerage (mirrors what hits the wallet)
+                                const brokerage = item.brokerage || 0;
+                                const netPnl = item.pnl - brokerage;
+                                const netIsPositive = netPnl >= 0;
+                                const netPercent = item.entryPrice ? ((netPnl / (item.entryPrice * item.qty)) * 100).toFixed(2) : '0.00';
+                                return (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                    <span className={netIsPositive ? 'positive' : 'negative'}>
+                                      {`${netIsPositive ? '+' : ''}${formatPrice(netPnl)}`}
+                                    </span>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 600, marginTop: '2px' }}>
+                                      {`(${netIsPositive ? '+' : ''}${netPercent}%)`}
+                                    </span>
+                                    {brokerage > 0 && (
+                                      <span style={{ fontSize: '0.6rem', color: '#6e7681', marginTop: '1px' }}>
+                                        {`Gross: ${item.pnl >= 0 ? '+' : ''}${formatPrice(item.pnl)} | Brk: -${formatPrice(brokerage)}`}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })() : (
                                 formatPrice(item.price)
                               )}
                             </div>

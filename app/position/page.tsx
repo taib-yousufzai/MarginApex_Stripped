@@ -558,6 +558,7 @@ export default function PositionPage() {
     avg_price: number;
     exit_price: number;
     pnl: number;
+    brokerage: number;
     pnl_percent: number;
     ids: string[];
   }
@@ -568,6 +569,7 @@ export default function PositionPage() {
       const displaySymbol = pos.kite_instrument ? pos.kite_instrument.split(':').pop() || pos.symbol : pos.symbol;
       const key = `${displaySymbol}|${pos.side}|${pos.product_type}`;
       const existing = map.get(key);
+      const posBrokerage = Number((pos as any).brokerage || 0);
       if (!existing) {
         map.set(key, {
           key,
@@ -579,6 +581,7 @@ export default function PositionPage() {
           avg_price: pos.avg_price || pos.entry_price,
           exit_price: pos.exit_price || 0,
           pnl: pos.pnl || 0,
+          brokerage: posBrokerage,
           pnl_percent: pos.pnl_percent || 0,
           ids: [pos.id],
         });
@@ -591,12 +594,15 @@ export default function PositionPage() {
           ? (existing.exit_price * existing.qty_total + (pos.exit_price || 0) * pos.qty_total) / newQty
           : existing.exit_price;
         const newPnl = existing.pnl + (pos.pnl || 0);
+        const newBrokerage = existing.brokerage + posBrokerage;
         const investment = newAvgEntry * newQty;
+        const netPnl = newPnl - newBrokerage;
         existing.qty_total = newQty;
         existing.avg_price = newAvgEntry;
         existing.exit_price = newAvgExit;
         existing.pnl = newPnl;
-        existing.pnl_percent = investment > 0 ? parseFloat(((newPnl / investment) * 100).toFixed(2)) : 0;
+        existing.brokerage = newBrokerage;
+        existing.pnl_percent = investment > 0 ? parseFloat(((netPnl / investment) * 100).toFixed(2)) : 0;
         existing.ids.push(pos.id);
       }
     }
@@ -775,7 +781,7 @@ export default function PositionPage() {
   };
 
   const totalPnl = useMemo(() => positions.reduce((acc, p) => acc + (p.total_pnl || 0), 0), [positions]);
-  const realized = useMemo(() => closedPositions.reduce((acc, p) => acc + (p.pnl || 0), 0), [closedPositions]);
+  const realized = useMemo(() => closedPositions.reduce((acc, p) => acc + ((p.pnl || 0) - Number((p as any).brokerage || 0)), 0), [closedPositions]);
   const unrealized = useMemo(() => openPositions.reduce((acc, p) => acc + (p.total_pnl || 0), 0), [openPositions]);
 
   const fmtUSD = (val: number, settlement?: string) => {
@@ -1058,7 +1064,7 @@ export default function PositionPage() {
                                 qty_total: group.qty_total,
                                 qty_open: group.qty_total,
                                 pnl: group.pnl,
-                                total_pnl: group.pnl,
+                                total_pnl: group.pnl - group.brokerage,
                                 pnl_percent: group.pnl_percent,
                               });
                             }
@@ -1088,8 +1094,8 @@ export default function PositionPage() {
                               <span className={`pos-badge${group.side === 'BUY' ? ' long' : ' short'}`}>
                                 {group.side}
                               </span>
-                              <div className={`pos-card-pnl${group.pnl >= 0 ? ' green' : ' red'}`}>
-                                {fmtUSD(group.pnl, group.settlement)}
+                              <div className={`pos-card-pnl${(group.pnl - group.brokerage) >= 0 ? ' green' : ' red'}`}>
+                                {fmtUSD(group.pnl - group.brokerage, group.settlement)}
                               </div>
                               <div className="pos-card-ltp">Avg Exit: <strong>{fmtPrice(group.exit_price, group.settlement)}</strong></div>
                             </div>
@@ -1261,8 +1267,8 @@ export default function PositionPage() {
                             <span className={`pos-badge${pos.side === 'BUY' ? ' long' : ' short'}`}>
                               {pos.side}
                             </span>
-                            <div className={`pos-card-pnl${pos.pnl >= 0 ? ' green' : ' red'}`}>
-                              {fmtUSD(pos.pnl, pos.settlement)}
+                            <div className={`pos-card-pnl${(pos.pnl - Number((pos as any).brokerage || 0)) >= 0 ? ' green' : ' red'}`}>
+                              {fmtUSD(pos.pnl - Number((pos as any).brokerage || 0), pos.settlement)}
                             </div>
                             <div className="pos-card-ltp">Exit: <strong>{fmtPrice(pos.exit_price || 0, pos.settlement)}</strong></div>
                           </div>
@@ -1364,12 +1370,25 @@ export default function PositionPage() {
                         {/* Left Side: Realised P&L Info */}
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Realised P&amp;L</div>
-                          <div style={{ fontSize: '2rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: selectedPos.pnl >= 0 ? '#059669' : '#DC2626', lineHeight: 1 }}>
-                            {fmtUSD(selectedPos.pnl, selectedPos.settlement)}
-                          </div>
-                          <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-secondary, #6B7280)', marginTop: '4px' }}>
-                            {selectedPos.pnl_percent >= 0 ? '+' : ''}{selectedPos.pnl_percent.toFixed(2)}%
-                          </div>
+                          {(() => {
+                            const brokerage = Number((selectedPos as any).brokerage || 0);
+                            const netPnl = selectedPos.pnl - brokerage;
+                            return (
+                              <>
+                                <div style={{ fontSize: '2rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: netPnl >= 0 ? '#059669' : '#DC2626', lineHeight: 1 }}>
+                                  {fmtUSD(netPnl, selectedPos.settlement)}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-secondary, #6B7280)', marginTop: '4px' }}>
+                                  {selectedPos.pnl_percent >= 0 ? '+' : ''}{selectedPos.pnl_percent.toFixed(2)}%
+                                </div>
+                                {brokerage > 0 && (
+                                  <div style={{ fontSize: '0.6rem', color: '#6e7681', marginTop: '3px' }}>
+                                    Gross: {selectedPos.pnl >= 0 ? '+' : ''}{fmtUSD(selectedPos.pnl, selectedPos.settlement)} | Brk: -{fmtUSD(brokerage, selectedPos.settlement)}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
 
                         {/* Right Side: Entry & Exit Price Stack */}
