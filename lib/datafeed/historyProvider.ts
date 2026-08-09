@@ -103,9 +103,18 @@ async function fetchKiteBars(
     `&from=${fromFmt}` +
     `&to=${toFmt}`;
 
-  const json = await fetch(url).then((r) => r.json());
+  const json = await fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`Historical data fetch failed: ${r.status} ${r.statusText}`);
+    return r.json();
+  });
 
   const candles: any[][] = json?.data?.candles ?? json?.candles ?? [];
+
+  // If the server returned an error body (e.g. { error: '...' }) instead of candles,
+  // throw so Datafeed.getBars can invoke onError and the loading spinner clears.
+  if (!Array.isArray(candles)) {
+    throw new Error(json?.error || json?.message || 'Invalid candles response from server');
+  }
 
   const bars: Bar[] = candles.map((c) => ({
     time: new Date(c[0]).getTime(), // convert ISO string to milliseconds

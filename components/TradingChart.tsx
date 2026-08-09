@@ -713,6 +713,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setPriceChangePct(0);
     setError(null);
     hasLoadedData.current = false;
+
+    // Backstop: if onFirstBar hasn't fired within 12 seconds (e.g. noData response,
+    // Kite session expired, or instrument not found), clear the loading spinner so
+    // the chart UI is at least usable rather than stuck forever.
+    const loadingTimeout = setTimeout(() => {
+      if (!hasLoadedData.current) {
+        setLoading(false);
+      }
+    }, 12000);
+
+    return () => clearTimeout(loadingTimeout);
   }, [symbol, timeframe, isCrypto]);
 
   // Update currentPrice/change with live quote once initial bar data has loaded.
