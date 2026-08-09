@@ -8,14 +8,15 @@ export const dynamic = 'force-dynamic';
 // Allow up to 60 seconds (requires Vercel Pro, but Hobby will stop at 10s-15s)
 export const maxDuration = 60;
 
-// Initialize admin client to bypass RLS
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+// Initialize admin client to bypass RLS (lazy to avoid build-time env errors)
+function getSupabase() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 export async function GET(request: Request) {
+  const supabase = getSupabase();
   try {
     // 1. Verify cron secret to protect the endpoint
     const { searchParams } = new URL(request.url);

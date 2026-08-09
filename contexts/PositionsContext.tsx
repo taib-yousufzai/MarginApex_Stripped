@@ -35,19 +35,7 @@ export interface PositionsContextType {
 
 const PositionsContext = createContext<PositionsContextType | null>(null);
 
-let globalPositionsCache: MyPosition[] = [];
 
-if (typeof window !== 'undefined') {
-  try {
-    const saved = localStorage.getItem('cached_open_positions');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        globalPositionsCache = parsed;
-      }
-    }
-  } catch (e) {}
-}
 
 const mapSegmentToDbSegment = (s: string): string => {
   if (!s) return '';
@@ -112,17 +100,15 @@ const resolveKitePrefix = (key: string, settlement: string) => {
 };
 
 export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { children: React.ReactNode; refreshInterval?: number }) => {
-  const [rawPositions, setRawPositions] = useState<MyPosition[]>(globalPositionsCache);
-  const [loading, setLoading] = useState(globalPositionsCache.length === 0);
+  const [rawPositions, setRawPositions] = useState<MyPosition[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [inFlightConversions, setInFlightConversions] = useState<Record<string, string>>({});
   // segmentSettings now comes from TradeConfigProvider — no local fetch needed
   const { segmentSettings } = useTradeConfig();
-  const localCacheRef = useRef<MyPosition[]>(globalPositionsCache.slice());
   const optimisticallyRemovedIds = useRef<Set<string>>(new Set());
   const abortControllerRef = useRef<AbortController | null>(null);
   const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
-  const processedOptimisticKeys = useRef<Set<string>>(new Set());
 
   // Static properties map to cache computations that never change per position lifecycle
   const staticPositionPropsRef = useRef<Record<string, { entryTimeMs: number; dbSeg: string; resolvedKiteSymbol: string; isCrypto: boolean; isComex: boolean; binanceSymbol: string }>>({});
@@ -171,40 +157,19 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         signal: controller.signal,
       });
 
-      let newPositions: MyPosition[] = data.positions || [];
-
-      // v2 engine: each order creates a separate position lot in the DB.
-      // Trust the API response — do not attempt client-side netting.
-      // The DB is the single source of truth for open qty and sides.
-      // Clear any stale optimistic removals now that we have a fresh DB snapshot.
-      const stillPendingRemoval = new Set<string>();
-      for (const id of optimisticallyRemovedIds.current) {
-        // Keep it in the set only if the DB still shows it as open (shouldn't happen, but guard anyway)
-        if (newPositions.some(p => p.id === id)) {
-          stillPendingRemoval.add(id);
-        }
-      }
-      optimisticallyRemovedIds.current = stillPendingRemoval;
-      newPositions = newPositions.filter(p => !optimisticallyRemovedIds.current.has(p.id));
-
-      const now = Date.now();
-      const recentTempPositions = localCacheRef.current.filter(p => {
-        if (p.id && p.id.toString().startsWith('temp-')) {
-          const tsStr = p.id.toString().split('-')[1];
-          if (tsStr) {
-            const ts = parseInt(tsStr, 10);
-            return now - ts < 10000; // Preserve for up to 10 seconds during slow DB updates
-          }
-        }
-        return false;
-      });
-
-      const missingTempPositions = recentTempPositions.filter(temp => 
-        !newPositions.some(dbPos => dbPos.symbol === temp.symbol && dbPos.side === temp.side)
+      // The DB is the single source of truth. Apply the server snapshot directly.
+      // Filter out any IDs that are still in the optimistic-removal set (exit in flight).
+      let newPositions: MyPosition[] = (data.positions || []).filter(
+        p => !optimisticallyRemovedIds.current.has(p.id)
       );
 
-      if (missingTempPositions.length > 0) {
-        newPositions = [...missingTempPositions, ...newPositions];
+      // Evict stale optimistic removals: if the server no longer returns the position
+      // it was already closed — clear the set so future fetches stay clean.
+      const serverIds = new Set(newPositions.map(p => p.id));
+      for (const id of [...optimisticallyRemovedIds.current]) {
+        if (!serverIds.has(id)) {
+          optimisticallyRemovedIds.current.delete(id);
+        }
       }
 
       // Precompute static properties for any newly loaded positions
@@ -215,7 +180,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           const segUpper = dbSeg.toUpperCase();
           const isCrypto = segUpper.includes('CRYPTO') || !!(p.symbol && p.symbol.endsWith('USDT'));
           const isComex = (p as any).preferredView === 'comex' || segUpper.includes('COMEX');
-          
+
           let binanceSymbol = '';
           if (isCrypto) {
             binanceSymbol = (p.symbol || '').replace('/', '');
@@ -233,31 +198,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         }
       });
 
-      const localCache = localCacheRef.current;
-      const didChange =
-        newPositions.length !== localCache.length ||
-        newPositions.some((p, i) => {
-          const cached = localCache[i];
-          return (
-            !cached ||
-            p.id !== cached.id ||
-            p.qty_open !== cached.qty_open ||
-            p.avg_price !== cached.avg_price ||
-            p.status !== cached.status ||
-            p.product_type !== cached.product_type ||
-            (p as any).carry_brokerage_paid !== (cached as any).carry_brokerage_paid ||
-            p.ltp !== cached.ltp
-          );
-        });
-
-      if (didChange || localCache.length === 0) {
-        localCacheRef.current = newPositions;
-        globalPositionsCache = newPositions;
-        try {
-          localStorage.setItem('cached_open_positions', JSON.stringify(newPositions));
-        } catch (e) {}
-        setRawPositions(newPositions);
-      }
+      setRawPositions(newPositions);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -267,6 +208,11 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
   }, []);
 
   useEffect(() => {
+    // One-shot eviction: clear the legacy localStorage cache written by the old code.
+    // Existing users may still have stale positions under this key; remove it so they
+    // never seed the UI from a ghost snapshot again.
+    try { localStorage.removeItem('cached_open_positions'); } catch (_) {}
+
     fetchPositions();
     let isSubscribed = false;
     const channelName = `my-positions-realtime-${Math.random().toString(36).slice(2)}`;

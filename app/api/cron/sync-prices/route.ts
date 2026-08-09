@@ -7,17 +7,18 @@ import { processPendingOrdersAndPositions } from '@/lib/orderMatching';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Extend Vercel timeout limits
 
-// Initialize admin client to bypass RLS
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+// Initialize admin client to bypass RLS (lazy to avoid build-time env errors)
+function getSupabaseAdmin() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 // Helper for waiting
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 export async function GET(request: Request) {
+  const supabaseAdmin = getSupabaseAdmin();
   try {
     // 1. Verify cron secret
     const { searchParams } = new URL(request.url);

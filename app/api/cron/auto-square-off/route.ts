@@ -6,11 +6,11 @@ import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const admin = createClient(supabaseUrl, supabaseKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+function getAdmin() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 // Helper for fetching LTP
 async function fetchLtp(symbol: string, settlement: string): Promise<number | null> {
@@ -75,10 +75,11 @@ async function fetchLtp(symbol: string, settlement: string): Promise<number | nu
 }
 
 export async function GET(request: Request) {
+  const admin = getAdmin();
   try {
-    const { searchParams } = new URL(request.url);
-    const secret = searchParams.get('secret');
-    if (secret !== process.env.AUTOLOGIN_SECRET) {
+    const authHeader = (request as any).headers?.get?.('authorization') ?? '';
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

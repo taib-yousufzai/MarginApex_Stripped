@@ -11,11 +11,11 @@ import {
   type Instrument,
 } from '@/lib/filterEngine';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+function getSupabase() {
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 const MCX_SYMBOLS = new Set([
   'GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS',
@@ -36,6 +36,7 @@ const MCX_BASE_MAP: Record<string, string> = {
 };
 
 export async function GET(request: Request) {
+  const supabase = getSupabase();
   try {
     const { searchParams } = new URL(request.url);
     let symbol = (searchParams.get('symbol') || 'NIFTY').toUpperCase();
