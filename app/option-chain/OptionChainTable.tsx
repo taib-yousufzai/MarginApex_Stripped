@@ -73,50 +73,13 @@ const StrikeRow = React.memo(function StrikeRow({
   };
 
   // Inline styles for layout — avoids styled-jsx scope issues with memoized child components
-  const rowStyle: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    borderBottom: isAtm ? 'none' : '1px solid #f0f2f5',
-    borderTop: isAtm ? '2px solid rgba(198,46,46,0.5)' : undefined,
-    ...(isAtm ? { borderBottom: '2px solid rgba(198,46,46,0.5)' } : {}),
-    flexShrink: 0,
-  };
-  const callStyle: React.CSSProperties = {
-    position: 'relative', background: '#f4fbf4',
-    display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-    padding: '11px 8px', cursor: 'pointer', gap: '4px',
-  };
-  const strikeStyle: React.CSSProperties = {
-    background: isAtm ? '#fff8f0' : '#fefef8',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '11px 4px',
-  };
-  const putStyle: React.CSSProperties = {
-    position: 'relative', background: '#fff7f3',
-    display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-    padding: '11px 8px', cursor: 'pointer', gap: '4px',
-  };
-  const valStyle: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: '#1e293b' };
-  const strikeValStyle: React.CSSProperties = {
-    fontSize: 14, fontWeight: isAtm ? 800 : 700, color: '#C62E2E',
-  };
-  const hoverActionsStyle: React.CSSProperties = {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-    background: 'rgba(255,255,255,0.95)', opacity: 0, pointerEvents: 'none',
-  };
-  const btnBuyStyle: React.CSSProperties = {
-    width: 24, height: 24, borderRadius: 4, border: 'none',
-    fontSize: 11, fontWeight: 800, color: 'white', cursor: 'pointer',
-    background: '#12B76A', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  };
-  const btnSellStyle: React.CSSProperties = { ...btnBuyStyle, background: '#F04438' };
 
   return (
     <div ref={isAtm ? atmRef : null} style={rowStyle}>
       {/* Calls */}
       <div style={callStyle} onClick={(e) => handleClick(e, ceSymbol, 'BUY')}
-        onMouseEnter={e => { const h = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.ha'); if (h) { h.style.opacity = '1'; h.style.pointerEvents = 'auto'; } }}
-        onMouseLeave={e => { const h = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.ha'); if (h) { h.style.opacity = '0'; h.style.pointerEvents = 'none'; } }}
+        onMouseEnter={e => { const h = e.currentTarget.querySelector<HTMLElement>('.oc-ha'); if (h) h.style.opacity = '1'; }}
+        onMouseLeave={e => { const h = e.currentTarget.querySelector<HTMLElement>('.oc-ha'); if (h) h.style.opacity = '0'; }}
       >
         {priceMode === 'BA' ? (
           <><span style={valStyle}>{ceBid}</span><span style={valStyle}>{ceAsk}</span></>
@@ -124,9 +87,9 @@ const StrikeRow = React.memo(function StrikeRow({
           <span style={valStyle}>{ceLtp}</span>
         )}
         {ceSymbol && (
-          <div className="ha" style={hoverActionsStyle}>
-            <button style={btnBuyStyle} onClick={(e) => handleClick(e, ceSymbol, 'BUY')}>B</button>
-            <button style={btnSellStyle} onClick={(e) => handleClick(e, ceSymbol, 'SELL')}>S</button>
+          <div className="oc-ha" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'rgba(255,255,255,0.95)', opacity: 0, transition: 'opacity 0.15s', pointerEvents: 'none' }}>
+            <button style={{ width: 28, height: 28, borderRadius: 4, border: 'none', fontSize: 11, fontWeight: 800, color: 'white', cursor: 'pointer', background: '#12B76A' }} onClick={(e) => handleClick(e, ceSymbol, 'BUY')}>B</button>
+            <button style={{ width: 28, height: 28, borderRadius: 4, border: 'none', fontSize: 11, fontWeight: 800, color: 'white', cursor: 'pointer', background: '#F04438' }} onClick={(e) => handleClick(e, ceSymbol, 'SELL')}>S</button>
           </div>
         )}
       </div>
@@ -138,8 +101,8 @@ const StrikeRow = React.memo(function StrikeRow({
 
       {/* Puts */}
       <div style={putStyle} onClick={(e) => handleClick(e, peSymbol, 'BUY')}
-        onMouseEnter={e => { const h = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.ha'); if (h) { h.style.opacity = '1'; h.style.pointerEvents = 'auto'; } }}
-        onMouseLeave={e => { const h = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('.ha'); if (h) { h.style.opacity = '0'; h.style.pointerEvents = 'none'; } }}
+        onMouseEnter={e => { const h = e.currentTarget.querySelector<HTMLElement>('.oc-ha'); if (h) h.style.opacity = '1'; }}
+        onMouseLeave={e => { const h = e.currentTarget.querySelector<HTMLElement>('.oc-ha'); if (h) h.style.opacity = '0'; }}
       >
         {priceMode === 'BA' ? (
           <><span style={valStyle}>{peBid}</span><span style={valStyle}>{peAsk}</span></>
@@ -147,9 +110,9 @@ const StrikeRow = React.memo(function StrikeRow({
           <span style={valStyle}>{peLtp}</span>
         )}
         {peSymbol && (
-          <div className="ha" style={hoverActionsStyle}>
-            <button style={btnBuyStyle} onClick={(e) => handleClick(e, peSymbol, 'BUY')}>B</button>
-            <button style={btnSellStyle} onClick={(e) => handleClick(e, peSymbol, 'SELL')}>S</button>
+          <div className="oc-ha" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'rgba(255,255,255,0.95)', opacity: 0, transition: 'opacity 0.15s', pointerEvents: 'none' }}>
+            <button style={{ width: 28, height: 28, borderRadius: 4, border: 'none', fontSize: 11, fontWeight: 800, color: 'white', cursor: 'pointer', background: '#12B76A' }} onClick={(e) => handleClick(e, peSymbol, 'BUY')}>B</button>
+            <button style={{ width: 28, height: 28, borderRadius: 4, border: 'none', fontSize: 11, fontWeight: 800, color: 'white', cursor: 'pointer', background: '#F04438' }} onClick={(e) => handleClick(e, peSymbol, 'SELL')}>S</button>
           </div>
         )}
       </div>
