@@ -55,12 +55,11 @@ export async function GET(request: Request) {
     const redis = getRedisClient();
 
     // ── 1. Full response cache (10s TTL) ──────────────────────────────────────
-    if (!isRedisMock()) {
-      try {
-        const cached = await redis.get(cacheKey);
-        if (cached) return NextResponse.json(JSON.parse(cached));
-      } catch { /* fall through */ }
-    }
+    // Attempt Redis cache regardless of connection status — catch handles failures
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return NextResponse.json(JSON.parse(cached));
+    } catch { /* Redis not ready or key missing — proceed to live fetch */ }
 
     // ── 2. Helper functions ───────────────────────────────────────────────────
 
@@ -78,14 +77,14 @@ export async function GET(request: Request) {
           .limit(5);
         if (!futs?.length) return `MCX:${symbol}`;
         const candidates = futs.map((f: any) => `MCX:${f.tradingsymbol}`);
-        if (!isRedisMock()) {
+        try {
           const prices = await redis.hmget('market:quotes', ...candidates);
           const live = candidates.find((_: string, i: number) => {
             try { return !!(prices[i] && JSON.parse(prices[i] as string).last_price > 0); }
             catch { return false; }
           });
           if (live) return live;
-        }
+        } catch { /* fall through to first candidate */ }
         return candidates[0];
       } catch { return `MCX:${symbol}`; }
     }
@@ -93,12 +92,10 @@ export async function GET(request: Request) {
     // Fetch expiries (Redis 1h cache → Supabase)
     async function getExpiries(): Promise<string[]> {
       const k = `optionChainExpiries:${symbol}`;
-      if (!isRedisMock()) {
-        try {
-          const cached = await redis.get(k);
-          if (cached) return JSON.parse(cached);
-        } catch { /* fall through */ }
-      }
+      try {
+        const cached = await redis.get(k);
+        if (cached) return JSON.parse(cached);
+      } catch { /* fall through */ }
       const { data, error } = await supabase
         .from('instruments')
         .select('expiry')
@@ -110,20 +107,18 @@ export async function GET(request: Request) {
         .order('expiry', { ascending: true });
       if (error) throw error;
       const expiries = Array.from(new Set(data.map((e: any) => e.expiry))) as string[];
-      if (expiries.length > 0 && !isRedisMock())
-        redis.setex(k, 3600, JSON.stringify(expiries)).catch(() => {});
+      if (expiries.length > 0)
+        redis.setex(k, 86400, JSON.stringify(expiries)).catch(() => {}); // 24h — expiries rarely change
       return expiries;
     }
 
     // Fetch options for a given expiry (Redis 1h cache → Supabase)
     async function getOptions(forExpiry: string): Promise<any[]> {
       const k = `optionChainOptions:${symbol}_${forExpiry}`;
-      if (!isRedisMock()) {
-        try {
-          const cached = await redis.get(k);
-          if (cached) return JSON.parse(cached);
-        } catch { /* fall through */ }
-      }
+      try {
+        const cached = await redis.get(k);
+        if (cached) return JSON.parse(cached);
+      } catch { /* fall through */ }
       const { data, error } = await supabase
         .from('instruments')
         .select('id, instrument_token, tradingsymbol, strike_price, option_type, exchange')
@@ -133,8 +128,8 @@ export async function GET(request: Request) {
         .in('option_type', ['CE', 'PE'])
         .order('strike_price', { ascending: true });
       if (error) throw error;
-      if (data?.length && !isRedisMock())
-        redis.setex(k, 3600, JSON.stringify(data)).catch(() => {});
+      if (data?.length)
+        redis.setex(k, 86400, JSON.stringify(data)).catch(() => {}); // 24h — instrument rows don't change intraday
       return data ?? [];
     }
 
@@ -162,9 +157,7 @@ export async function GET(request: Request) {
     // ── 4. Parallel fetch: options rows + ATM price from Redis ────────────────
     const [options, atmRedisRaw] = await Promise.all([
       getOptions(selectedExpiry),
-      isRedisMock()
-        ? Promise.resolve(null)
-        : redis.hget('market:quotes', underlyingKiteId).catch(() => null),
+      redis.hget('market:quotes', underlyingKiteId).catch(() => null),
     ]);
 
     if (!options.length) {
@@ -209,32 +202,30 @@ export async function GET(request: Request) {
     const sortedStrikes = Object.values(strikeMap).sort((a: any, b: any) => a.strike - b.strike);
 
     // ── 8. Backfill Redis prices (single hmget) ───────────────────────────────
-    if (!isRedisMock()) {
-      try {
-        const allKiteIds: string[] = [];
-        sortedStrikes.forEach((row: any) => {
-          if (row.ce?.id) allKiteIds.push(row.ce.id);
-          if (row.pe?.id) allKiteIds.push(row.pe.id);
+    try {
+      const allKiteIds: string[] = [];
+      sortedStrikes.forEach((row: any) => {
+        if (row.ce?.id) allKiteIds.push(row.ce.id);
+        if (row.pe?.id) allKiteIds.push(row.pe.id);
+      });
+      if (allKiteIds.length > 0) {
+        const prices = await redis.hmget('market:quotes', ...allKiteIds);
+        const priceMap: Record<string, number> = {};
+        allKiteIds.forEach((id, i) => {
+          try {
+            const q = JSON.parse(prices[i] as string);
+            const ltp = q.last_price || q.lastPrice || 0;
+            if (ltp > 0) priceMap[id] = ltp;
+          } catch { /* malformed entry */ }
         });
-        if (allKiteIds.length > 0) {
-          const prices = await redis.hmget('market:quotes', ...allKiteIds);
-          const priceMap: Record<string, number> = {};
-          allKiteIds.forEach((id, i) => {
-            try {
-              const q = JSON.parse(prices[i] as string);
-              const ltp = q.last_price || q.lastPrice || 0;
-              if (ltp > 0) priceMap[id] = ltp;
-            } catch { /* malformed entry */ }
-          });
-          sortedStrikes.forEach((row: any) => {
-            if (row.ce?.id && priceMap[row.ce.id]) row.ce.price = priceMap[row.ce.id];
-            if (row.pe?.id && priceMap[row.pe.id]) row.pe.price = priceMap[row.pe.id];
-          });
-        }
-      } catch { /* non-fatal — WebSocket will deliver live prices */ }
-    }
+        sortedStrikes.forEach((row: any) => {
+          if (row.ce?.id && priceMap[row.ce.id]) row.ce.price = priceMap[row.ce.id];
+          if (row.pe?.id && priceMap[row.pe.id]) row.pe.price = priceMap[row.pe.id];
+        });
+      }
+    } catch { /* non-fatal — WebSocket will deliver live prices */ }
 
-    // ── 9. Build response & cache (fire-and-forget) ───────────────────────────
+    // ── 9. Build response & cache (fire-and-forget, 60s TTL) ─────────────────
     const responseData = {
       success: true, symbol,
       expiry: selectedExpiry,
@@ -244,9 +235,10 @@ export async function GET(request: Request) {
       underlyingSymbol: underlyingKiteId,
     };
 
-    if (!usedFallback && !isRedisMock()) {
-      redis.setex(cacheKey, 10, JSON.stringify(responseData)).catch(() => {});
-      redis.setex(`optionChain:${symbol}_${selectedExpiry}`, 10, JSON.stringify(responseData)).catch(() => {});
+    if (!usedFallback) {
+      // 60s TTL — longer than before so cold starts always hit cache
+      redis.setex(cacheKey, 60, JSON.stringify(responseData)).catch(() => {});
+      redis.setex(`optionChain:${symbol}_${selectedExpiry}`, 60, JSON.stringify(responseData)).catch(() => {});
     }
 
     return NextResponse.json(responseData);
