@@ -1709,14 +1709,15 @@ function WatchlistContent() {
               </div>
             )}
 
-            {isTradeSheetOpen && selectedItem && (
-              <TradeSheet
-                item={selectedItem as any}
-                side={tradeSide === 'BOTH' ? 'BUY' : tradeSide}
-                onClose={closeTradeSheet}
-                hideLotText={true}
-              />
-            )}
+            {/* TradeSheet is always mounted so the dynamic import fires at page load,
+                not on the first tap. The sheet opens/closes via the item prop:
+                non-null = open, null = closed (TradeSheet renders isOpen = !!item). */}
+            <TradeSheet
+              item={isTradeSheetOpen && selectedItem ? selectedItem as any : null}
+              side={tradeSide === 'BOTH' ? 'BUY' : tradeSide}
+              onClose={closeTradeSheet}
+              hideLotText={true}
+            />
 
             <div id="detailSheetOverlay" className={`trade-sheet-overlay${selectedItem ? ' active' : ''}`} onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setSelectedItem(null); }}></div>
             <div id="detailSheet" className={`trade-sheet detail-sheet${selectedItem ? ' open' : ''}`} style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
