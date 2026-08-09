@@ -41,25 +41,6 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   const scrollContainerRef = React.useRef<HTMLElement | null>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
 
-  // Reorder strikes so ATM is always the middle element.
-  // We take 5 strikes above ATM and 5 below (matching the 11-strike window).
-  // This means ATM is always rendered at the vertical center with no scrolling needed.
-  const centeredStrikes = React.useMemo(() => {
-    if (atmIndex < 0 || visibleStrikes.length === 0) return visibleStrikes;
-    const half = 5;
-    const lo = Math.max(0, atmIndex - half);
-    const hi = Math.min(visibleStrikes.length - 1, atmIndex + half);
-    return visibleStrikes.slice(lo, hi + 1);
-  }, [visibleStrikes, atmIndex]);
-
-  // Recompute atmIndex within the centered slice
-  const centeredAtmIndex = React.useMemo(() => {
-    if (atmIndex < 0 || visibleStrikes.length === 0) return -1;
-    const half = 5;
-    const lo = Math.max(0, atmIndex - half);
-    return atmIndex - lo;
-  }, [atmIndex, visibleStrikes]);
-
   // Filter strikes to only show those within the allowed range
   const visibleStrikes = React.useMemo(() => {
     if (strikeRange <= 0 || spotPrice <= 0) return strikes;
@@ -81,6 +62,24 @@ export default function OptionChainTable({ strikes, quotes, spotPrice, onTrade, 
   }, [visibleStrikes, spotPrice]);
 
   const atmStrike = atmIndex >= 0 ? visibleStrikes[atmIndex] : null;
+
+  // Slice strikes so ATM is always the middle element (position 5 of 11).
+  // ATM is always rendered at the vertical center with no scrolling needed.
+  const centeredStrikes = React.useMemo(() => {
+    if (atmIndex < 0 || visibleStrikes.length === 0) return visibleStrikes;
+    const half = 5;
+    const lo = Math.max(0, atmIndex - half);
+    const hi = Math.min(visibleStrikes.length - 1, atmIndex + half);
+    return visibleStrikes.slice(lo, hi + 1);
+  }, [visibleStrikes, atmIndex]);
+
+  // ATM index within the centered slice
+  const centeredAtmIndex = React.useMemo(() => {
+    if (atmIndex < 0 || visibleStrikes.length === 0) return -1;
+    const half = 5;
+    const lo = Math.max(0, atmIndex - half);
+    return atmIndex - lo;
+  }, [atmIndex, visibleStrikes]);
 
   // Subheader floating detection only — no scroll logic
   React.useEffect(() => {
