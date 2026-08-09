@@ -443,13 +443,17 @@ export default function PositionPage() {
         refresh();
         window.dispatchEvent(new CustomEvent('position-closed'));
       } else {
-        showToast(`Error: ${res.error}`);
+        const errMsg = res.error || 'Failed to exit position';
+        showToast(`Error: ${errMsg}`);
+        setErrorModalMsg(errMsg);
         if (posToClose && restorePositionLocally) {
           restorePositionLocally(posId);
         } else if (posToClose) refresh();
       }
     } catch (err: any) {
-      showToast(`Error: ${err.message}`);
+      const errMsg = err.message || 'Failed to exit position';
+      showToast(`Error: ${errMsg}`);
+      setErrorModalMsg(errMsg);
       if (posToClose && restorePositionLocally) {
         restorePositionLocally(posId);
       } else if (posToClose) refresh();
@@ -734,7 +738,9 @@ export default function PositionPage() {
       }
 
       if (hadFailures) {
-        showToast(`Closed some, but failed for others. Error: ${firstError || 'Unknown'}`);
+        const msg = `Closed some, but failed for others. Error: ${firstError || 'Unknown'}`;
+        showToast(msg);
+        setErrorModalMsg(msg);
       } else {
         showToast(`Successfully closed ${group.symbol} position(s).`);
       }
@@ -742,7 +748,9 @@ export default function PositionPage() {
       if (restorePositionLocally) {
         posIds.forEach(id => restorePositionLocally(id));
       }
-      showToast(`Error closing ${group.symbol}: ${result.error || 'Unknown'}`);
+      const msg = `Error closing ${group.symbol}: ${result.error || 'Unknown'}`;
+      showToast(msg);
+      setErrorModalMsg(msg);
     }
     setIsExitingAll(false);
     refresh();

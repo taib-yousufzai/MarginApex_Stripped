@@ -31,6 +31,7 @@ const SQL_FILES = [
   // ── Test suites (run last — they clean up after themselves) ───────────────
   'database_v2/tests/contract_tests.sql',
   'database_v2/tests/position_engine_validation.sql',
+  'database_v2/tests/exit_validation_regression.sql',
 ];
 
 async function main() {

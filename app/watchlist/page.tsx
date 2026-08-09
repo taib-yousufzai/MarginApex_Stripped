@@ -13,7 +13,7 @@ import { useBalance } from '@/hooks/useBalance';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import dynamic from 'next/dynamic';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
-import { mapSegmentToDbSegment } from '@/lib/trading/SymbolMapping';
+import { mapSegmentToDbSegment, mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
@@ -1046,7 +1046,7 @@ function WatchlistContent() {
             name: deepLinkSymbol,
             symbol: deepLinkSymbol,
             kiteSymbol: deepLinkSymbol,
-            segment: 'INR',
+            segment: mapSymbolToSegment(deepLinkSymbol),
             price: 0,
           } as WatchlistItem;
         }

@@ -53,10 +53,15 @@ export class TradeEngine {
        // Keep `symbol` in the same format as stored in DB (e.g. BTCUSDT or BTC)
     } else if (dbSegment !== 'COMEX' && (symUp.includes('GOLD') || symUp.includes('SILVER') || symUp.includes('CRUDE') || symUp.includes('NATGAS') || symUp.includes('NATURALGAS'))) {
        dbSegment = (symUp.endsWith('CE') || symUp.endsWith('PE')) ? 'MCX-OPT' : 'MCX-FUT';
-     } else if (!dbSegment) {
-       // Only fallback if not mapped from UI segment
-       dbSegment = mapSymbolToSegment(symbol);
-    }
+     } else {
+       const VALID_DB_SEGMENTS = new Set([
+         'INDEX-FUT', 'INDEX-OPT', 'STOCK-FUT', 'STOCK-OPT',
+         'MCX-FUT', 'MCX-OPT', 'NSE-EQ', 'BSE-EQ', 'CRYPTO', 'FOREX', 'COMEX'
+       ]);
+       if (!VALID_DB_SEGMENTS.has(dbSegment)) {
+         dbSegment = mapSymbolToSegment(symbol);
+       }
+     }
 
     // Determine segments for market hours
     const segUpper = dbSegment.toUpperCase();

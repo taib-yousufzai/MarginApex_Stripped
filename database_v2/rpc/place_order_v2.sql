@@ -94,7 +94,10 @@ BEGIN
             INTO v_pos_side, v_pos_qty_open
             FROM public.positions
             WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active')
-            GROUP BY side;
+              AND product_type = p_product_type
+              AND side <> p_side
+            GROUP BY side
+            LIMIT 1;
 
             IF NOT FOUND OR v_pos_qty_open <= 0 THEN
                 RAISE EXCEPTION 'No open position exists to exit.';
@@ -114,6 +117,7 @@ BEGIN
         INTO v_position_id, v_pos_qty_open, v_pos_side
         FROM public.positions
         WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active')
+          AND product_type = p_product_type
         ORDER BY entry_time DESC
         LIMIT 1
         FOR UPDATE;
@@ -139,7 +143,7 @@ BEGIN
             FOR v_pos IN 
                 SELECT id, qty_open 
                 FROM public.positions
-                WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active') AND side = v_pos_side
+                WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active') AND side = v_pos_side AND product_type = p_product_type
                 ORDER BY entry_time ASC
                 FOR UPDATE
             LOOP

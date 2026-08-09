@@ -151,8 +151,12 @@ export default function HistoryPage() {
         });
 
         const merged = [...formattedOrders, ...formattedPos];
-        if (typeof window !== 'undefined') window.__historyCache = merged;
-        setHistoryData(merged);
+        if (merged.length > 0) {
+          if (typeof window !== 'undefined') window.__historyCache = merged;
+          setHistoryData(merged);
+        } else if (!window.__historyCache || window.__historyCache.length === 0) {
+          setHistoryData([]);
+        }
       } catch (err) {
         console.warn('Failed to fetch history:', err);
       } finally {
@@ -161,14 +165,23 @@ export default function HistoryPage() {
     }
     fetchHistory();
 
-    // Auto-refresh when positions or orders change via Realtime
+    // Auto-refresh when positions or orders change via Realtime (debounced)
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => fetchHistory(), 1000);
+    };
+
     const channel = supabase
       .channel(`history-realtime-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, fetchHistory)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, fetchHistory)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debouncedFetch)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleApplyFilter = () => {

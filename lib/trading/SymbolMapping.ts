@@ -137,11 +137,8 @@ export function mapSymbolToSegment(symbol: string): Segment {
     }
     return 'STOCK-OPT';
   }
-  if (n.endsWith('FUT') || n.includes('FUTURES')) {
-    if (n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP')) {
-      return 'INDEX-FUT';
-    }
-    return 'STOCK-FUT';
+  if (n.endsWith('FUT') || n.includes('FUTURES') || n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP')) {
+    return 'INDEX-FUT';
   }
   if (n.endsWith('USDT') || ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'].some(c => n === c)) {
     return 'CRYPTO';
