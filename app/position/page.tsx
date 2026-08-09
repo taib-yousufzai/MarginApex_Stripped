@@ -449,7 +449,7 @@ export default function PositionPage() {
 
     try {
       const [res] = await Promise.all([
-        closePosition(posId, posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined),
+        closePosition(posId, posToClose?.current_ltp ?? posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined),
         new Promise(r => setTimeout(r, 800))
       ]);
       if (res.success) {

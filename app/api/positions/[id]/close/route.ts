@@ -133,7 +133,7 @@ async function fetchBinanceLtp(symbol: string): Promise<{ltp: number, bid: numbe
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: cleanSym });
-    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(500) });
     if (resTicker.ok) {
       const json = await resTicker.json();
       if (json.success && json.data && json.data[cleanSym]) {
@@ -149,7 +149,7 @@ async function fetchBinanceLtp(symbol: string): Promise<{ltp: number, bid: numbe
 
   // 3. Direct Binance REST fallback
   try {
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(3000) });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.price) {
