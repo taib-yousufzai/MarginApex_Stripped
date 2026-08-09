@@ -274,6 +274,30 @@ function OptionChainContent() {
     fetchData();
   }, [normalizedSymbol, selectedExpiry, cacheKey]);
 
+  // Re-fetch when live spot price diverges significantly from the API's underlyingPrice.
+  // This fixes cold-load cases where Redis has no spot quote and the server falls back
+  // to a median-strike ATM, returning strikes far from the actual market price.
+  const hasRefetchedRef = useRef(false);
+  useEffect(() => {
+    if (hasRefetchedRef.current || !data?.underlyingPrice || !spotPrice || spotPrice <= 0) return;
+    const apiAtm = data.underlyingPrice;
+    const divergence = Math.abs(spotPrice - apiAtm) / apiAtm;
+    if (divergence > 0.01) {
+      hasRefetchedRef.current = true;
+      lastSpotPriceRef.current = spotPrice;
+      // Re-fetch with the correct spot price
+      (async () => {
+        try {
+          const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}&spotPrice=${spotPrice}&_t=${Date.now()}`;
+          const json = await api.get<{ success: boolean; expiry: string; error?: string; strikes: any[]; expiries: string[]; underlyingPrice?: number; underlyingSymbol?: string }>(url);
+          if (json.success) {
+            setData(json);
+          }
+        } catch { /* non-fatal — original data still displayed */ }
+      })();
+    }
+  }, [spotPrice, data?.underlyingPrice, normalizedSymbol, selectedExpiry]);
+
   // Extract all instrument IDs for real-time quotes
   const instrumentIds = React.useMemo(() => {
     if (!data) return [];
