@@ -958,14 +958,16 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           } else {
             const errMsg = res.error || 'Order failed. Please try again.';
             setOrderError(errMsg);
-            window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
+            // Do NOT dispatch order_error here — the inline orderError modal inside
+            // TradeSheet is already visible. Dispatching the event would also trigger
+            // the parent's <ErrorModal>, causing two stacked error dialogs.
             window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
             window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
           const errMsg = err.message || 'Order failed. Please try again.';
           setOrderError(errMsg);
-          window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
+          // Same reason: do not double-surface via order_error event in the normal path.
           window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
           window.dispatchEvent(new Event('order_failed'));
         } finally {

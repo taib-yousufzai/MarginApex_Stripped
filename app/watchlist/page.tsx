@@ -704,6 +704,10 @@ function WatchlistContent() {
     if (detailOverlay) detailOverlay.classList.add('active');
   };
   const [isTradeSheetOpen, setIsTradeSheetOpen] = useState(false);
+  // Prevents duplicate TradeSheet mounts when the user taps BUY/SELL rapidly or
+  // when both onClick and onTouchEnd fire within the same gesture.
+  // Must be a ref (not state) so it is synchronously readable in the same tick.
+  const isOpeningTradeSheetRef = useRef(false);
 
 
   const marketSymbols = useMemo(() => {
@@ -1387,8 +1391,15 @@ function WatchlistContent() {
   }, [watchlistItems, activeTab, userId]);
 
   const openTradeSheet = async (item: WatchlistItem, side: 'BUY' | 'SELL' | 'BOTH' = 'BOTH') => {
+    // Synchronous guard: reject any re-entrant call that arrives before React has
+    // committed the first state update (covers rapid taps and onClick+onTouchEnd
+    // double-fire on the same gesture).
+    if (isOpeningTradeSheetRef.current) return;
+    isOpeningTradeSheetRef.current = true;
+
     if (isSpotIndex(item)) {
       showToast('Indices cannot be traded directly. Trade their Futures or Options.', true);
+      isOpeningTradeSheetRef.current = false;
       return;
     }
 
@@ -1409,6 +1420,7 @@ function WatchlistContent() {
             setErrorModalMsg(
               `Strike price ${data.strike} is out of range. Allowed range is ${data.min} to ${data.max}.`
             );
+            isOpeningTradeSheetRef.current = false;
             return;
           }
         }
@@ -1438,6 +1450,9 @@ function WatchlistContent() {
     if (detailOverlay) detailOverlay.classList.remove('active');
 
     setIsTradeSheetOpen(true);
+    // Release guard after the next paint — by that point React has committed
+    // the state update and the TradeSheet is visible.
+    requestAnimationFrame(() => { isOpeningTradeSheetRef.current = false; });
   };
 
   const closeTradeSheet = () => {
@@ -1829,10 +1844,10 @@ function WatchlistContent() {
                         <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-primary)', background: 'var(--bg-card)', padding: '3px 10px', borderRadius: '20px' }}>{selectedItem.contractDate}</div>
                       </div>
                       <div style={{ display: 'flex', gap: '10px' }}>
-                        <button style={{ flex: 1, background: '#15803D', color: 'white', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', touchAction: 'manipulation' }} onClick={() => openTradeSheet(selectedItem, 'BUY')} onTouchEnd={(e) => { e.preventDefault(); openTradeSheet(selectedItem, 'BUY'); }}>
+                        <button style={{ flex: 1, background: '#15803D', color: 'white', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', touchAction: 'manipulation' }} onClick={() => openTradeSheet(selectedItem, 'BUY')}>
                           <i className="fas fa-arrow-up"></i> BUY
                         </button>
-                        <button style={{ flex: 1, background: '#B91C1C', color: 'white', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', touchAction: 'manipulation' }} onClick={() => openTradeSheet(selectedItem, 'SELL')} onTouchEnd={(e) => { e.preventDefault(); openTradeSheet(selectedItem, 'SELL'); }}>
+                        <button style={{ flex: 1, background: '#B91C1C', color: 'white', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', touchAction: 'manipulation' }} onClick={() => openTradeSheet(selectedItem, 'SELL')}>
                           <i className="fas fa-arrow-down"></i> SELL
                         </button>
                       </div>
