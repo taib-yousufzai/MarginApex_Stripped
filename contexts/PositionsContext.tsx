@@ -343,18 +343,12 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       }
 
       const sideSetting = settingsMap.get(`${dbSeg}|${p.side}`);
-      // Apply the same exit buffer used by the server so the displayed P&L
-      // matches what will actually be booked when the user clicks Exit.
-      // exit_buffer is stored as a percentage (e.g. 0.17 = 0.17%), matching
-      // the convention in lib/floatingPnl.ts → calculateExitPrice().
-      const exitBufferPct = sideSetting ? Number(sideSetting.exit_buffer ?? 0) : 0;
-      const exitBuffer = exitBufferPct / 100;
       let unrealised = 0;
       if ((p.status === 'open' || p.status === 'active') && p.qty_open !== 0) {
         if (p.side === 'BUY') {
-          unrealised = (ltp * (1 - exitBuffer) - avgPrice) * p.qty_open;
+          unrealised = (ltp - avgPrice) * p.qty_open;
         } else {
-          unrealised = (avgPrice - ltp * (1 + exitBuffer)) * p.qty_open;
+          unrealised = (avgPrice - ltp) * p.qty_open;
         }
       }
 
