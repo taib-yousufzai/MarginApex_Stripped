@@ -104,21 +104,33 @@ export async function GET(request: NextRequest) {
     const isMcx = MCX_UNDERLYINGS.has(underlying);
 
     if (isMcx) {
-      // For MCX options, look up the nearest futures contract
-      const baseName = MCX_BASE_MAP[underlying] || underlying;
-      const { data: mcxFuts } = await admin
-        .from('instruments')
-        .select('tradingsymbol, exchange')
-        .eq('exchange', 'MCX')
-        .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
-        .eq('name', baseName)
-        .gte('expiry', today)
-        .order('expiry', { ascending: true })
-        .limit(1);
+      // Resolve the future contract matching this option's specific expiry cycle
+      const cleanSym = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+      const mcxMatch = cleanSym.toUpperCase().match(/^([A-Z]+)(\d{2}[A-Z]{3})\d+(?:CE|PE)$/);
+      let resolvedFut: string | null = null;
+      if (mcxMatch) {
+        resolvedFut = `${mcxMatch[1]}${mcxMatch[2]}FUT`;
+      }
 
-      underlyingKiteId = mcxFuts?.[0]
-        ? `${mcxFuts[0].exchange}:${mcxFuts[0].tradingsymbol}`
-        : `MCX:${baseName}`;
+      if (resolvedFut) {
+        underlyingKiteId = `MCX:${resolvedFut}`;
+      } else {
+        // For MCX options, look up the nearest futures contract
+        const baseName = MCX_BASE_MAP[underlying] || underlying;
+        const { data: mcxFuts } = await admin
+          .from('instruments')
+          .select('tradingsymbol, exchange')
+          .eq('exchange', 'MCX')
+          .in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT'])
+          .eq('name', baseName)
+          .gte('expiry', today)
+          .order('expiry', { ascending: true })
+          .limit(1);
+
+        underlyingKiteId = mcxFuts?.[0]
+          ? `${mcxFuts[0].exchange}:${mcxFuts[0].tradingsymbol}`
+          : `MCX:${baseName}`;
+      }
     } else {
       underlyingKiteId = getUnderlyingKiteId(underlying);
     }
