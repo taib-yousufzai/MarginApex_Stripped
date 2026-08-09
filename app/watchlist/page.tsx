@@ -704,6 +704,10 @@ function WatchlistContent() {
     if (detailOverlay) detailOverlay.classList.add('active');
   };
   const [isTradeSheetOpen, setIsTradeSheetOpen] = useState(false);
+  // Tracks which detail-sheet button is in the "tapped, waiting for sheet" state.
+  // 'BUY' or 'SELL' while the sheet is opening; null otherwise.
+  // Used to show a spinner on the tapped button and dim the other one.
+  const [detailOpeningSide, setDetailOpeningSide] = useState<'BUY' | 'SELL' | null>(null);
   // Prevents duplicate TradeSheet mounts when the user taps BUY/SELL rapidly or
   // when both onClick and onTouchEnd fire within the same gesture.
   // Must be a ref (not state) so it is synchronously readable in the same tick.
@@ -1425,6 +1429,8 @@ function WatchlistContent() {
     if (detailOverlay) detailOverlay.classList.remove('active');
 
     setIsTradeSheetOpen(true);
+    // Clear the button loading state — sheet is now committed and animating in.
+    setDetailOpeningSide(null);
     // Release the dup-tap guard after the next paint (sheet is now committed).
     requestAnimationFrame(() => { isOpeningTradeSheetRef.current = false; });
 
@@ -1446,6 +1452,7 @@ function WatchlistContent() {
             // Close the sheet and show the error modal
             setIsTradeSheetOpen(false);
             setSelectedItem(null);
+            setDetailOpeningSide(null);
             setErrorModalMsg(
               `Strike price ${data.strike} is out of range. Allowed range is ${data.min} to ${data.max}.`
             );
@@ -1462,6 +1469,7 @@ function WatchlistContent() {
   const closeTradeSheet = () => {
     setIsTradeSheetOpen(false);
     setSelectedItem(null);
+    setDetailOpeningSide(null);
   };
 
   useEffect(() => {
@@ -1849,11 +1857,67 @@ function WatchlistContent() {
                         <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-primary)', background: 'var(--bg-card)', padding: '3px 10px', borderRadius: '20px' }}>{selectedItem.contractDate}</div>
                       </div>
                       <div style={{ display: 'flex', gap: '10px' }}>
-                        <button style={{ flex: 1, background: '#15803D', color: 'white', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', touchAction: 'manipulation' }} onClick={() => openTradeSheet(selectedItem, 'BUY')}>
-                          <i className="fas fa-arrow-up"></i> BUY
+                        <button
+                          style={{
+                            flex: 1,
+                            background: detailOpeningSide === 'SELL' ? 'rgba(21,128,61,0.35)' : '#15803D',
+                            color: 'white',
+                            border: 'none',
+                            padding: '11px 0',
+                            borderRadius: '30px',
+                            fontSize: '0.9rem',
+                            fontWeight: '800',
+                            cursor: detailOpeningSide ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: '6px',
+                            touchAction: 'manipulation',
+                            transition: 'background 0.2s, opacity 0.2s',
+                          }}
+                          disabled={!!detailOpeningSide}
+                          onClick={() => { setDetailOpeningSide('BUY'); openTradeSheet(selectedItem, 'BUY'); }}
+                        >
+                          {detailOpeningSide === 'BUY' ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" style={{ animation: 'spin 0.7s linear infinite' }}>
+                              <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="3" />
+                              <path d="M12 2 a10 10 0 0 1 10 10" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" />
+                            </svg>
+                          ) : (
+                            <i className="fas fa-arrow-up"></i>
+                          )}
+                          BUY
                         </button>
-                        <button style={{ flex: 1, background: '#B91C1C', color: 'white', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', touchAction: 'manipulation' }} onClick={() => openTradeSheet(selectedItem, 'SELL')}>
-                          <i className="fas fa-arrow-down"></i> SELL
+                        <button
+                          style={{
+                            flex: 1,
+                            background: detailOpeningSide === 'BUY' ? 'rgba(185,28,28,0.35)' : '#B91C1C',
+                            color: 'white',
+                            border: 'none',
+                            padding: '11px 0',
+                            borderRadius: '30px',
+                            fontSize: '0.9rem',
+                            fontWeight: '800',
+                            cursor: detailOpeningSide ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: '6px',
+                            touchAction: 'manipulation',
+                            transition: 'background 0.2s, opacity 0.2s',
+                          }}
+                          disabled={!!detailOpeningSide}
+                          onClick={() => { setDetailOpeningSide('SELL'); openTradeSheet(selectedItem, 'SELL'); }}
+                        >
+                          {detailOpeningSide === 'SELL' ? (
+                            <svg width="16" height="16" viewBox="0 0 24 24" style={{ animation: 'spin 0.7s linear infinite' }}>
+                              <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="3" />
+                              <path d="M12 2 a10 10 0 0 1 10 10" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" />
+                            </svg>
+                          ) : (
+                            <i className="fas fa-arrow-down"></i>
+                          )}
+                          SELL
                         </button>
                       </div>
                     </div>
