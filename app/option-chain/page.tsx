@@ -407,12 +407,7 @@ function OptionChainContent() {
           </div>
 
           <div className="oc-table-wrapper">
-            {loading ? (
-              <div className="loading-state">
-                <div className="red-spinner"></div>
-                <p>Gathering strikes...</p>
-              </div>
-            ) : loadingError === 'locked' ? (
+            {loadingError === 'locked' ? (
               <div className="premium-lock-container">
                 <div className="premium-lock-card">
                   <div className="premium-lock-icon">
@@ -431,33 +426,26 @@ function OptionChainContent() {
                   </button>
                 </div>
               </div>
+            ) : !loading && (data?.strikes || []).length === 0 && loadingError ? (
+              <div className="no-data-state">
+                <i className="fas fa-search"></i>
+                <p>No options found for {symbol}</p>
+                <p className="sub">Try syncing instruments or check the symbol name.</p>
+              </div>
             ) : (
               <>
-                {(data?.strikes || []).length === 0 ? (
-                  <div className="no-data-state">
-                    <i className="fas fa-search"></i>
-                    <p>No options found for {symbol}</p>
-                    <p className="sub">Try syncing instruments or check the symbol name.</p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Toast Notification */}
-                    {toast.visible && (
-                      <div className={`toast-msg${toast.isError ? ' error' : ''}`}>
-                        {toast.msg}
-                      </div>
-                    )}
-
-                    <OptionChainTable
-                      strikes={data?.strikes || []}
-                      quotes={quotes}
-                      spotPrice={spotPrice}
-                      onTrade={handleTrade}
-                      priceMode={priceMode}
-                      strikeRange={userStrikeRange}
-                    />
-                  </>
+                {toast.visible && (
+                  <div className={`toast-msg${toast.isError ? ' error' : ''}`}>{toast.msg}</div>
                 )}
+                <OptionChainTable
+                  strikes={data?.strikes || []}
+                  quotes={quotes}
+                  spotPrice={spotPrice}
+                  onTrade={handleTrade}
+                  priceMode={priceMode}
+                  strikeRange={userStrikeRange}
+                  loading={loading}
+                />
               </>
             )}
           </div>
