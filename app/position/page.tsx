@@ -139,11 +139,7 @@ export default function PositionPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
-    window.addEventListener('order_error', handler);
-    return () => window.removeEventListener('order_error', handler);
-  }, []);
+  // order_error is now handled centrally in ClientShell — no local listener needed.
   const [chartItem, setChartItem] = useState<any | null>(null);
 
   const openChart = (pos: EnrichedPosition) => {

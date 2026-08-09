@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import AnimatedLoader from '@/components/AnimatedLoader';
+import { ErrorModal } from '@/components/ErrorModal';
 
 export default function ClientShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '/';
@@ -30,6 +31,12 @@ export default function ClientShell({ children }: { children: React.ReactNode })
 
   const [isGlobalLoading, setIsGlobalLoading] = React.useState(false);
   const [loadingText, setLoadingText] = React.useState('Processing Order...');
+
+  // ── Centralised order error modal ────────────────────────────────────
+  // Single listener for the 'order_error' custom event fired by TradeSheet
+  // (and any other order path). Replaces the per-page listeners in watchlist,
+  // option-chain, and position pages — one modal, never duplicated.
+  const [orderErrorMsg, setOrderErrorMsg] = React.useState<string | null>(null);
 
   // ── Global toast for async order errors ──────────────────────────────
   const [toastMsg, setToastMsg] = React.useState('');
@@ -58,17 +65,24 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       toastTimerRef.current = setTimeout(() => setToastVisible(false), 4000);
     };
 
+    const onOrderError = (e: Event) => {
+      const msg = (e as CustomEvent).detail || 'Order failed.';
+      setOrderErrorMsg(String(msg));
+    };
+
     window.addEventListener('global-loader-start', onStart);
     window.addEventListener('global-loader-end', onEnd);
     window.addEventListener('exit-overlay-start', onExitStart);
     window.addEventListener('exit-overlay-end', onExitEnd);
     window.addEventListener('toast_msg', onToast);
+    window.addEventListener('order_error', onOrderError);
     return () => {
       window.removeEventListener('global-loader-start', onStart);
       window.removeEventListener('global-loader-end', onEnd);
       window.removeEventListener('exit-overlay-start', onExitStart);
       window.removeEventListener('exit-overlay-end', onExitEnd);
       window.removeEventListener('toast_msg', onToast);
+      window.removeEventListener('order_error', onOrderError);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
@@ -117,6 +131,13 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       >
         {toastMsg}
       </div>
+
+      {/* Centralised order error modal — single instance for the whole app */}
+      <ErrorModal
+        error={orderErrorMsg}
+        onClose={() => setOrderErrorMsg(null)}
+        title="Order Failed"
+      />
     </div>
   );
 }

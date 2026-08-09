@@ -534,12 +534,7 @@ function WatchlistContent() {
   const [tradingHours, setTradingHours] = useState<any[]>([]);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
 
-  // Receive order errors fired by TradeSheet after the sheet has already closed
-  useEffect(() => {
-    const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
-    window.addEventListener('order_error', handler);
-    return () => window.removeEventListener('order_error', handler);
-  }, []);
+  // order_error is now handled centrally in ClientShell — no local listener needed.
 
   const isMarketOpen = (item: WatchlistItem) => {
     const segUpper = (item.segment || '').toUpperCase();

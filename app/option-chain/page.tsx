@@ -189,13 +189,7 @@ function OptionChainContent() {
     }, 3500);
   };
 
-  const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handler = (e: Event) => setErrorModalMsg((e as CustomEvent).detail || 'Order failed.');
-    window.addEventListener('order_error', handler);
-    return () => window.removeEventListener('order_error', handler);
-  }, []);
+  // order_error is now handled centrally in ClientShell — no local state or listener needed.
 
   // Normalization for MIDCAP
   const normalizedSymbol = symbol === 'MIDCAP' ? 'MIDCPNIFTY' : symbol;
@@ -934,7 +928,7 @@ function OptionChainContent() {
           )}
         </div>
       </div>
-      <ErrorModal error={errorModalMsg} onClose={() => setErrorModalMsg(null)} title="Order Failed" />
+      {/* order errors are now shown by the centralised ErrorModal in ClientShell */}
     </div>
   );
 }
