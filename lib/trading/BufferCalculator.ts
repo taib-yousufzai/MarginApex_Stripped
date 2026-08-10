@@ -16,7 +16,7 @@ export interface BufferCalculationParams {
  * Calculates the execution price after applying entry/exit buffers.
  *
  * Fill price formula:
- *   BUY  entry:  (ltp * 0.999) * (1 + buyEntryBuffer)   — fills at bid + slippage
+ *   BUY  entry:  ltp * (1 + buyEntryBuffer)             — fills at LTP + slippage
  *   BUY  exit:   (ltp * 1.001) * (1 + sellExitBuffer)   — closing a short at ask
  *   SELL entry:  (ltp * 0.999) * (1 - sellEntryBuffer)  — simulates bid - slippage
  *   SELL exit:   (ltp * 0.999) * (1 - buyExitBuffer)    — closing a long at bid
@@ -54,8 +54,8 @@ export function calculateBufferedPrice({
       // Exiting a short (buying back) — executes at ask + exit buffer (SELL side settings)
       bufferedPrice = (basePrice * 1.001) * (1 + sellExitBuffer);
     } else {
-      // Long entry — fills at bid + entry buffer (cheaper for the user)
-      bufferedPrice = (basePrice * 0.999) * (1 + buyEntryBuffer);
+      // Long entry — fills at LTP + entry buffer
+      bufferedPrice = basePrice * (1 + buyEntryBuffer);
     }
     bufferedPrice += brokeragePerUnit;
   } else {
