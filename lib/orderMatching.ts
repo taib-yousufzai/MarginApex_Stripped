@@ -9,6 +9,21 @@ import { calculateFloatingPnl, calculateExitPrice } from './floatingPnl.ts';
 export interface Quote {
   id: string; // e.g. "NSE:INFY"
   last_price: number;
+  bid?: number;
+  ask?: number;
+}
+
+/**
+ * Returns the authoritative market reference for an order side:
+ *   BUY  → ASK (you pay the ask)
+ *   SELL → BID (you receive the bid)
+ *
+ * Returns undefined if the required side is absent or ≤ 0.
+ * NEVER falls back to last_price — callers must skip/defer when this returns undefined.
+ */
+function marketRef(quote: Quote, side: 'BUY' | 'SELL'): number | undefined {
+  const price = side === 'BUY' ? quote.ask : quote.bid;
+  return (price !== undefined && price > 0) ? price : undefined;
 }
 
 export class InMemoryMatchingEngine {
@@ -264,10 +279,14 @@ export class InMemoryMatchingEngine {
     const start = performance.now();
     const admin = getAdminClient();
 
-    // Build lookup map of prices
-    const pricesMap = new Map<string, number>();
+
+
+
+
+        // Build lookup map of quotes
+    const quotesMap = new Map<string, Quote>();
     for (const quote of quotes) {
-      pricesMap.set(quote.id, quote.last_price);
+      quotesMap.set(quote.id, quote);
     }
 
     const pendingOrders = Array.from(this.activeOrders.values());
@@ -291,29 +310,43 @@ export class InMemoryMatchingEngine {
     if (pendingOrders.length > 0) {
       for (const order of pendingOrders) {
         const symbolKey = order.kite_instrument || order.symbol;
-        const ltp = pricesMap.get(symbolKey);
+        const quote = quotesMap.get(symbolKey);
 
-        if (ltp === undefined || ltp <= 0) {
+        if (!quote || quote.last_price <= 0) {
           continue;
         }
 
+        const ltp = quote.last_price; // used only for logging / p_ltp pass-through
         let shouldTrigger = false;
 
         const orderType = order.order_type;
-        const side = order.side;
+        const side = order.side as 'BUY' | 'SELL';
         const triggerPrice = order.trigger_price ? Number(order.trigger_price) : null;
         const limitPrice = order.price ? Number(order.price) : null;
 
+        // Resolve the correct market reference for this order side.
+        // BUY orders execute at ASK; SELL orders execute at BID.
+        // If the required side is absent, defer this order — do NOT fall back to LTP.
+        const ref = marketRef(quote, side);
+        if (ref === undefined) {
+          // bid/ask not yet available for this symbol; defer until next tick
+          continue;
+        }
+
         if (orderType === 'LIMIT' && limitPrice !== null) {
-          if (side === 'BUY' && ltp <= limitPrice) {
+          // BUY LIMIT:  trigger when ASK <= limitPrice  (we can buy at our limit or better)
+          // SELL LIMIT: trigger when BID >= limitPrice  (we can sell at our limit or better)
+          if (side === 'BUY' && ref <= limitPrice) {
             shouldTrigger = true;
-          } else if (side === 'SELL' && ltp >= limitPrice) {
+          } else if (side === 'SELL' && ref >= limitPrice) {
             shouldTrigger = true;
           }
         } else if ((orderType === 'SL' || orderType === 'SLM') && triggerPrice !== null) {
-          if (side === 'BUY' && ltp >= triggerPrice) {
+          // BUY STOP:  trigger when ASK >= triggerPrice  (stop-entry or short stop-loss)
+          // SELL STOP: trigger when BID <= triggerPrice  (stop-entry or long stop-loss)
+          if (side === 'BUY' && ref >= triggerPrice) {
             shouldTrigger = true;
-          } else if (side === 'SELL' && ltp <= triggerPrice) {
+          } else if (side === 'SELL' && ref <= triggerPrice) {
             shouldTrigger = true;
           }
         } else if (orderType === 'GTT') {
@@ -321,15 +354,15 @@ export class InMemoryMatchingEngine {
             const ltpAtEntry = order.ltp_at_entry ? Number(order.ltp_at_entry) : null;
             if (side === 'BUY') {
               if (ltpAtEntry !== null && ltpAtEntry < triggerPrice) {
-                if (ltp >= triggerPrice) shouldTrigger = true;
+                if (ref >= triggerPrice) shouldTrigger = true;
               } else {
-                if (ltp <= triggerPrice) shouldTrigger = true;
+                if (ref <= triggerPrice) shouldTrigger = true;
               }
             } else if (side === 'SELL') {
               if (ltpAtEntry !== null && ltpAtEntry > triggerPrice) {
-                if (ltp <= triggerPrice) shouldTrigger = true;
+                if (ref <= triggerPrice) shouldTrigger = true;
               } else {
-                if (ltp >= triggerPrice) shouldTrigger = true;
+                if (ref >= triggerPrice) shouldTrigger = true;
               }
             }
           }
@@ -338,18 +371,12 @@ export class InMemoryMatchingEngine {
           const target = order.target ? Number(order.target) : null;
           if (triggerPrice === null) {
             if (!shouldTrigger && stopLoss !== null) {
-              if (side === 'BUY') {
-                if (ltp >= stopLoss) shouldTrigger = true;
-              } else if (side === 'SELL') {
-                if (ltp <= stopLoss) shouldTrigger = true;
-              }
+              if (side === 'BUY' && ref >= stopLoss) shouldTrigger = true;
+              else if (side === 'SELL' && ref <= stopLoss) shouldTrigger = true;
             }
             if (!shouldTrigger && target !== null) {
-              if (side === 'BUY') {
-                if (ltp <= target) shouldTrigger = true;
-              } else if (side === 'SELL') {
-                if (ltp >= target) shouldTrigger = true;
-              }
+              if (side === 'BUY' && ref <= target) shouldTrigger = true;
+              else if (side === 'SELL' && ref >= target) shouldTrigger = true;
             }
           }
         }
@@ -366,36 +393,33 @@ export class InMemoryMatchingEngine {
             }
           }
 
-          // ─── Apply entry/exit buffers (same logic as orders/route.ts) ───
-          // fillPrice stays as raw LTP for the user's position record.
-          // bufferFee = absolute price difference * qty, charged as BUFFER_FEE_DEBIT.
+          // ─── Apply entry/exit buffers ───
+          // Base price = ASK (BUY) or BID (SELL) — already resolved as `ref` above.
+          // Buffer is applied on top of the correct market side price.
           const buySetting = this.segmentSettings.get(`${order.user_id}|${order.segment}|BUY`);
           const sellSetting = this.segmentSettings.get(`${order.user_id}|${order.segment}|SELL`);
           const buyEntryBuffer = (buySetting?.entry_buffer ?? 0.3) / 100;
-          const buyBidBuffer = (buySetting?.bid_buffer ?? 0.3) / 100;
           const buyExitBuffer = (buySetting?.exit_buffer ?? 0.17) / 100;
           const sellEntryBuffer = (sellSetting?.entry_buffer ?? 0.3) / 100;
-          const sellBidBuffer = (sellSetting?.bid_buffer ?? 0.3) / 100;
           const sellExitBuffer = (sellSetting?.exit_buffer ?? 0.17) / 100;
 
-          let priceWithBuffer = ltp;
+          let priceWithBuffer: number;
           if (order.side === 'BUY') {
+            // ref = ASK
             priceWithBuffer = order.is_exit
-              ? ltp * (1 + sellExitBuffer)   // closing SELL/short: ask + SELL exit_buffer
-              : ltp * (1 + buyEntryBuffer);   // long entry: ask + BUY entry_buffer
+              ? ref * (1 + sellExitBuffer)  // closing SHORT: BUY at ASK + SELL exit_buffer
+              : ref * (1 + buyEntryBuffer);  // opening LONG:  BUY at ASK + BUY entry_buffer
           } else {
+            // ref = BID
             priceWithBuffer = order.is_exit
-              ? ltp * (1 - buyExitBuffer)    // closing BUY/long: bid - BUY exit_buffer
-              : ltp * (1 - sellEntryBuffer); // short entry: bid - SELL entry_buffer
+              ? ref * (1 - buyExitBuffer)   // closing LONG:  SELL at BID - BUY exit_buffer
+              : ref * (1 - sellEntryBuffer); // opening SHORT: SELL at BID - SELL entry_buffer
           }
 
-          // Fill price is the actual execution price (ask for BUY, bid for SELL).
-          // Buffer is baked into the fill price so avg_price reflects what the user paid.
           const bufferFee = 0;
           const executionFillPrice = Math.max(0.01, Math.round(priceWithBuffer * 100) / 100);
 
-          // To prevent bypass of the new position engine, we mark the original PENDING order as FILLED_BY_V2
-          // and create the actual EXECUTED order through place_order_v2 which runs atomic matching.
+          // Mark original PENDING order as FILLED_BY_V2, then execute via place_order_v2.
           const dbStart = performance.now();
           const { error: cancelOrderErr } = await admin
             .from('orders')
@@ -454,8 +478,6 @@ export class InMemoryMatchingEngine {
             const { data: ordCheck } = await admin.from('orders').select('brokerage, product_type').eq('id', order.id).maybeSingle();
             if (ordCheck) finalBrokerage = Number(ordCheck.brokerage || 0);
 
-            // Fetch missing leverage details from the profile or just fallback to generic approximations
-            // Since we don't have intraday_leverage fetched here, we'll approximate based on generic rules
             const leverage = ordCheck?.product_type === 'CARRY' ? 5 : 50;
             const requiredMargin = (order.qty * executionFillPrice) / leverage + finalBrokerage;
             marginStr = ` | Margin Req: ₹${requiredMargin.toFixed(2)} | Bkg: ₹${finalBrokerage.toFixed(2)} | Buf: ₹0.00`;
@@ -471,12 +493,13 @@ export class InMemoryMatchingEngine {
             symbol: order.symbol,
             qty: order.qty,
             price: executionFillPrice,
-            reason: `${orderType} Order Triggered @ ${ltp}${marginStr}`,
+            reason: `${orderType} Order Triggered @ LTP ${ltp} | Fill ${executionFillPrice} (${side === 'BUY' ? 'ASK' : 'BID'})${marginStr}`,
           });
           telemetry.recordDbCall('write', performance.now() - auditStart);
         }
       }
     }
+
 
     // 2. PROCESS OPEN POSITIONS — ACCOUNT-LEVEL LIQUIDATION
     if (openPositions.length > 0) {
@@ -542,31 +565,30 @@ export class InMemoryMatchingEngine {
         const positionsWithLtp: any[] = [];
 
         for (const pos of userPositions) {
-          let ltp = pricesMap.get(pos.symbol);
+          let posQuote = quotesMap.get(pos.symbol);
 
-          if (ltp === undefined) {
-            for (const key of pricesMap.keys()) {
+          if (!posQuote) {
+            for (const [key, q] of quotesMap.entries()) {
               if (
-                key === pos.symbol || 
-                key.endsWith(`:${pos.symbol}`) || 
+                key === pos.symbol ||
+                key.endsWith(`:${pos.symbol}`) ||
                 key === `${pos.symbol}USDT`
               ) {
-                ltp = pricesMap.get(key);
+                posQuote = q;
                 break;
               }
             }
           }
 
-          if (ltp === undefined || ltp <= 0) {
+          // For floating PnL / liquidation threshold we use LTP (display estimate).
+          // LTP fallback to stored pos.ltp is intentional here — this is NOT an execution price.
+          let ltp: number;
+          if (posQuote && posQuote.last_price > 0) {
+            ltp = posQuote.last_price;
+          } else {
             ltp = Number(pos.ltp ?? pos.entry_price);
-            // Only warn when the symbol is a live (non-expired) contract.
-            // Expired futures simply have no feed — that's expected, not a bug.
             if (!isContractExpired(pos.symbol)) {
-              // Removed console.warn to prevent Railway log rate limiting
-              // console.warn(
-              //   `[OrderMatching] No live LTP for ${pos.symbol} (user ${userId}). ` +
-              //     `Using fallback ltp=${ltp}. Check ticker subscription.`
-              // );
+              // No live quote — using stored ltp for floating PnL estimate only
             }
           }
 
@@ -581,7 +603,7 @@ export class InMemoryMatchingEngine {
               `[OrderMatching] Skipping position ${pos.id} (${pos.symbol}): ` +
               `invalid entryPrice=${entryPrice} or qty=${qty}`,
             );
-            positionsWithLtp.push({ ...pos, ltp, qty_open: qty, entry_price: entryPrice });
+            positionsWithLtp.push({ ...pos, ltp, bid: posQuote?.bid, ask: posQuote?.ask, qty_open: qty, entry_price: entryPrice });
             continue;
           }
 
@@ -599,7 +621,7 @@ export class InMemoryMatchingEngine {
           });
 
           totalFloatingPnl += pnl;
-          positionsWithLtp.push({ ...pos, ltp, qty_open: qty, entry_price: entryPrice });
+          positionsWithLtp.push({ ...pos, ltp, bid: posQuote?.bid, ask: posQuote?.ask, qty_open: qty, entry_price: entryPrice });
         }
 
         // Account-level liquidation: check total PnL against -(balance × auto_sqoff%)
@@ -639,34 +661,46 @@ export class InMemoryMatchingEngine {
       for (const pos of openPositions) {
         if (closedPositionIds.has(pos.id)) continue;
 
-        let ltp = pricesMap.get(pos.symbol);
-
-        if (ltp === undefined) {
-          for (const key of pricesMap.keys()) {
+        // Resolve quote for this position
+        let posQuote = quotesMap.get(pos.symbol);
+        if (!posQuote) {
+          for (const [key, q] of quotesMap.entries()) {
             if (key === pos.symbol || key.endsWith(`:${pos.symbol}`)) {
-              ltp = pricesMap.get(key);
+              posQuote = q;
               break;
             }
           }
         }
 
-        if (ltp === undefined || ltp <= 0) continue;
+        if (!posQuote || posQuote.last_price <= 0) continue;
 
+        const ltp = posQuote.last_price; // for logging only
         let shouldClose = false;
         let closeReason = 'AUTO_LIQUIDATION';
 
         const stopLoss = pos.stop_loss ? Number(pos.stop_loss) : (pos.sl ? Number(pos.sl) : null);
         const target = pos.target ? Number(pos.target) : (pos.tp ? Number(pos.tp) : null);
-        const side = pos.side;
+        const side = pos.side as 'BUY' | 'SELL';
+
+        // SL/Target triggers use the exit-side market price:
+        //   LONG  exits via SELL → use BID
+        //   SHORT exits via BUY  → use ASK
+        // If the required side is absent, skip this tick (defer, never use LTP as substitute).
+        const exitRef = side === 'BUY' ? posQuote.bid : posQuote.ask;
+        if (exitRef === undefined || exitRef <= 0) continue;
 
         if (stopLoss !== null && stopLoss > 0) {
-          if (side === 'BUY' && ltp <= stopLoss) { shouldClose = true; closeReason = 'STOP_LOSS'; }
-          else if (side === 'SELL' && ltp >= stopLoss) { shouldClose = true; closeReason = 'STOP_LOSS'; }
+          // LONG SL:  BID <= stopLoss
+          // SHORT SL: ASK >= stopLoss
+          if (side === 'BUY' && exitRef <= stopLoss)   { shouldClose = true; closeReason = 'STOP_LOSS'; }
+          else if (side === 'SELL' && exitRef >= stopLoss) { shouldClose = true; closeReason = 'STOP_LOSS'; }
         }
 
         if (!shouldClose && target !== null && target > 0) {
-          if (side === 'BUY' && ltp >= target) { shouldClose = true; closeReason = 'TARGET_HIT'; }
-          else if (side === 'SELL' && ltp <= target) { shouldClose = true; closeReason = 'TARGET_HIT'; }
+          // LONG Target:  BID >= target
+          // SHORT Target: ASK <= target
+          if (side === 'BUY' && exitRef >= target)   { shouldClose = true; closeReason = 'TARGET_HIT'; }
+          else if (side === 'SELL' && exitRef <= target) { shouldClose = true; closeReason = 'TARGET_HIT'; }
         }
 
         if (!shouldClose && pos.product_type === 'INTRADAY') {
@@ -681,7 +715,8 @@ export class InMemoryMatchingEngine {
         if (shouldClose) {
           const segSettingForClose = this.segmentSettings.get(`${pos.user_id}|${pos.settlement}|${pos.side}`);
           const exitBufferPct = segSettingForClose?.exit_buffer ?? 0.17;
-          const exitPrice = calculateExitPrice({ side: pos.side, ltp, exitBufferPct });
+          // Exit price base = BID (LONG → SELL) or ASK (SHORT → BUY)
+          const exitPrice = calculateExitPrice({ side: pos.side, ltp: exitRef, exitBufferPct });
 
           const carryBrokerage = calculateCarryBrokerage({
             productType: pos.product_type,

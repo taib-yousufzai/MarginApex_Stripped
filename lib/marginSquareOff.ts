@@ -42,7 +42,7 @@ export async function checkAndSquareOffPositionsForMargin(userId: string, adminC
     const parentSettingsMap = new Map(parentSettings?.map(s => [`${s.segment}_${s.side}`, s]));
 
     // 4. Use frozen locked_margin for each open position (set at trade entry, never recalculated)
-    const positionsWithMargin = [];
+    const positionsWithMargin: any[] = [];
     let totalLockedMargin = 0;
     let totalFloatingPnl = 0;
 
@@ -85,7 +85,16 @@ export async function checkAndSquareOffPositionsForMargin(userId: string, adminC
       for (const pos of positionsToClose) {
         // Compute exit price using exit buffer
         const baseLtp = Number(pos.ltp || pos.entry_price);
-        const exitPrice = calculateExitPrice({ side: pos.side, ltp: baseLtp, exitBufferPct: pos.exitBufferPct }, 2);
+        // Use the correct market side for exit pricing:
+        //   BUY position exits via SELL → BID; SELL position exits via BUY → ASK.
+        // Explicit LTP fallback for forced margin close (same policy as liquidation engine).
+        const exitBase = pos.side === 'BUY'
+          ? (pos.bid && Number(pos.bid) > 0 ? Number(pos.bid) : baseLtp)
+          : (pos.ask && Number(pos.ask) > 0 ? Number(pos.ask) : baseLtp);
+        if (exitBase === baseLtp) {
+          console.warn(`[marginSquareOff] ${pos.side === 'BUY' ? 'bid' : 'ask'} unavailable for ${pos.symbol}; using ltp for exit price.`);
+        }
+        const exitPrice = calculateExitPrice({ side: pos.side, ltp: exitBase, exitBufferPct: pos.exitBufferPct }, 2);
 
         // Carry brokerage deferred to exit
         const key = `${pos.settlement}_${pos.side}`;

@@ -131,6 +131,8 @@ export async function GET(request: Request) {
           allQuotes.push({
             id: instrumentId,
             last_price: q.last_price,
+            bid: q.depth?.buy?.[0]?.price,
+            ask: q.depth?.sell?.[0]?.price,
             open: q.ohlc?.open || 0,
             high: q.ohlc?.high || 0,
             low: q.ohlc?.low || 0,

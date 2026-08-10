@@ -391,24 +391,23 @@ export default function HistoryPage() {
                                 )}
                               </div>
                             </div>
-                            <div className={currentTab === 'position' ? `pnl ${(item.pnl - (item.brokerage || 0)) >= 0 ? 'positive' : 'negative'}` : 'price-value'}>
+                            <div className={currentTab === 'position' ? `pnl ${item.pnl >= 0 ? 'positive' : 'negative'}` : 'price-value'}>
                               {currentTab === 'position' ? (() => {
-                                // Net P&L = gross P&L − brokerage (mirrors what hits the wallet)
                                 const brokerage = item.brokerage || 0;
-                                const netPnl = item.pnl - brokerage;
-                                const netIsPositive = netPnl >= 0;
-                                const netPercent = item.entryPrice ? ((netPnl / (item.entryPrice * item.qty)) * 100).toFixed(2) : '0.00';
+                                const isPositive = item.pnl >= 0;
+                                const pctBase = item.entryPrice ? (item.pnl / (item.entryPrice * item.qty)) * 100 : 0;
+                                const pctStr = pctBase.toFixed(2);
                                 return (
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                    <span className={netIsPositive ? 'positive' : 'negative'}>
-                                      {`${netIsPositive ? '+' : ''}${formatPrice(netPnl)}`}
+                                    <span className={isPositive ? 'positive' : 'negative'}>
+                                      {`${isPositive ? '+' : ''}${formatPrice(item.pnl)}`}
                                     </span>
                                     <span style={{ fontSize: '0.7rem', fontWeight: 600, marginTop: '2px' }}>
-                                      {`(${netIsPositive ? '+' : ''}${netPercent}%)`}
+                                      {`(${isPositive ? '+' : ''}${pctStr}%)`}
                                     </span>
                                     {brokerage > 0 && (
                                       <span style={{ fontSize: '0.6rem', color: '#6e7681', marginTop: '1px' }}>
-                                        {`Gross: ${item.pnl >= 0 ? '+' : ''}${formatPrice(item.pnl)} | Brk: -${formatPrice(brokerage)}`}
+                                        {`Brk: -${formatPrice(brokerage)}`}
                                       </span>
                                     )}
                                   </div>

@@ -60,21 +60,46 @@ export async function POST(request: Request): Promise<Response> {
     let squaredOff = 0;
     let errors = 0;
 
-    // Close each position via the atomic RPC
+    // Bulk-fetch live bid/ask for all affected symbols from the Ticker Daemon.
+    const uniqueSymbols = [...new Set(openPositions.map(p => p.symbol.includes(':') ? p.symbol : `NSE:${p.symbol}`))];
+    const liveBidAsk: Record<string, { bid: number; ask: number }> = {};
+    try {
+      const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
+      const params = new URLSearchParams({ symbols: uniqueSymbols.join(',') });
+      const res = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(200) });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          for (const sym of uniqueSymbols) {
+            const q = json.data[sym];
+            if (q) {
+              const bid = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? 0);
+              const ask = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? 0);
+              if (bid > 0 && ask > 0) liveBidAsk[sym] = { bid, ask };
+            }
+          }
+        }
+      }
+    } catch (tickerErr) {
+      console.warn('[square-off-all] Ticker Daemon unavailable:', tickerErr);
+    }
+
     for (const pos of openPositions) {
-      const baseLtp = Number(pos.ltp ?? pos.entry_price);
+      const symKey = pos.symbol.includes(':') ? pos.symbol : `NSE:${pos.symbol}`;
+      const liveQuote = liveBidAsk[symKey];
+      if (!liveQuote) {
+        console.error(`[square-off-all] No live bid/ask for ${pos.symbol}. Skipping position ${pos.id}.`);
+        errors++;
+        continue;
+      }
+
       const bufKey = `${pos.user_id}|${pos.settlement}|${pos.side}`;
       const bufSettings = exitBufferMap.get(bufKey);
-      // exit_buffer is stored as a percentage in the DB (e.g. 0.17 = 0.17%), divide by 100
       const exitBuffer = (bufSettings?.exit_buffer ?? 0.17) / 100;
 
-      let exitPrice: number;
-      if (pos.side === 'BUY') {
-        exitPrice = baseLtp * (1 - exitBuffer);
-      } else {
-        exitPrice = baseLtp * (1 + exitBuffer);
-      }
-      exitPrice = Math.round(exitPrice * 100) / 100;
+      // BUY position exits via SELL → use BID; SELL position exits via BUY → use ASK.
+      const basePrice = pos.side === 'BUY' ? liveQuote.bid : liveQuote.ask;
+      const exitPrice = Math.round(basePrice * (pos.side === 'BUY' ? (1 - exitBuffer) : (1 + exitBuffer)) * 100) / 100;
 
       // Carry brokerage deferred to exit
       let carryBrokerage = 0;

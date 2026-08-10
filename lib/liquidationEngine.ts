@@ -20,6 +20,8 @@ export interface PositionForLiquidation {
   settlement: string;
   product_type: string;
   ltp?: number;
+  bid?: number;
+  ask?: number;
 }
 
 
@@ -139,8 +141,18 @@ export async function checkAndExecuteAccountLiquidation(
     const bufferSettings = exitBuffers.get(exitBufferKey);
     const exitBufferPct = bufferSettings?.exit_buffer ?? 0.17;
     const bidBufferPct = bufferSettings?.bid_buffer ?? 0.3;
-
-    const exitPrice = calculateExitPrice({ side: pos.side, ltp, exitBufferPct, bidBufferPct });
+    // For liquidation exit price, use the correct market side:
+    //   BUY position exits via SELL → BID
+    //   SELL position exits via BUY  → ASK
+    // If bid/ask is unavailable, fall back to ltp — this is forced liquidation
+    // and we must close regardless; the LTP fallback is explicit here, not silent.
+    const exitBase = pos.side === 'BUY'
+      ? (pos.bid && pos.bid > 0 ? pos.bid : ltp)
+      : (pos.ask && pos.ask > 0 ? pos.ask : ltp);
+    if (exitBase === ltp) {
+      console.warn(`[LiquidationEngine] ${pos.side === 'BUY' ? 'bid' : 'ask'} unavailable for ${pos.symbol}; using ltp=${ltp} for liquidation exit.`);
+    }
+    const exitPrice = calculateExitPrice({ side: pos.side, ltp: exitBase, exitBufferPct, bidBufferPct });
 
     const carryBrokerage = calculateCarryBrokerage({
       productType: pos.product_type,

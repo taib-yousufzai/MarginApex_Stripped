@@ -4,23 +4,21 @@ import { getSharedKiteSession } from '@/lib/kiteSession';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 
 /**
- * Fetch LTPs for a mixed batch of instruments (Kite + Binance crypto).
- * Each entry in the map is keyed by the instrument's lookup key:
- *   - Kite instruments: "NSE:NIFTY FUT" etc.
- *   - Binance crypto:   "BTCUSDT" etc.
- * Uses Redis → Ticker Daemon → REST cascade for both.
+ * Fetch bid/ask quotes for a mixed batch of instruments (Kite + Binance crypto).
+ * Each entry in the map is keyed by the instrument's lookup key.
+ * Returns { bid, ask } per symbol — callers must not fall back to last_price for execution.
  */
-async function fetchLtpBatch(
+async function fetchQuoteBatch(
   kiteInstruments: string[],
   cryptoSymbols: string[]
-): Promise<Record<string, number>> {
-  const quotesMap: Record<string, number> = {};
+): Promise<Record<string, { bid: number; ask: number }>> {
+  const quotesMap: Record<string, { bid: number; ask: number }> = {};
   const allSymbols = [...kiteInstruments, ...cryptoSymbols];
   if (allSymbols.length === 0) return quotesMap;
 
   const missing = new Set(allSymbols);
 
-  // 1. Redis cache (both Kite and Binance prices land here)
+  // 1. Redis cache
   try {
     const { getRedisClient } = await import('@/lib/redis');
     const redis = getRedisClient();
@@ -28,8 +26,10 @@ async function fetchLtpBatch(
       const cached = await redis.hget('market:quotes', sym);
       if (cached) {
         const q = JSON.parse(cached);
-        if (q && q.last_price !== undefined) {
-          quotesMap[sym] = Number(q.last_price);
+        const bid = Number(q.bid);
+        const ask = Number(q.ask);
+        if (bid > 0 && ask > 0) {
+          quotesMap[sym] = { bid, ask };
           missing.delete(sym);
         }
       }
@@ -38,7 +38,7 @@ async function fetchLtpBatch(
 
   if (missing.size === 0) return quotesMap;
 
-  // 2. Ticker Daemon (serves both Kite and Binance streams)
+  // 2. Ticker Daemon
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: Array.from(missing).join(',') });
@@ -48,14 +48,19 @@ async function fetchLtpBatch(
       if (json.success && json.data) {
         for (const sym of Array.from(missing)) {
           if (json.data[sym]) {
-            quotesMap[sym] = Number(json.data[sym].last_price);
-            missing.delete(sym);
+            const q = json.data[sym];
+            const bid = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? 0);
+            const ask = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? 0);
+            if (bid > 0 && ask > 0) {
+              quotesMap[sym] = { bid, ask };
+              missing.delete(sym);
+            }
           }
         }
       }
     }
   } catch (tickerErr) {
-    console.warn('[fetchLtpBatch] Ticker Daemon failed, falling back to REST:', tickerErr);
+    console.warn('[fetchQuoteBatch] Ticker Daemon failed, falling back to REST:', tickerErr);
   }
 
   if (missing.size === 0) return quotesMap;
@@ -73,33 +78,43 @@ async function fetchLtpBatch(
           headers: { 'X-Kite-Version': '3', Authorization: `token ${apiKey}:${session.accessToken}` },
           cache: 'no-store', signal: AbortSignal.timeout(100),
         });
-        
-        
         if (res && res.ok) {
-          const data = await res.json() as { data?: Record<string, { last_price: number }> };
+          const data = await res.json() as { data?: Record<string, any> };
           for (const inst of missingKite) {
             const quote = data.data?.[inst];
-            if (quote) { quotesMap[inst] = quote.last_price; missing.delete(inst); }
+            if (quote) {
+              const bid = Number(quote.depth?.buy?.[0]?.price ?? 0);
+              const ask = Number(quote.depth?.sell?.[0]?.price ?? 0);
+              if (bid > 0 && ask > 0) {
+                quotesMap[inst] = { bid, ask };
+                missing.delete(inst);
+              }
+            }
           }
         }
       }
     } catch (err) {
-      console.error('[fetchLtpBatch] Kite REST error:', err);
+      console.error('[fetchQuoteBatch] Kite REST error:', err);
     }
   }
 
-  // 3b. Binance REST for remaining crypto symbols
+  // 3b. Binance bookTicker for remaining crypto symbols (returns bidPrice / askPrice)
   const missingCrypto = Array.from(missing).filter(s => cryptoSymbols.includes(s));
   if (missingCrypto.length > 0) {
     await Promise.all(missingCrypto.map(async (sym) => {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
         if (res.ok) {
           const data = await res.json();
-          if (data.price) { quotesMap[sym] = parseFloat(data.price); missing.delete(sym); }
+          const bid = parseFloat(data.bidPrice);
+          const ask = parseFloat(data.askPrice);
+          if (bid > 0 && ask > 0) {
+            quotesMap[sym] = { bid, ask };
+            missing.delete(sym);
+          }
         }
       } catch (err) {
-        console.error(`[fetchLtpBatch] Binance REST error for ${sym}:`, err);
+        console.error(`[fetchQuoteBatch] Binance bookTicker error for ${sym}:`, err);
       }
     }));
   }
@@ -199,7 +214,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return { pos, lookupKey };
     });
 
-    const quotesMap = await fetchLtpBatch(
+    const quotesMap = await fetchQuoteBatch(
       Array.from(kiteSymbolsToFetch),
       Array.from(cryptoSymbolsToFetch)
     );
@@ -250,24 +265,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
         const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
-        const baseLtp = quotesMap[lookupKey];
-        if (!baseLtp || baseLtp <= 0) {
-          results.push({ positionId: pos.id, success: false, error: 'Failed to fetch live market price' });
+        // Resolve bid/ask for this position. No silent LTP fallback.
+        const quote = quotesMap[lookupKey];
+        if (!quote) {
+          results.push({ positionId: pos.id, success: false, error: 'Market quote unavailable for this instrument' });
+          continue;
+        }
+        // BUY position exits via SELL → use BID. SELL position exits via BUY → use ASK.
+        const basePrice = pos.side === 'BUY' ? quote.bid : quote.ask;
+        if (!basePrice || basePrice <= 0) {
+          results.push({ positionId: pos.id, success: false, error: 'Bid/ask unavailable — execution deferred' });
           continue;
         }
 
         // Exit price computation
         let exitPrice: number;
-        if (pos.side === 'BUY') {
-          exitPrice = baseLtp * (1 - exitBuffer);
-        } else {
-          exitPrice = baseLtp * (1 + exitBuffer);
-        }
-        exitPrice = Math.round(exitPrice * 100) / 100;
+        exitPrice = Math.round(basePrice * (pos.side === 'BUY' ? (1 - exitBuffer) : (1 + exitBuffer)) * 100) / 100;
 
         const pnlValue = pos.side === 'BUY'
-          ? (baseLtp - Number(pos.entry_price)) * Number(pos.qty_open)
-          : (Number(pos.entry_price) - baseLtp) * Number(pos.qty_open);
+          ? (basePrice - Number(pos.entry_price)) * Number(pos.qty_open)
+          : (Number(pos.entry_price) - basePrice) * Number(pos.qty_open);
 
         const durationSec = Math.floor((Date.now() - new Date(pos.entry_time).getTime()) / 1000);
         const requiredHold = pnlValue > 0 ? profitHoldSec : lossHoldSec;

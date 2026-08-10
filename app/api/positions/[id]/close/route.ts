@@ -405,14 +405,9 @@ async function handleClosePosition(
   const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
   const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
-  // If the client sent the LTP it was displaying, use that as the base price.
-  // This ensures "what you see is what gets booked" — the P&L at the moment
-  // the user pressed Exit is the P&L that gets recorded.
-  // The exit buffer is still applied on top (platform fee), but against the
-  // price the user actually saw, not a potentially-stale server-fetched quote.
-  const baseLtp = clientPrice ?? finalKiteLtp?.ltp ?? Number(pos.ltp ?? pos.entry_price);
-  const kiteBid = clientPrice ?? finalKiteLtp?.bid ?? baseLtp;
-  const kiteAsk = clientPrice ?? finalKiteLtp?.ask ?? baseLtp;
+  const baseLtp = finalKiteLtp?.ltp ?? clientPrice ?? Number(pos.ltp ?? pos.entry_price);
+  const kiteBid = finalKiteLtp?.bid ?? clientPrice ?? baseLtp;
+  const kiteAsk = finalKiteLtp?.ask ?? clientPrice ?? baseLtp;
 
   // Exit price: exit_buffer applied to the live bid/ask (precision 2 for display/settlement)
   const exitBuffer = segSetting?.exit_buffer ?? 0.17;

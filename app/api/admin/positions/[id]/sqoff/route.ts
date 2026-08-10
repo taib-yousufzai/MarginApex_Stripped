@@ -45,8 +45,31 @@ export async function POST(
       return Response.json({ error: 'Position not found or already closed' }, { status: 404 });
     }
 
-    // Step 4: Resolve LTP — use stored ltp, fall back to entry_price
-    const baseLtp = Number(position.ltp ?? position.entry_price);
+    // Step 4: Fetch live bid/ask from Ticker Daemon.
+    // BUY position exits via SELL → use BID; SELL position exits via BUY → use ASK.
+    // Do NOT fall back to stored LTP — that would reintroduce the execution pricing bug.
+    let basePrice: number | null = null;
+    try {
+      const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
+      const symbolKey = position.symbol.includes(':') ? position.symbol : `NSE:${position.symbol}`;
+      const params = new URLSearchParams({ symbols: symbolKey });
+      const res = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(100) });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data && json.data[symbolKey]) {
+          const q = json.data[symbolKey];
+          basePrice = position.side === 'BUY'
+            ? Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? 0) || null
+            : Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? 0) || null;
+        }
+      }
+    } catch (tickerErr) {
+      console.warn('[sqoff] Ticker Daemon unavailable:', tickerErr);
+    }
+
+    if (!basePrice || basePrice <= 0) {
+      return Response.json({ error: 'Live bid/ask unavailable — cannot execute at correct price. Try again shortly.' }, { status: 503 });
+    }
 
     // Step 5: Fetch exit buffer from segment_settings (user's own settings first)
     const { data: segSetting } = await adminClient
@@ -59,14 +82,10 @@ export async function POST(
 
     const exitBuffer = Number(segSetting?.exit_buffer ?? 0.17) / 100;
 
-    // Step 6: Compute exit price (same formula as user-close and liquidation engine)
-    let exitPrice: number;
-    if (position.side === 'BUY') {
-      exitPrice = baseLtp * (1 - exitBuffer);
-    } else {
-      exitPrice = baseLtp * (1 + exitBuffer);
-    }
-    exitPrice = Math.round(exitPrice * 100) / 100;
+    // Step 6: Compute exit price — buffer applied on top of the correct market side price.
+    // BUY pos (SELL exit): BID × (1 - exitBuffer)
+    // SELL pos (BUY exit): ASK × (1 + exitBuffer)
+    const exitPrice = Math.round(basePrice * (position.side === 'BUY' ? (1 - exitBuffer) : (1 + exitBuffer)) * 100) / 100;
 
     // Step 7: Call the atomic close_position RPC — this handles:
     //   - Setting position status = 'closed', exit_price, exit_time, pnl, qty_open = 0

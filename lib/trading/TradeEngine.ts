@@ -570,10 +570,10 @@ export class TradeEngine {
     // Normalize custom calculation base price (bid/ask vs ltp)
     let executionBasePrice = kiteLtp;
     if (dbSegment === 'CRYPTO' && isCustomCalc) {
-      executionBasePrice = (side === 'BUY' && !is_exit) || (side === 'SELL' && is_exit) ? kiteAsk : kiteBid;
+      executionBasePrice = side === 'BUY' ? kiteAsk : kiteBid;
       brokerage = 0; // Baked into price for custom calc
     } else {
-      executionBasePrice = (side === 'BUY' && !is_exit) || (side === 'SELL' && is_exit) ? kiteAsk : kiteBid;
+      executionBasePrice = side === 'BUY' ? kiteAsk : kiteBid;
     }
 
     let fillPrice = calculateBufferedPrice({

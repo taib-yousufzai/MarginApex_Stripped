@@ -12,31 +12,21 @@ function getAdmin() {
   });
 }
 
-// Helper for fetching LTP
-async function fetchLtp(symbol: string, settlement: string): Promise<number | null> {
+// Helper for fetching live bid/ask quote
+async function fetchQuote(symbol: string, settlement: string): Promise<{ bid: number; ask: number } | null> {
   const cleanSym = symbol.replace('/', '').toUpperCase();
   const isCrypto = (settlement || '').toUpperCase().includes('CRYPTO') || cleanSym.endsWith('USDT');
 
   if (isCrypto) {
     try {
       const sym = cleanSym.endsWith('USDT') ? cleanSym : `${cleanSym}USDT`;
-      const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : null);
-      const params = new URLSearchParams({ symbols: sym });
-      if (!tickerUrl) throw new Error('No tickerUrl');
-      if (!tickerUrl) throw new Error('No tickerUrl');
-      if (!tickerUrl) throw new Error('No tickerUrl');
-      if (!tickerUrl) throw new Error('No tickerUrl');
-      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(50) });
-      if (resTicker.ok) {
-        const json = await resTicker.json();
-        if (json.success && json.data && json.data[sym]) {
-          return Number(json.data[sym].last_price);
-        }
-      }
-      const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(50) });
+      // Try Binance bookTicker first (authoritative bid/ask)
+      const res = await fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(50) });
       if (res.ok) {
         const data = await res.json();
-        return data.price ? parseFloat(data.price) : null;
+        const bid = parseFloat(data.bidPrice);
+        const ask = parseFloat(data.askPrice);
+        if (bid > 0 && ask > 0) return { bid, ask };
       }
     } catch { return null; }
   } else {
@@ -67,7 +57,11 @@ async function fetchLtp(symbol: string, settlement: string): Promise<number | nu
       if (res.ok) {
         const data = await res.json() as any;
         const quote = data.data?.[fullSymbol];
-        if (quote) return quote.last_price;
+        if (quote) {
+          const bid = Number(quote.depth?.buy?.[0]?.price ?? 0);
+          const ask = Number(quote.depth?.sell?.[0]?.price ?? 0);
+          if (bid > 0 && ask > 0) return { bid, ask };
+        }
       }
     } catch { return null; }
   }
@@ -178,18 +172,26 @@ export async function GET(request: Request) {
         );
 
         // --- AUTO SQUARE OFF INTRADAY POSITIONS ---
-        const baseLtp = await fetchLtp(pos.symbol, pos.settlement) || pos.ltp || pos.entry_price;
-        
-        let exitPrice = baseLtp;
+        const liveQuote = await fetchQuote(pos.symbol, pos.settlement);
+        if (!liveQuote) {
+          console.error(`[Auto Sq-Off] No live bid/ask for ${pos.symbol}. Cannot square off position ${pos.id} without correct price. Skipping.`);
+          results.intradayErrors = (results.intradayErrors || 0) + 1;
+          continue;
+        }
+
+        // BUY position exits via SELL → use BID; SELL position exits via BUY → use ASK.
+        const basePrice = pos.side === 'BUY' ? liveQuote.bid : liveQuote.ask;
+
+        let exitPrice = basePrice;
         if (segSetting) {
             const exitBuffer = (segSetting.exit_buffer ?? 0) / 100;
             const bidBuffer = (segSetting.bid_buffer ?? 0) / 100;
             if (pos.side === 'BUY') {
-            // Selling to close
-            exitPrice = baseLtp * (1 - bidBuffer);
+            // Selling to close: apply bid_buffer to BID
+            exitPrice = basePrice * (1 - bidBuffer);
             } else {
-            // Buying to close
-            exitPrice = baseLtp * (1 + exitBuffer);
+            // Buying to close: apply exit_buffer to ASK
+            exitPrice = basePrice * (1 + exitBuffer);
             }
         }
         

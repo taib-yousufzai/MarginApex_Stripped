@@ -105,6 +105,8 @@ export class DbBatchWriter {
         return {
           id: symbolKey,
           last_price: tick.last_price,
+          bid: tick.bid,
+          ask: tick.ask,
         };
       });
 

@@ -320,6 +320,8 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     return rawPositions.map(p => {
       const product_type = inFlightConversions[p.id] || p.product_type;
       let ltp = p.ltp || p.entry_price;
+      let bid = ltp;
+      let ask = ltp;
 
       const cached = props[p.id];
       const dbSeg = cached ? cached.dbSeg : mapSegmentWithSymbol(p.settlement || '', p.symbol);
@@ -333,22 +335,45 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       if (!contractExpired) {
         if (isCrypto) {
           const binanceKey = cached ? cached.binanceSymbol : (p.symbol || '').replace('/', '') + (p.symbol?.endsWith('USDT') ? '' : 'USDT');
-          ltp = marketQuotes[binanceKey]?.lastPrice ?? ltp;
+          const quote = marketQuotes[binanceKey];
+          if (quote) {
+            ltp = quote.lastPrice ?? ltp;
+            bid = quote.bid ?? ltp;
+            ask = quote.ask ?? ltp;
+          }
         } else if (isComex) {
-          ltp = comexQuotes[p.symbol]?.lastPrice ?? ltp;
+          const quote = comexQuotes[p.symbol];
+          if (quote) {
+            ltp = quote.lastPrice ?? ltp;
+            bid = quote.bid ?? ltp;
+            ask = quote.ask ?? ltp;
+          }
         } else {
           const kiteKey = cached ? cached.resolvedKiteSymbol : resolveKitePrefix(p.kite_instrument || p.symbol, p.settlement || '');
-          ltp = marketQuotes[kiteKey]?.lastPrice ?? ltp;
+          const quote = marketQuotes[kiteKey];
+          if (quote) {
+            ltp = quote.lastPrice ?? ltp;
+            bid = quote.bid ?? ltp;
+            ask = quote.ask ?? ltp;
+          }
         }
       }
 
       const sideSetting = settingsMap.get(`${dbSeg}|${p.side}`);
       let unrealised = 0;
       if ((p.status === 'open' || p.status === 'active') && p.qty_open !== 0) {
+        const exitBufferPct = sideSetting?.exit_buffer != null ? Number(sideSetting.exit_buffer) : 0.17;
+        const exitBuffer = exitBufferPct / 100;
         if (p.side === 'BUY') {
-          unrealised = (ltp - avgPrice) * p.qty_open;
+          // BUY position exits via SELL order at BID.
+          // exitPrice = bid * (1 - exitBuffer)
+          const exitPrice = Math.round(bid * (1 - exitBuffer) * 100) / 100;
+          unrealised = (exitPrice - avgPrice) * p.qty_open;
         } else {
-          unrealised = (avgPrice - ltp) * p.qty_open;
+          // SELL position exits via BUY order at ASK.
+          // exitPrice = ask * (1 + exitBuffer)
+          const exitPrice = Math.round(ask * (1 + exitBuffer) * 100) / 100;
+          unrealised = (avgPrice - exitPrice) * p.qty_open;
         }
       }
 
