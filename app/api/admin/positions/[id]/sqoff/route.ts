@@ -80,7 +80,7 @@ export async function POST(
       .eq('side', position.side)
       .maybeSingle();
 
-    const exitBuffer = Number(segSetting?.exit_buffer ?? 0.17) / 100;
+    const exitBuffer = Number(segSetting?.exit_buffer ?? 0.0017);
 
     // Step 6: Compute exit price — buffer applied on top of the correct market side price.
     // BUY pos (SELL exit): BID × (1 - exitBuffer)

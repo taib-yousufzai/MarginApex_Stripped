@@ -184,8 +184,8 @@ export async function GET(request: Request) {
 
         let exitPrice = basePrice;
         if (segSetting) {
-            const exitBuffer = (segSetting.exit_buffer ?? 0) / 100;
-            const bidBuffer = (segSetting.bid_buffer ?? 0) / 100;
+            const exitBuffer = Number(segSetting?.exit_buffer ?? 0.0017);
+            const bidBuffer = Number(segSetting?.bid_buffer ?? 0);
             if (pos.side === 'BUY') {
             // Selling to close: apply bid_buffer to BID
             exitPrice = basePrice * (1 - bidBuffer);

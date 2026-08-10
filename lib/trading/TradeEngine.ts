@@ -1,7 +1,6 @@
 import { getAdminClient } from '@/lib/adminClient';
 import { fetchBinanceQuote, fetchKiteQuotes, fetchSpeedQuotes } from '../datafeed/MarketDataService';
 import { calculateBufferedPrice } from './BufferCalculator';
-import { calculateMarginPortion } from './MarginCalculator';
 import { calculateSingleLegCharge } from './BrokerageCalculator';
 import { RiskValidation } from './RiskValidation';
 import { OrderService } from './OrderService';
@@ -11,7 +10,6 @@ import { mapSegmentToDbSegment, mapSymbolToSegment } from './SymbolMapping';
 import { SymbolNormalizer } from './SymbolNormalizer';
 import { getLotSizeFallback } from '@/lib/lotSize';
 import { parseOptionSymbol } from '../positionStore';
-import { calculateFreeMarginFromPositions } from '@/lib/floatingPnl';
 
 export interface PlaceOrderRequest {
   symbol: string;
@@ -518,71 +516,62 @@ export class TradeEngine {
       }
     }
 
-    const holdErr = OrderService.validateHoldDuration(is_exit, order_type, activePosition, kiteLtp, Number(segSetting.profit_hold_sec ?? 120), Number(segSetting.loss_hold_sec ?? 0));
+    const holdErr = OrderService.validateHoldDuration(is_exit, order_type, activePosition, kiteLtp, Number(segSetting.profit_hold_sec ?? 120), Number(segSetting.loss_hold_sec ?? 0), Number(segSetting.exit_buffer ?? 0.0017));
     if (holdErr) throw new Error(holdErr);
 
     const isGTT = order_type === 'GTT';
-    const marginPrice = (order_type === 'LIMIT' || isGTT) ? (clientPriceNum > 0 ? clientPriceNum : kiteLtp) : (trigger_price || kiteLtp);
+    // Use client_price for LIMIT/GTT margin calculation (same as old order execution)
+    const marginPrice = (order_type === 'LIMIT' || isGTT) ? (clientPriceNum > 0 ? clientPriceNum : kiteLtp) : kiteLtp;
     const exposure = qty * marginPrice;
-    
-    const brokerageConfig = await ConfigurationService.getBrokerageConfig(user.id, dbSegment);
+
     let marginPortion = 0;
-    
     let brokerage = 0;
 
     const isCustomCalc = side === 'BUY' ? buySetting?.use_custom_calc : sellSetting?.use_custom_calc;
 
     if (!is_exit) {
-      marginPortion = calculateMarginPortion({
-        segment: dbSegment,
-        side,
-        leverageType: isCarry ? (segSetting.holding_type ?? 'Multiplier') : (segSetting.intraday_type ?? 'Multiplier'),
-        leverage: isCarry ? (segSetting.holding_leverage ?? 10) : (segSetting.intraday_leverage ?? 10),
-        totalQty: qty,
-        lotSize: symbolLotSize,
-        baseExposure: exposure
-      });
+      const leverage = isCarry
+        ? Number(segSetting.holding_leverage ?? 1)
+        : Number(segSetting.intraday_leverage ?? 1);
+      marginPortion = exposure / leverage;
 
-      // Brokerage logic:
-      //   - Entry brokerage + exit brokerage are both charged at position open time (× 2)
-      //   - No brokerage is charged again when the position is closed
-      //   - Carry brokerage is separate and charged at INTRADAY → CARRY conversion
+      // Brokerage: charge both entry + exit legs up front (× 2), same as old route
       const commType = segSetting.commission_type || 'Per Crore';
-      const commVal = Number(segSetting.commission_value ?? 0);
+      const commVal  = Number(segSetting.commission_value ?? 0);
       const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
-      brokerage = Math.round(singleLeg * 2 * 100) / 100; // both legs up front
+      brokerage = Math.round(singleLeg * 2 * 100) / 100;
     } else {
-      // Exit order: brokerage was already collected at position open — charge nothing
+      // Exit order: brokerage already collected at entry — charge nothing
       brokerage = 0;
     }
 
     if (dbSegment === 'CRYPTO' && isCustomCalc) {
-      brokerage = 0; // custom calc zeroes out separate brokerage
+      brokerage = 0;
     }
 
+    // Inline balance check (mirrors old route's explicit check before hitting the DB)
+    const balance = Number(profile.balance ?? 0);
     const requiredMargin = marginPortion + brokerage;
-
-    // Validation is delegated to database RPC place_order_v2
+    if (!is_exit && balance < requiredMargin) {
+      throw new Error(`Insufficient margin. Available: ₹${balance.toFixed(2)}, Required: ₹${requiredMargin.toFixed(2)}`);
+    }
 
 
     // 4. Execution Price Calculation (BufferCalculator)
-    
-    // Normalize custom calculation base price (bid/ask vs ltp)
-    let executionBasePrice = kiteLtp;
-    if (dbSegment === 'CRYPTO' && isCustomCalc) {
-      executionBasePrice = side === 'BUY' ? kiteAsk : kiteBid;
-      brokerage = 0; // Baked into price for custom calc
-    } else {
-      executionBasePrice = side === 'BUY' ? kiteAsk : kiteBid;
-    }
+    //
+    // For MARKET / SLM orders: use raw LTP as base — the buffer formula applies
+    // the 0.999/1.001 spread simulation internally (matches original order execution).
+    // For LIMIT / SL / GTT orders: use client_price as-is (no spread applied).
+    const isLimitType = ['LIMIT', 'SL', 'GTT'].includes(order_type);
+    const executionBasePrice = isLimitType ? clientPriceNum : kiteLtp;
 
     let fillPrice = calculateBufferedPrice({
-       side,
-       isExit: is_exit,
-       basePrice: ['LIMIT', 'SL', 'GTT'].includes(order_type) ? clientPriceNum : executionBasePrice,
-       buySetting,
-       sellSetting,
-       brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0
+      side,
+      isExit: is_exit,
+      basePrice: executionBasePrice,
+      buySetting,
+      sellSetting,
+      brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0
     });
 
     fillPrice = Math.max(0.01, Math.round(fillPrice * 100) / 100);

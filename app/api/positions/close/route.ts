@@ -260,8 +260,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         // Get settings and LTP
         const segSetting = segSettingsMap.get(`${pos.settlement ?? ''}|${pos.side}`);
-        // exit_buffer is stored as a percentage in the DB (e.g. 0.17 = 0.17%), divide by 100
-        const exitBuffer = (segSetting?.exit_buffer ?? 0.17) / 100;
+        // exit_buffer is stored in decimal form in DB (e.g. 0.0017 = 0.17%), use directly
+        const exitBuffer = Number(segSetting?.exit_buffer ?? 0.0017);
         const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
         const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
@@ -278,9 +278,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           continue;
         }
 
-        // Exit price computation
+        // Exit price computation — matches single-close route and PositionsContext formula
+        // When real bid/ask available, use them directly with exit buffer (no spread simulation)
         let exitPrice: number;
-        exitPrice = Math.round(basePrice * (pos.side === 'BUY' ? (1 - exitBuffer) : (1 + exitBuffer)) * 100) / 100;
+        if (pos.side === 'BUY') {
+          // Closing a long → sell at bid with buffer applied
+          // Formula: bid * (1 - exitBuffer)
+          exitPrice = basePrice * (1 - exitBuffer);
+        } else {
+          // Closing a short → buy at ask with buffer applied
+          // Formula: ask * (1 + exitBuffer)
+          exitPrice = basePrice * (1 + exitBuffer);
+        }
+        exitPrice = Math.round(exitPrice * 100) / 100;
 
         const pnlValue = pos.side === 'BUY'
           ? (basePrice - Number(pos.entry_price)) * Number(pos.qty_open)

@@ -359,19 +359,22 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         }
       }
 
-      const sideSetting = settingsMap.get(`${dbSeg}|${p.side}`);
+      // Use pos.settlement directly — this is what close/route.ts uses when
+      // looking up segment settings, so the buffer value matches exactly.
+      const settingsKey = `${p.settlement ?? ''}|${p.side}`;
+      const sideSetting = settingsMap.get(settingsKey);
+      
       let unrealised = 0;
       if ((p.status === 'open' || p.status === 'active') && p.qty_open !== 0) {
-        const exitBufferPct = sideSetting?.exit_buffer != null ? Number(sideSetting.exit_buffer) : 0.17;
-        const exitBuffer = exitBufferPct / 100;
+        // exit_buffer is stored in decimal form in DB (e.g. 0.0017 = 0.17%), use directly
+        const exitBuffer = Number(sideSetting?.exit_buffer ?? 0.0017);
+
         if (p.side === 'BUY') {
-          // BUY position exits via SELL order at BID.
-          // exitPrice = bid * (1 - exitBuffer)
+          // BUY position exits via SELL order at BID (actual bid/ask prices, not simulated)
           const exitPrice = Math.round(bid * (1 - exitBuffer) * 100) / 100;
           unrealised = (exitPrice - avgPrice) * p.qty_open;
         } else {
-          // SELL position exits via BUY order at ASK.
-          // exitPrice = ask * (1 + exitBuffer)
+          // SELL position exits via BUY order at ASK (actual bid/ask prices, not simulated)
           const exitPrice = Math.round(ask * (1 + exitBuffer) * 100) / 100;
           unrealised = (avgPrice - exitPrice) * p.qty_open;
         }

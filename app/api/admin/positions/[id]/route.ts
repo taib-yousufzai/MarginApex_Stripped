@@ -384,8 +384,8 @@ export async function PATCH(
               // Liquidation PnL is calculated based on Bid price (exit-buffer-adjusted)
               const bufKeyBuy = `${updatedPosition.user_id}|${pos.settlement}|BUY`;
               const bufKeySell = `${updatedPosition.user_id}|${pos.settlement}|SELL`;
-              const buyBuf = (exitBuffers.get(bufKeyBuy)?.bid_buffer ?? 0.3) / 100;
-              const sellBuf = (exitBuffers.get(bufKeySell)?.exit_buffer ?? 0.17) / 100;
+              const buyBuf = Number(exitBuffers.get(bufKeyBuy)?.bid_buffer ?? 0.0017);
+              const sellBuf = Number(exitBuffers.get(bufKeySell)?.exit_buffer ?? 0.0017);
 
               const pnl =
                 pos.side === 'BUY'

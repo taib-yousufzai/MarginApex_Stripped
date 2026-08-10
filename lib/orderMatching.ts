@@ -55,9 +55,10 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
     } else if (allSegSettings) {
       for (const s of allSegSettings) {
         const key = `${s.user_id}|${s.segment}|${s.side}`;
+        // exit_buffer is stored in decimal form in DB (e.g. 0.0017 = 0.17%), use directly
         segmentSettingsCache.set(key, {
           entry_buffer: Number(s.entry_buffer ?? 0.003),
-          exit_buffer: Number(s.exit_buffer ?? 0.0017)
+          exit_buffer:  Number(s.exit_buffer  ?? 0.0017),
         });
       }
     }
@@ -309,7 +310,7 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
 
         const entryPrice = Number(pos.entry_price ?? pos.avg_price);
         const qty = Number(pos.qty_open ?? 0);
-        const buyExitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
+        const buyExitBuffer  = exitBufferMap.get(`${pos.settlement}|BUY`)  ?? 0.0017;
         const sellExitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
         const pnl = pos.side === 'BUY' 
           ? (((ltp * 0.999) * (1 - buyExitBuffer)) - entryPrice) * qty 

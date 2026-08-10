@@ -8,8 +8,8 @@
  *   - positions/[id]/close  (user-initiated close)
  *
  * Buffer convention:
- *   exit_buffer is stored in the DB as a percentage (e.g. 0.17 = 0.17%).
- *   Pass the raw DB value here — this module divides by 100 internally.
+ *   exit_buffer is stored in the DB in decimal form (e.g. 0.0017 = 0.17%).
+ *   Pass the raw DB value here — this module uses it directly.
  *
  *   bid_buffer is used for BUY-side liquidation closes (forced exits on longs
  *   use the bid price, which is slightly below LTP). Defaults to exit_buffer
@@ -21,10 +21,10 @@ export interface FloatingPnlParams {
   ltp: number;
   entryPrice: number;
   qty: number;
-  /** Raw DB value — e.g. 0.17 for 0.17%. Applied to SELL closes and BUY floating P&L. */
+  /** Raw DB value in decimal form — e.g. 0.0017 for 0.17%. Applied to SELL closes and BUY floating P&L. */
   exitBufferPct: number;
   /**
-   * Raw DB value — e.g. 0.3 for 0.3%. Applied to BUY-side forced closes
+   * Raw DB value in decimal form — e.g. 0.003 for 0.3%. Applied to BUY-side forced closes
    * (liquidation engine uses bid price for longs).
    * Defaults to exitBufferPct when omitted.
    */
@@ -73,11 +73,12 @@ export function calculateFreeMarginFromPositions(
 /**
  * Compute the floating (unrealised) P&L for an open position.
  *
- * Uses the exit-buffer-adjusted LTP so the result matches what the liquidation
+ * Uses the exit-buffer-adjusted LTP with spread simulation so the result matches what the liquidation
  * engine sees — i.e. "what would this position settle for right now".
+ * This matches the formula used in positions/[id]/close and PositionsContext.
  *
- * BUY:  (ltp × (1 - exitBuffer) − entryPrice) × qty
- * SELL: (entryPrice − ltp × (1 + exitBuffer)) × qty
+ * BUY:  ((ltp × 0.999) × (1 - exitBuffer) − entryPrice) × qty
+ * SELL: (entryPrice − (ltp × 1.001) × (1 + exitBuffer)) × qty
  */
 export function calculateFloatingPnl({
   side,
@@ -86,11 +87,11 @@ export function calculateFloatingPnl({
   qty,
   exitBufferPct,
 }: FloatingPnlParams): number {
-  const exitBuffer = exitBufferPct / 100;
+  const exitBuffer = exitBufferPct;  // DB stores in decimal form, use directly
   if (side === 'BUY') {
-    return (ltp * (1 - exitBuffer) - entryPrice) * qty;
+    return ((ltp * 0.999) * (1 - exitBuffer) - entryPrice) * qty;
   }
-  return (entryPrice - ltp * (1 + exitBuffer)) * qty;
+  return (entryPrice - (ltp * 1.001) * (1 + exitBuffer)) * qty;
 }
 
 /**
@@ -99,9 +100,10 @@ export function calculateFloatingPnl({
  * For forced / liquidation closes on BUY positions, the bid_buffer is used
  * (the user receives the bid price, which is below LTP).
  * For all other closes (user-initiated, SL/TP, EOD) use exit_buffer.
+ * Includes spread simulation (0.999 for BUY, 1.001 for SELL).
  *
- * BUY:  ltp × (1 − buffer)   — user receives bid
- * SELL: ltp × (1 + buffer)   — user pays ask
+ * BUY:  ltp × 0.999 × (1 − buffer)   — user receives bid
+ * SELL: ltp × 1.001 × (1 + buffer)   — user pays ask
  *
  * @param precision - decimal places to round to (default 4; use 2 for display)
  */
@@ -115,9 +117,9 @@ export function calculateExitPrice({
 ): number {
   const factor = Math.pow(10, precision);
   if (side === 'BUY') {
-    const bidBuffer = (bidBufferPct ?? exitBufferPct) / 100;
-    return Math.round(ltp * (1 - bidBuffer) * factor) / factor;
+    const bidBuffer = bidBufferPct ?? exitBufferPct;  // DB stores in decimal form, use directly
+    return Math.round(ltp * 0.999 * (1 - bidBuffer) * factor) / factor;
   }
-  const exitBuffer = exitBufferPct / 100;
-  return Math.round(ltp * (1 + exitBuffer) * factor) / factor;
+  const exitBuffer = exitBufferPct;  // DB stores in decimal form, use directly
+  return Math.round(ltp * 1.001 * (1 + exitBuffer) * factor) / factor;
 }

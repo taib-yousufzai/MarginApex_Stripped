@@ -95,7 +95,7 @@ export async function POST(request: Request): Promise<Response> {
 
       const bufKey = `${pos.user_id}|${pos.settlement}|${pos.side}`;
       const bufSettings = exitBufferMap.get(bufKey);
-      const exitBuffer = (bufSettings?.exit_buffer ?? 0.17) / 100;
+      const exitBuffer = Number(bufSettings?.exit_buffer ?? 0.0017);
 
       // BUY position exits via SELL → use BID; SELL position exits via BUY → use ASK.
       const basePrice = pos.side === 'BUY' ? liveQuote.bid : liveQuote.ask;
