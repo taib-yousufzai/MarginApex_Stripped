@@ -370,12 +370,12 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         const exitBuffer = Number(sideSetting?.exit_buffer ?? 0.0017);
 
         if (p.side === 'BUY') {
-          // BUY position exits via SELL order at BID (actual bid/ask prices, not simulated)
-          const exitPrice = Math.round(bid * (1 - exitBuffer) * 100) / 100;
+          // BUY position — P&L benchmark is LTP (no bid spread). Exit buffer still applies.
+          const exitPrice = Math.round(ltp * (1 - exitBuffer) * 100) / 100;
           unrealised = (exitPrice - avgPrice) * p.qty_open;
         } else {
-          // SELL position exits via BUY order at ASK (actual bid/ask prices, not simulated)
-          const exitPrice = Math.round(ask * (1 + exitBuffer) * 100) / 100;
+          // SELL position — P&L benchmark is LTP (no ask spread). Exit buffer still applies.
+          const exitPrice = Math.round(ltp * (1 + exitBuffer) * 100) / 100;
           unrealised = (avgPrice - exitPrice) * p.qty_open;
         }
       }
