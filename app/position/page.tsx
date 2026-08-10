@@ -284,7 +284,10 @@ export default function PositionPage() {
   const openGroupTradeExit = (group: GroupedPosition) => {
     setTradeSheetItem({
       name: group.symbol,
-      symbol: group.symbol,
+      // Use the underlying DB symbol (pos.symbol), NOT the display symbol (group.symbol
+      // which is kite_instrument without exchange prefix). The SQL position lookup uses
+      // exact symbol match, so sending the display name causes "No open position to exit".
+      symbol: group.representativePos.symbol,
       kiteSymbol: group.representativePos.kite_instrument || group.symbol,
       segment: group.settlement || 'INR',
       price: group.current_ltp,
