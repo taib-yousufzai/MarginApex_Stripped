@@ -849,7 +849,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const parsedOption = parseOptionSymbol(symbol);
   
   const executeDbCall = async () => {
-    const { data: oId, error: rpcErr } = await admin.rpc('place_order', {
+    const { data: oId, error: rpcErr } = await admin.rpc('place_order_v2', {
       p_user_id:      user.id,
       p_symbol:       symbol,
       p_kite_inst:    kiteInst,
@@ -865,7 +865,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       p_trigger_price: resolvedTriggerPrice,
       p_stop_loss:    resolvedStopLoss,
       p_target:       target ? parseFloat(target.toString()) : null,
-      p_is_exit:      is_exit ?? false
+      p_is_exit:      is_exit ?? false,
+      p_expected_margin: 0,
+      p_expected_brokerage: 0,
+      p_idempotency_key: null
     });
     if (rpcErr) {
       throw new Error(rpcErr.message || 'Order execution failed. Please try again.');
