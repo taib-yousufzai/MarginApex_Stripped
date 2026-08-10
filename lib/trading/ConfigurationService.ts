@@ -90,7 +90,7 @@ class ConfigurationServiceClass {
     const { data, error } = await admin
       .from('segment_settings')
       .select('*')
-      .eq('segment_id', dbSegment)
+      .eq('segment', dbSegment)
       .maybeSingle();
 
     if (error) {

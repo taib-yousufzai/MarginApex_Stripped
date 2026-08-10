@@ -363,34 +363,19 @@ async function handleClosePosition(
 
   const baseLtp = finalLtp ?? clientPrice ?? Number(pos.ltp ?? pos.entry_price);
 
-  // 5. Exit price — use real BID/ASK from market when available, not just LTP
+  // 5. Exit price — use LTP directly with exit buffer
   // This ensures closed P&L matches live P&L calculation
   let exitPrice: number;
-  
-  let bid = baseLtp;
-  let ask = baseLtp;
-  
-  const isCrypto = (pos.settlement || '').toUpperCase().includes('CRYPTO');
-  if (isCrypto) {
-    // For crypto, use the simulated spread to match the live P&L view exactly
-    bid = baseLtp * 0.9995;
-    ask = baseLtp * 1.0005;
-    console.log(`[CLOSE ROUTE] Crypto detected. Using simulated spread: bid=${bid}, ask=${ask}`);
-  }
 
-  console.log(`[CLOSE ROUTE] Using bid=${bid}, ask=${ask} for exit calculation. Side=${pos.side}`);
-
-  // Apply exit buffer to the appropriate price (bid for BUY, ask for SELL)
+  // Apply exit buffer to LTP (both BUY and SELL use LTP directly)
   if (pos.side === 'BUY') {
-    // Closing a long → use BID price with buffer
-    // Formula: bid * (1 - exitBuffer)
-    exitPrice = bid * (1 - exitBuffer);
-    console.log(`[CLOSE ROUTE BUY] exitPrice = ${bid} * (1 - ${exitBuffer}) = ${exitPrice}`);
+    // Closing a long → use LTP with buffer
+    // Formula: ltp * (1 - exitBuffer)
+    exitPrice = baseLtp * (1 - exitBuffer);
   } else {
-    // Closing a short → use ASK price with buffer
-    // Formula: ask * (1 + exitBuffer)
-    exitPrice = ask * (1 + exitBuffer);
-    console.log(`[CLOSE ROUTE SELL] exitPrice = ${ask} * (1 + ${exitBuffer}) = ${exitPrice}`);
+    // Closing a short → use LTP with buffer
+    // Formula: ltp * (1 + exitBuffer)
+    exitPrice = baseLtp * (1 + exitBuffer);
   }
   exitPrice = Math.round(exitPrice * 100) / 100;
 
