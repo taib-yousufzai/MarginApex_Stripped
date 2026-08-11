@@ -310,7 +310,7 @@ export class TradeEngine {
     const settingsLookupId = profile.parent_id ?? user.id;
     const { data: userSegRows, error: segRowsError } = await admin
       .from(settingsTable)
-      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit')
+      .select('side, trade_allowed, max_lot, max_order_lot, intraday_leverage, holding_leverage, intraday_type, holding_type, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, entry_buffer, exit_buffer, top_limit, min_limit, exit_price_mode')
       .eq('user_id', settingsLookupId)
       .eq('segment', dbSegment);
 

@@ -26,6 +26,7 @@ export type SegmentSettingRow = {
   trade_allowed: boolean;
   top_limit: number;
   min_limit: number;
+  exit_price_mode?: 'BID_ASK' | 'LTP';
   created_at: string;
   updated_at: string;
 };
@@ -47,7 +48,7 @@ export async function GET(
     const { data, error } = await adminClient
       .from('scalper_segment_settings')
       .select(
-        'id, user_id, segment, side, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, entry_buffer, holding_type, bid_buffer, exit_buffer, trade_allowed, top_limit, min_limit, created_at, updated_at',
+        'id, user_id, segment, side, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, entry_buffer, holding_type, bid_buffer, exit_buffer, trade_allowed, top_limit, min_limit, exit_price_mode, created_at, updated_at',
       )
       .eq('user_id', id);
 
@@ -149,6 +150,8 @@ export async function POST(
         typeof entry.min_limit === 'number' ? entry.min_limit : 0,
       use_custom_calc:
         typeof entry.use_custom_calc === 'boolean' ? entry.use_custom_calc : false,
+      exit_price_mode:
+        entry.exit_price_mode === 'LTP' ? 'LTP' : 'BID_ASK',
     }));
 
     const { data, error } = await adminClient

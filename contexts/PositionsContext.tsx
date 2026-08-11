@@ -373,7 +373,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           ? (Number(rawExitBuf) > 0.005 ? Number(rawExitBuf) / 100 : Number(rawExitBuf))
           : 0.0017;
 
-        const exitPriceMode = process.env.NEXT_PUBLIC_EXIT_PRICE_MODE || sideSetting?.exit_price_mode || 'BID_ASK';
+        const exitPriceMode = sideSetting?.exit_price_mode || 'BID_ASK';
 
         if (p.side === 'BUY') {
           // Closing BUY position = SELLING -> BID (0.999) OR LTP (1.000) - exitBuffer
