@@ -368,8 +368,10 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       
       let unrealised = 0;
       if ((p.status === 'open' || p.status === 'active') && p.qty_open !== 0) {
-        // exit_buffer is stored in decimal form in DB (e.g. 0.0017 = 0.17%), use directly
-        const exitBuffer = Number(sideSetting?.exit_buffer ?? 0.0017);
+        const rawExitBuf = sideSetting?.exit_buffer;
+        const exitBuffer = (rawExitBuf !== undefined && rawExitBuf !== null && !isNaN(Number(rawExitBuf)))
+          ? (Number(rawExitBuf) > 0.005 ? Number(rawExitBuf) / 100 : Number(rawExitBuf))
+          : 0.0017;
 
         if (p.side === 'BUY') {
           // BUY position — exiting means SELLING at ASK * (1 - exitBuffer)

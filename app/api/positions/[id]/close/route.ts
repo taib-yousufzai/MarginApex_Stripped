@@ -221,7 +221,10 @@ export async function POST(
   ]);
 
   const { data: segSetting } = segSettingResult;
-  const exitBuffer = segSetting?.exit_buffer ?? 0.0017;
+  const rawExitBuffer = segSetting?.exit_buffer;
+  const exitBuffer = (rawExitBuffer !== undefined && rawExitBuffer !== null && !isNaN(Number(rawExitBuffer)))
+    ? (Number(rawExitBuffer) > 0.005 ? Number(rawExitBuffer) / 100 : Number(rawExitBuffer))
+    : 0.0017;
   const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
   const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 

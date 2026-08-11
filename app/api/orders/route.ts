@@ -803,10 +803,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
     fillPrice = client_price;
   } else {
-    const buyEntryBuffer = buySetting?.entry_buffer ?? 0.003;
-    const buyExitBuffer = buySetting?.exit_buffer ?? 0.0017;
-    const sellEntryBuffer = sellSetting?.entry_buffer ?? 0.003;
-    const sellExitBuffer = sellSetting?.exit_buffer ?? 0.0017;
+    const toDecimalBuffer = (val: any, fallback: number) => {
+      if (val === undefined || val === null || isNaN(Number(val))) return fallback;
+      const num = Number(val);
+      if (num === 0) return 0;
+      return num > 0.005 ? num / 100 : num;
+    };
+
+    const buyEntryBuffer = toDecimalBuffer(buySetting?.entry_buffer, 0.003);
+    const buyExitBuffer = toDecimalBuffer(buySetting?.exit_buffer, 0.0017);
+    const sellEntryBuffer = toDecimalBuffer(sellSetting?.entry_buffer, 0.003);
+    const sellExitBuffer = toDecimalBuffer(sellSetting?.exit_buffer, 0.0017);
 
     if (side === 'BUY') {
       if (is_exit) {
