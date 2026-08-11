@@ -1,4 +1,5 @@
 import { getAdminClient } from '@/lib/adminClient';
+import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { fetchBinanceQuote, fetchKiteQuotes, fetchSpeedQuotes } from '../datafeed/MarketDataService';
 import { calculateBufferedPrice } from './BufferCalculator';
 import { calculateSingleLegCharge } from './BrokerageCalculator';
@@ -565,6 +566,7 @@ export class TradeEngine {
     const isLimitType = ['LIMIT', 'SL', 'GTT'].includes(order_type);
     const executionBasePrice = isLimitType ? clientPriceNum : kiteLtp;
 
+    const exitPriceMode = (await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK')) as 'BID_ASK' | 'LTP';
     let fillPrice = calculateBufferedPrice({
       side,
       isExit: is_exit,
@@ -572,7 +574,7 @@ export class TradeEngine {
       buySetting,
       sellSetting,
       brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0,
-      exitPriceMode: (process.env.EXIT_PRICE_MODE as 'BID_ASK' | 'LTP' | undefined) ?? 'BID_ASK',
+      exitPriceMode,
     });
 
     fillPrice = Math.max(0.01, Math.round(fillPrice * 100) / 100);

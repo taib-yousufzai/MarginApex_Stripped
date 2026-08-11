@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
+import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { positionStore, parseOptionSymbol } from '../../../lib/positionStore';
 import type {
@@ -815,7 +816,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const sellEntryBuffer = toDecimalBuffer(sellSetting?.entry_buffer, 0.003);
     const sellExitBuffer = toDecimalBuffer(sellSetting?.exit_buffer, 0.0017);
 
-    const exitPriceMode = process.env.EXIT_PRICE_MODE || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK';
+    const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
+    const exitPriceMode = platformExitMode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK';
 
     if (side === 'BUY') {
       if (is_exit) {

@@ -1,22 +1,46 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Toast, ToastState } from '../AdminUtils';
 
 export default function SettingsApp() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [globalKillSwitch, setGlobalKillSwitch] = useState(false);
   const [allowNewRegistrations, setAllowNewRegistrations] = useState(true);
-  
+  const [exitPriceMode, setExitPriceMode] = useState<'BID_ASK' | 'LTP'>('BID_ASK');
+
   const [toast, setToast] = useState<ToastState>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/admin/platform-settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.settings?.EXIT_PRICE_MODE) {
+          setExitPriceMode(data.settings.EXIT_PRICE_MODE);
+        }
+      })
+      .catch(err => console.error('Failed to load platform settings', err))
+      .finally(() => setLoadingSettings(false));
+  }, []);
 
   const handleSave = async () => {
     setSaveLoading(true);
-    // TODO: Implement actual API call to save app settings
-    setTimeout(() => {
-      setToast({ message: 'App settings saved successfully', type: 'success' });
+    try {
+      const res = await fetch('/api/admin/platform-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ EXIT_PRICE_MODE: exitPriceMode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save settings');
+
+      setToast({ message: 'App & Exit Price settings saved successfully', type: 'success' });
+    } catch (err: any) {
+      setToast({ message: err.message || 'Error saving settings', type: 'error' });
+    } finally {
       setSaveLoading(false);
-    }, 800);
+    }
   };
 
   return (
@@ -31,6 +55,46 @@ export default function SettingsApp() {
       </div>
 
       <div className="adm-card" style={{ maxWidth: 600, padding: 24 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 24, color: '#e6edf3', fontSize: '16px', paddingBottom: 12, borderBottom: '1px solid #30363d' }}>
+          Execution & Exit Settings
+        </h3>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 32 }}>
+          {/* Position Exit Price Mode */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontWeight: 'bold', color: '#e6edf3', marginBottom: 4 }}>
+                Position Exit Price Benchmark
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '13px', maxWidth: '380px' }}>
+                Controls base benchmark for position exits:
+                <br />
+                • <strong>BID / ASK Spread</strong> (BUY exits at BID price, SELL exits at ASK price).
+                <br />
+                • <strong>LTP</strong> (Exits execute relative to raw LTP).
+              </div>
+            </div>
+            <select
+              value={exitPriceMode}
+              onChange={(e) => setExitPriceMode(e.target.value as 'BID_ASK' | 'LTP')}
+              disabled={loadingSettings}
+              style={{
+                backgroundColor: '#161b22',
+                color: '#e6edf3',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <option value="BID_ASK">BID / ASK Spread</option>
+              <option value="LTP">LTP (Raw Price)</option>
+            </select>
+          </div>
+        </div>
+
         <h3 style={{ marginTop: 0, marginBottom: 24, color: '#e6edf3', fontSize: '16px', paddingBottom: 12, borderBottom: '1px solid #30363d' }}>Global Toggles</h3>
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -87,7 +151,7 @@ export default function SettingsApp() {
           <button 
             className="adm-btn-primary" 
             onClick={handleSave} 
-            disabled={saveLoading}
+            disabled={saveLoading || loadingSettings}
           >
             {saveLoading ? 'Saving...' : 'Save App Settings'}
           </button>

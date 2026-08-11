@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
+import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import type { ClosePositionResponse } from '@/lib/types/order';
 
@@ -230,7 +231,8 @@ export async function POST(
 
   const baseLtp = kiteLtp ?? Number(pos.ltp ?? pos.entry_price);
 
-  const exitPriceMode = process.env.EXIT_PRICE_MODE || segSetting?.exit_price_mode || 'BID_ASK';
+  const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
+  const exitPriceMode = platformExitMode || segSetting?.exit_price_mode || 'BID_ASK';
 
   // Exit price calculation
   let exitPrice: number;
