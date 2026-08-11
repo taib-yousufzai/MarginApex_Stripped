@@ -13,7 +13,7 @@ export interface BinanceQuote {
 
 /**
  * Fetches Binance ticker data directly from Binance REST API
- * Updates every 3 seconds for crypto symbols
+ * Updates every 1 second for crypto symbols
  */
 export function useBinanceQuotes(symbols: string[]) {
   const [quotes, setQuotes] = useState<Record<string, BinanceQuote>>({});
@@ -91,10 +91,10 @@ export function useBinanceQuotes(symbols: string[]) {
     }
   }, [symbols]);
 
-  // Fetch on mount and every 3 seconds
+  // Fetch on mount and every 1 second
   useEffect(() => {
     fetchQuotes();
-    const interval = setInterval(fetchQuotes, 3000);
+    const interval = setInterval(fetchQuotes, 1000);
     return () => clearInterval(interval);
   }, [fetchQuotes]);
 
