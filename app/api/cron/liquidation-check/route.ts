@@ -21,11 +21,13 @@ import { calculateFloatingPnl } from '@/lib/floatingPnl';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } },
-);
+function getAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+}
 
 // ─── LTP fetcher (Ticker Daemon → Binance REST → Kite REST) ──────────────────
 
@@ -107,7 +109,7 @@ export async function GET(request: Request) {
 
   try {
     // 1. Fetch all open positions with user profile data in one query
-    const { data: positions, error: posErr } = await admin
+    const { data: positions, error: posErr } = await getAdmin()
       .from('positions')
       .select('id, user_id, symbol, side, qty_open, entry_price, ltp, settlement, product_type')
       .eq('status', 'open')
@@ -123,11 +125,11 @@ export async function GET(request: Request) {
 
     // 3. Batch fetch all profiles + segment settings for those users
     const [profilesRes, segSettingsRes] = await Promise.all([
-      admin
+      getAdmin()
         .from('profiles')
         .select('id, balance, auto_sqoff, trading_mode, parent_id')
         .in('id', userIds),
-      admin
+      getAdmin()
         .from('segment_settings')
         .select('user_id, segment, side, exit_buffer, bid_buffer, carry_commission_type, carry_commission_value, commission_type, commission_value')
         .in('user_id', userIds),
@@ -228,7 +230,7 @@ export async function GET(request: Request) {
         positionsWithLtp,
         totalFloatingPnl,
         exitBuffers,
-        admin,
+        getAdmin(),
       );
 
       if (result.liquidated) liquidated++;
