@@ -863,7 +863,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       p_fill_price:   fillPrice,
       p_is_exit:      is_exit ?? false,
       p_buffer_fee:   0,
-      p_status:       'EXECUTED',
+      p_status:       isImmediate ? 'EXECUTED' : 'PENDING',
       p_trigger_price: resolvedTriggerPrice,
       p_stop_loss:    resolvedStopLoss,
       p_target:       target ? parseFloat(target.toString()) : null,

@@ -90,6 +90,24 @@ async function fetchKiteLtp(instrument: string): Promise<number | null> {
   }
 }
 
+async function fetchBinanceQuote(symbol: string): Promise<number | null> {
+  try {
+    let cleanSym = symbol.replace('/', '').toUpperCase();
+    if (!cleanSym.endsWith('USDT')) {
+      cleanSym = cleanSym + 'USDT';
+    }
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, {
+      cache: 'no-store'
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.price ? parseFloat(data.price) : null;
+  } catch (err) {
+    console.error('[fetchBinanceQuote] Error:', err);
+    return null;
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -182,8 +200,12 @@ export async function POST(
       .maybeSingle(),
     (() => {
       if (!pos.symbol) return Promise.resolve(null);
+      const isCrypto = (pos.settlement || '').toUpperCase().includes('CRYPTO');
+      if (isCrypto) {
+        return fetchBinanceQuote(pos.symbol);
+      }
       let fullSymbol = pos.symbol;
-      if (!pos.symbol.includes(':') && pos.settlement !== 'CRYPTO') {
+      if (!pos.symbol.includes(':')) {
         let exchange = 'NSE';
         if (pos.settlement) {
           const s = pos.settlement.toUpperCase();
