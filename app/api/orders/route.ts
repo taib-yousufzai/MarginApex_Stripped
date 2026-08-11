@@ -810,19 +810,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (side === 'BUY') {
       if (is_exit) {
-        // Exiting SELL/Short (Buying back) executes at: Ask * (1 + exitBuffer) of SELL side settings
-        fillPrice = (baseLtp * 1.001) * (1 + sellExitBuffer);
+        // Exiting SELL/Short (Buying back) executes at: BID * (1 + exitBuffer) of SELL side settings
+        fillPrice = (baseLtp * 0.999) * (1 + sellExitBuffer);
       } else {
-        // Long Entry (Buying) executes at: Ask * (1 + entryBuffer) of BUY side settings
-        fillPrice = (baseLtp * 1.001) * (1 + buyEntryBuffer);
+        // Long Entry (Buying) executes at: BID * (1 + entryBuffer) of BUY side settings
+        fillPrice = (baseLtp * 0.999) * (1 + buyEntryBuffer);
       }
     } else {
       if (is_exit) {
-        // Exiting BUY/Long (Selling to close) executes at: Bid * (1 - exitBuffer) of BUY side settings
-        fillPrice = (baseLtp * 0.999) * (1 - buyExitBuffer);
+        // Exiting BUY/Long (Selling to close) executes at: ASK * (1 - exitBuffer) of BUY side settings
+        fillPrice = (baseLtp * 1.001) * (1 - buyExitBuffer);
       } else {
-        // Short Entry (Selling) executes at: Bid * (1 - entryBuffer) of SELL side settings
-        fillPrice = (baseLtp * 0.999) * (1 - sellEntryBuffer);
+        // Short Entry (Selling) executes at: ASK * (1 - entryBuffer) of SELL side settings
+        fillPrice = (baseLtp * 1.001) * (1 - sellEntryBuffer);
       }
     }
   }

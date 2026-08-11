@@ -51,21 +51,21 @@ export function calculateBufferedPrice({
 
   if (side === 'BUY') {
     if (isExit) {
-      // Exiting a short (buying back) — executes at ask + exit buffer (SELL side settings)
-      bufferedPrice = (basePrice * 1.001) * (1 + sellExitBuffer);
+      // Exiting a short (buying back) — executes at BID + exit buffer (SELL side settings)
+      bufferedPrice = (basePrice * 0.999) * (1 + sellExitBuffer);
     } else {
-      // Long entry — fills at LTP + entry buffer
-      bufferedPrice = basePrice * (1 + buyEntryBuffer);
+      // Long entry — fills at BID + entry buffer (BUY side settings)
+      bufferedPrice = (basePrice * 0.999) * (1 + buyEntryBuffer);
     }
     bufferedPrice += brokeragePerUnit;
   } else {
     // side === 'SELL'
     if (isExit) {
-      // Exiting a long (selling) — executes at bid - exit buffer (BUY side settings)
-      bufferedPrice = (basePrice * 0.999) * (1 - buyExitBuffer);
+      // Exiting a long (selling) — executes at ASK - exit buffer (BUY side settings)
+      bufferedPrice = (basePrice * 1.001) * (1 - buyExitBuffer);
     } else {
-      // Short entry — executes at bid - entry buffer (SELL side settings)
-      bufferedPrice = (basePrice * 0.999) * (1 - sellEntryBuffer);
+      // Short entry — executes at ASK - entry buffer (SELL side settings)
+      bufferedPrice = (basePrice * 1.001) * (1 - sellEntryBuffer);
     }
     bufferedPrice -= brokeragePerUnit;
   }
