@@ -21,6 +21,7 @@ export type SegmentSettingsType = {
   topLimit: string;
   minLimit: string;
   useCustomCalc: boolean;
+  exitPriceMode: 'BID_ASK' | 'LTP';
 };
 
 export interface SegmentRow {
@@ -48,6 +49,7 @@ export interface SegmentRow {
   trade_allowed: boolean;
   top_limit: number;
   min_limit: number;
+  exit_price_mode?: 'BID_ASK' | 'LTP';
 }
 
 const defaultSeg = (): SegmentSettingsType => ({
@@ -62,7 +64,8 @@ const defaultSeg = (): SegmentSettingsType => ({
   entryBuffer: '0', exitBuffer: '0',
   bidBuffer: '0', tradeAllowed: true,
   topLimit: '0', minLimit: '0',
-  useCustomCalc: false
+  useCustomCalc: false,
+  exitPriceMode: 'BID_ASK'
 });
 
 function SegmentBlock({ 
@@ -331,6 +334,25 @@ function SegmentBlock({
               </span>
             </div>
           </div>
+
+          {/* Row 10: Price Execution Mode (BID_ASK vs LTP) */}
+          <div className="adm-upd-grid2" style={{ marginTop: '12px' }}>
+            <div className="adm-upd-field">
+              <label className="adm-upd-label">Execution Price Mode</label>
+              <select 
+                className="adm-upd-input adm-upd-select" 
+                value={value.exitPriceMode ?? 'BID_ASK'} 
+                onChange={e => upd('exitPriceMode', e.target.value)}
+              >
+                <option value="BID_ASK">BID / ASK Spread</option>
+                <option value="LTP">LTP (Raw Price)</option>
+              </select>
+              <span style={{ fontSize: '10px', color: '#8b949e', marginTop: '4px', display: 'block', lineHeight: '1.4' }}>
+                BID_ASK: Entries & Exits use BID/ASK spread multipliers.<br />
+                LTP: Purchases & Exits execute relative to raw LTP.
+              </span>
+            </div>
+          </div>
         </>
       )}
     </div>
@@ -373,6 +395,7 @@ export default function UpdateSegments({ selectedUser }: { selectedUser: { id: s
     topLimit: String(row.top_limit ?? 0),
     minLimit: String(row.min_limit ?? 0),
     useCustomCalc: row.use_custom_calc ?? false,
+    exitPriceMode: row.exit_price_mode ?? 'BID_ASK',
   });
 
   useEffect(() => {
@@ -467,6 +490,7 @@ export default function UpdateSegments({ selectedUser }: { selectedUser: { id: s
         trade_allowed: s.tradeAllowed,
         top_limit: Number(s.topLimit ?? 0),
         min_limit: Number(s.minLimit ?? 0),
+        exit_price_mode: s.exitPriceMode ?? 'BID_ASK',
       };
     });
     
@@ -519,6 +543,7 @@ export default function UpdateSegments({ selectedUser }: { selectedUser: { id: s
         top_limit: Number(s.topLimit ?? 0),
         min_limit: Number(s.minLimit ?? 0),
         use_custom_calc: s.useCustomCalc,
+        exit_price_mode: s.exitPriceMode ?? 'BID_ASK',
       };
     });
     
