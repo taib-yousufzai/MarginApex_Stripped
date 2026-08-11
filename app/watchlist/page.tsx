@@ -512,16 +512,6 @@ function WatchlistContent() {
   const { placeOrder, loading: placingOrder, error: placeOrderError } = useOrderEntry();
   const { positions: activePositions } = useActivePositions();
 
-  // Fetch Binance quotes directly for crypto symbols
-  const cryptoSymbols = useMemo(() => {
-    return watchlistItems
-      .filter(item => item.binanceSymbol && item.category === 'CRYPTO')
-      .map(item => item.binanceSymbol!)
-      .filter((v, i, a) => a.indexOf(v) === i); // unique
-  }, [watchlistItems]);
-
-  const { quotes: binanceQuotes, loading: binanceLoading } = useBinanceQuotes(cryptoSymbols);
-
   // Reset body overflow when this page unmounts (prevents scroll lock on other pages)
   useEffect(() => {
     return () => {
@@ -544,6 +534,16 @@ function WatchlistContent() {
   const [userId, setUserId] = useState<string>('');
   const [tradingHours, setTradingHours] = useState<any[]>([]);
   const [errorModalMsg, setErrorModalMsg] = useState<string | null>(null);
+
+  // Fetch Binance quotes directly for crypto symbols
+  const cryptoSymbols = useMemo(() => {
+    return watchlistItems
+      .filter(item => item.binanceSymbol && item.category === 'CRYPTO')
+      .map(item => item.binanceSymbol!)
+      .filter((v, i, a) => a.indexOf(v) === i); // unique
+  }, [watchlistItems]);
+
+  const { quotes: binanceQuotes, loading: binanceLoading } = useBinanceQuotes(cryptoSymbols);
 
   // order_error is now handled centrally in ClientShell — no local listener needed.
 
