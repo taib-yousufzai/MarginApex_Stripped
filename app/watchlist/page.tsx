@@ -545,6 +545,11 @@ function WatchlistContent() {
 
   const { quotes: binanceQuotes, loading: binanceLoading } = useBinanceQuotes(cryptoSymbols);
 
+  // Expose binanceQuotes to window for inline script access
+  useEffect(() => {
+    (window as any).__binanceQuotes = binanceQuotes;
+  }, [binanceQuotes]);
+
   // order_error is now handled centrally in ClientShell — no local listener needed.
 
   const isMarketOpen = (item: WatchlistItem) => {
