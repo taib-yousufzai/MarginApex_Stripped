@@ -21,6 +21,9 @@
 .kiro
 .kimi
 .agent
+.claude
+.codex
+.github
 
 # production
 /build
