@@ -4,9 +4,10 @@ import { DbBatchWriter } from './dbWriter.ts';
 import type { TickData } from './dbWriter.ts';
 import { getAdminClient } from '../../lib/adminClient.ts';
 
-const BINANCE_WS_URL =
-  'wss://stream.binance.com:9443/stream?streams=' +
-  'btcusdt@ticker/ethusdt@ticker/bnbusdt@ticker/solusdt@ticker/xrpusdt@ticker/dogeusdt@ticker/adausdt@ticker/maticusdt@ticker';
+// Default symbols — will be expanded with dynamic subscriptions from frontend requests
+const DEFAULT_BINANCE_SYMBOLS = [
+  'btcusdt', 'ethusdt', 'bnbusdt', 'solusdt', 'xrpusdt', 'dogeusdt', 'adausdt', 'maticusdt'
+];
 
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds — detect stale connections
 const STABLE_CONNECTION_MS  = 60_000; // Reset attempt counter after 60s stable
@@ -55,6 +56,7 @@ export class BinanceTicker {
   private attempt = 0;
   private stopping = false;
   private isConnected = false;
+  private activeSymbols: Set<string> = new Set(DEFAULT_BINANCE_SYMBOLS);
 
   constructor(dbWriter: DbBatchWriter) {
     this.dbWriter = dbWriter;
@@ -77,9 +79,25 @@ export class BinanceTicker {
     return this.isConnected;
   }
 
+  /**
+   * Add symbols to the active subscription list and reconnect if needed
+   */
+  public subscribe(symbols: string[]): void {
+    const newSymbols = symbols.filter(s => !this.activeSymbols.has(s.toLowerCase()));
+    if (newSymbols.length > 0) {
+      newSymbols.forEach(s => this.activeSymbols.add(s.toLowerCase()));
+      logger.info({ newSymbols }, 'Added crypto symbols to subscription list');
+      // Reconnect to update the stream
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.reconnectSubscriptions();
+      }
+    }
+  }
+
   private async ensureInstrumentsExist(): Promise<void> {
     const admin = getAdminClient();
-    const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'MATICUSDT', 'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'MATIC'];
+    // Comprehensive list of common crypto symbols
+    const symbols = Array.from(this.activeSymbols).map(s => s.toUpperCase().replace('USDT', ''));
     const rows = symbols.map(sym => ({
       id: sym,
       instrument_token: 0,
@@ -97,7 +115,7 @@ export class BinanceTicker {
       if (error) {
         logger.error({ error }, 'Failed to upsert crypto instruments');
       } else {
-        logger.info('Ensured crypto instruments exist in instruments table');
+        logger.info({ count: rows.length }, 'Ensured crypto instruments exist');
       }
     } catch (err) {
       logger.error({ err }, 'Error checking/upserting crypto instruments');
@@ -120,27 +138,44 @@ export class BinanceTicker {
     if (this.stableTimer)    { clearTimeout(this.stableTimer);     this.stableTimer    = null; }
   }
 
+  private buildStreamUrl(): string {
+    const streams = Array.from(this.activeSymbols)
+      .map(s => `${s.toLowerCase()}@ticker`)
+      .join('/');
+    return `wss://stream.binance.com:9443/stream?streams=${streams}`;
+  }
+
+  private reconnectSubscriptions(): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close();
+      this.ws = null;
+      this.clearTimers();
+      // Reconnect with new subscription list
+      setTimeout(() => this.connect(), 500);
+    }
+  }
+
   private connect(): void {
-    this.ws = new WebSocket(BINANCE_WS_URL);
+    const url = this.buildStreamUrl();
+    logger.info({ url: url.substring(0, 100) + '...' }, 'Connecting to Binance WebSocket');
+    this.ws = new WebSocket(url);
 
     this.ws.on('open', () => {
       this.isConnected = true;
-      logger.info('Connected to Binance WebSocket');
+      logger.info({ symbolCount: this.activeSymbols.size }, 'Connected to Binance WebSocket');
 
       // Reset attempt counter after a stable 60-second connection.
-      // Prevents slow reconnects after the connection has been healthy for a while.
       this.stableTimer = setTimeout(() => {
         this.attempt = 0;
         logger.debug('Binance connection stable — reset reconnect attempt counter');
       }, STABLE_CONNECTION_MS);
 
-      // Heartbeat: send a ping every 30s. If the server doesn't pong back
-      // before the next ping, the connection is considered dead and terminated.
+      // Heartbeat: send a ping every 30s
       let pongReceived = true;
       this.heartbeatTimer = setInterval(() => {
         if (!pongReceived) {
           logger.warn('Binance WebSocket missed pong — terminating stale connection');
-          this.ws?.terminate(); // triggers 'close', which schedules reconnect
+          this.ws?.terminate();
           return;
         }
         pongReceived = false;
@@ -185,10 +220,10 @@ export class BinanceTicker {
       const result = parseBinanceTicker(raw);
       if (result === null) return;
 
-      // Upsert standard symbol (e.g. SOLUSDT)
+      // Upsert standard symbol (e.g. ETHUSDT)
       this.dbWriter.addTick(result.symbol, result.tickData);
 
-      // Also upsert short symbol (e.g. SOL) so orders using abbreviated symbols match
+      // Also upsert short symbol (e.g. ETH) so orders using abbreviated symbols match
       const shortSymbol = result.symbol.replace('USDT', '');
       this.dbWriter.addTick(shortSymbol, result.tickData);
     } catch (err) {
