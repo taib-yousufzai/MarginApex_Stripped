@@ -8,13 +8,21 @@
  *   - positions/[id]/close  (user-initiated close)
  *
  * Buffer convention:
- *   exit_buffer is stored in the DB in decimal form (e.g. 0.0017 = 0.17%).
- *   Pass the raw DB value here — this module uses it directly.
+ *   exit_buffer in DB is stored as a percentage (e.g. 0.17 = 0.17%, 0.02 = 0.02%).
+ *   This module converts it to decimal form via toDecimalBuffer before applying.
  *
- *   bid_buffer is used for BUY-side liquidation closes (forced exits on longs
- *   use the bid price, which is slightly below LTP). Defaults to exit_buffer
- *   when not provided.
+ * Exit price rules:
+ *   - BUY position exit  (selling to close) → BID price (ltp * 0.999) - exitBuffer
+ *   - SELL position exit (buying back)      → ASK price (ltp * 1.001) + exitBuffer
  */
+
+/** Convert a DB percentage buffer to its decimal multiplier form */
+function toDecimalBuffer(val: number | undefined | null, fallback: number): number {
+  if (val === undefined || val === null || isNaN(Number(val))) return fallback;
+  const num = Number(val);
+  if (num === 0) return 0;
+  return num > 0.005 ? num / 100 : num;
+}
 
 export interface FloatingPnlParams {
   side: string;
@@ -77,8 +85,8 @@ export function calculateFreeMarginFromPositions(
  * engine sees — i.e. "what would this position settle for right now".
  * This matches the formula used in positions/[id]/close and PositionsContext.
  *
- * BUY:  ((ltp × 0.999) × (1 - exitBuffer) − entryPrice) × qty
- * SELL: (entryPrice − (ltp × 1.001) × (1 + exitBuffer)) × qty
+ * BUY:  ((ltp × 0.999) × (1 - exitBuffer) − entryPrice) × qty   [closing long → BID]
+ * SELL: (entryPrice − (ltp × 1.001) × (1 + exitBuffer)) × qty   [closing short → ASK]
  */
 export function calculateFloatingPnl({
   side,
@@ -87,10 +95,12 @@ export function calculateFloatingPnl({
   qty,
   exitBufferPct,
 }: FloatingPnlParams): number {
-  const exitBuffer = exitBufferPct;  // DB stores in decimal form, use directly
+  const exitBuffer = toDecimalBuffer(exitBufferPct, 0.0017);
   if (side === 'BUY') {
+    // Closing BUY position = SELLING → BID price (0.999) - exitBuffer
     return ((ltp * 0.999) * (1 - exitBuffer) - entryPrice) * qty;
   }
+  // Closing SELL position = BUYING BACK → ASK price (1.001) + exitBuffer
   return (entryPrice - (ltp * 1.001) * (1 + exitBuffer)) * qty;
 }
 
@@ -117,9 +127,11 @@ export function calculateExitPrice({
 ): number {
   const factor = Math.pow(10, precision);
   if (side === 'BUY') {
-    const bidBuffer = bidBufferPct ?? exitBufferPct;  // DB stores in decimal form, use directly
+    // Closing BUY position = SELLING → BID (0.999) - buffer
+    const bidBuffer = toDecimalBuffer(bidBufferPct ?? exitBufferPct, 0.0017);
     return Math.round(ltp * 0.999 * (1 - bidBuffer) * factor) / factor;
   }
-  const exitBuffer = exitBufferPct;  // DB stores in decimal form, use directly
+  // Closing SELL position = BUYING BACK → ASK (1.001) + buffer
+  const exitBuffer = toDecimalBuffer(exitBufferPct, 0.0017);
   return Math.round(ltp * 1.001 * (1 + exitBuffer) * factor) / factor;
 }

@@ -50,14 +50,20 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
       .select('user_id, segment, side, entry_buffer, exit_buffer')
       .in('user_id', userIds);
 
+    const toDb = (val: any, fallback: number) => {
+      const num = Number(val);
+      if (!val || isNaN(num)) return fallback;
+      return num > 0.005 ? num / 100 : num;
+    };
+
     if (segSettingsErr) {
       console.error('[Order Matching] Error pre-fetching segment settings:', segSettingsErr);
     } else if (allSegSettings) {
       for (const s of allSegSettings) {
         const key = `${s.user_id}|${s.segment}|${s.side}`;
         segmentSettingsCache.set(key, {
-          entry_buffer: Number(s.entry_buffer ?? 0.003),
-          exit_buffer: Number(s.exit_buffer ?? 0.0017)
+          entry_buffer: toDb(s.entry_buffer, 0.003),
+          exit_buffer: toDb(s.exit_buffer, 0.0017)
         });
       }
     }
@@ -311,8 +317,10 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         const qty = Number(pos.qty_open ?? 0);
         const buyExitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
         const sellExitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
-        const pnl = pos.side === 'BUY' 
-          ? (((ltp * 0.999) * (1 - buyExitBuffer)) - entryPrice) * qty 
+        const pnl = pos.side === 'BUY'
+          // Closing BUY (selling) → BID (0.999) - exitBuffer
+          ? (((ltp * 0.999) * (1 - buyExitBuffer)) - entryPrice) * qty
+          // Closing SELL (buying back) → ASK (1.001) + exitBuffer
           : (entryPrice - ((ltp * 1.001) * (1 + sellExitBuffer))) * qty;
 
         totalUnrealised += pnl;
@@ -335,11 +343,11 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
           // Calculate exit price
           let exitPrice = ltp;
           if (pos.side === 'BUY') {
-            // Exiting BUY (Selling) -> executes at Bid Price minus exit buffer
+            // Closing BUY (selling) → BID (0.999) - exitBuffer
             const exitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
             exitPrice = (ltp * 0.999) * (1 - exitBuffer);
           } else {
-            // Exiting SELL (Buying) -> executes at Ask Price = Ask * (1 + exitBuffer)
+            // Closing SELL (buying back) → ASK (1.001) + exitBuffer
             const exitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
             exitPrice = (ltp * 1.001) * (1 + exitBuffer);
           }
@@ -423,8 +431,10 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         let exitPrice = ltp;
         const exitBuffer = segmentSettingsCache.get(`${pos.user_id}|${pos.settlement}|${pos.side}`)?.exit_buffer ?? 0.0017;
         if (pos.side === 'BUY') {
+          // Closing BUY (selling) → BID (0.999) - exitBuffer
           exitPrice = (ltp * 0.999) * (1 - exitBuffer);
         } else {
+          // Closing SELL (buying back) → ASK (1.001) + exitBuffer
           exitPrice = (ltp * 1.001) * (1 + exitBuffer);
         }
         exitPrice = Math.round(exitPrice * 10000) / 10000;

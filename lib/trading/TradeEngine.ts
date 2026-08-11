@@ -571,7 +571,8 @@ export class TradeEngine {
       basePrice: executionBasePrice,
       buySetting,
       sellSetting,
-      brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0
+      brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0,
+      exitPriceMode: (process.env.EXIT_PRICE_MODE as 'BID_ASK' | 'LTP' | undefined) ?? 'BID_ASK',
     });
 
     fillPrice = Math.max(0.01, Math.round(fillPrice * 100) / 100);
