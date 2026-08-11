@@ -17,6 +17,7 @@ export type SegmentSettingsType = {
   topLimit: string; minLimit: string;
   useCustomCalc: boolean;
   bidBuffer: string;
+  exitPriceMode: 'BID_ASK' | 'LTP';
 };
 
 export interface SegmentRow {
@@ -44,6 +45,7 @@ export interface SegmentRow {
   top_limit: number;
   min_limit: number;
   use_custom_calc?: boolean;
+  exit_price_mode?: 'BID_ASK' | 'LTP';
 }
 
 export const defaultSeg = (isScalper = false): SegmentSettingsType => ({
@@ -60,6 +62,7 @@ export const defaultSeg = (isScalper = false): SegmentSettingsType => ({
   exitBuffer: '0', tradeAllowed: true,
   topLimit: '0', minLimit: '0',
   useCustomCalc: false,
+  exitPriceMode: 'BID_ASK',
 });
 
 // ─── SegmentBlock ─────────────────────────────────────────────────────────────
@@ -257,6 +260,24 @@ export function SegmentBlock({
             <div className="adm-upd-field">
               <label className="adm-upd-label">Exit Buffer (%)</label>
               <input className="adm-upd-input" type="number" step="0.001" value={value.exitBuffer} onChange={e => upd('exitBuffer', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="adm-upd-grid2" style={{ marginTop: 12 }}>
+            <div className="adm-upd-field">
+              <label className="adm-upd-label">Execution Price Mode</label>
+              <select
+                className="adm-upd-input adm-upd-select"
+                value={value.exitPriceMode ?? 'BID_ASK'}
+                onChange={e => upd('exitPriceMode', e.target.value as 'BID_ASK' | 'LTP')}
+              >
+                <option value="BID_ASK">BID / ASK Spread</option>
+                <option value="LTP">LTP (Raw Price)</option>
+              </select>
+              <span style={{ fontSize: '10px', color: '#8b949e', marginTop: '4px', display: 'block', lineHeight: '1.4' }}>
+                BID_ASK: Entries & Exits use BID/ASK spread multipliers.<br />
+                LTP: Purchases & Exits execute relative to raw LTP.
+              </span>
             </div>
           </div>
 

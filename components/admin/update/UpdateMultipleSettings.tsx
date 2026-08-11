@@ -218,6 +218,20 @@ export default function UpdateMultipleSettings({ selectedUser: _selectedUser }: 
             </div>
           </div>
         </div>
+
+        <div className="adm-upd-grid2" style={{ marginTop: 12 }}>
+          <div className="adm-upd-field">
+            <label className="adm-upd-label">Execution Price Mode</label>
+            <select
+              className="adm-upd-input adm-upd-select"
+              value={config.exitPriceMode ?? 'BID_ASK'}
+              onChange={e => upd('exitPriceMode', e.target.value as 'BID_ASK' | 'LTP')}
+            >
+              <option value="BID_ASK">BID / ASK Spread</option>
+              <option value="LTP">LTP (Raw Price)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <button 

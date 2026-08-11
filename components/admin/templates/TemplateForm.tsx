@@ -68,6 +68,7 @@ export default function TemplateForm({ template, onBack, onSaved, isDemoMode, is
     topLimit: String(row.top_limit ?? 0),
     minLimit: String(row.min_limit ?? 0),
     useCustomCalc: row.use_custom_calc ?? false,
+    exitPriceMode: row.exit_price_mode ?? 'BID_ASK',
   });
 
   const loadSegments = useCallback(async () => {
@@ -129,6 +130,7 @@ export default function TemplateForm({ template, onBack, onSaved, isDemoMode, is
         top_limit: Number(s.topLimit ?? 0),
         min_limit: Number(s.minLimit ?? 0),
         use_custom_calc: s.useCustomCalc,
+        exit_price_mode: s.exitPriceMode ?? 'BID_ASK',
       };
     });
   };
