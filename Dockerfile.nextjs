@@ -2,9 +2,9 @@ FROM node:20-alpine AS base
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (devDeps are required for `next build` to compile TypeScript)
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy full source
 COPY . .
