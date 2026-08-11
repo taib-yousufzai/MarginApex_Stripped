@@ -36,8 +36,6 @@ export async function GET(request: NextRequest) {
         data.forEach((item: any) => {
           if (item && item.symbol) {
             const lp = parseFloat(item.lastPrice || '0');
-            const b = parseFloat(item.bidPrice || '0') || (lp * 0.9995);
-            const a = parseFloat(item.askPrice || '0') || (lp * 1.0005);
             const quote = {
               symbol: item.symbol,
               lastPrice: lp,
@@ -47,8 +45,8 @@ export async function GET(request: NextRequest) {
               lowPrice: parseFloat(item.lowPrice || '0'),
               volume: parseFloat(item.volume || '0'),
               time: item.closeTime || Date.now(),
-              bid: b,
-              ask: a,
+              bid: lp * 0.9995,
+              ask: lp * 1.0005,
             };
             quotes[item.symbol] = quote;
             const shortSymbol = item.symbol.replace('USDT', '');
