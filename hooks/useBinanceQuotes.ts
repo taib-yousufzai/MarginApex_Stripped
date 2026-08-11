@@ -1,43 +1,102 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useGlobalBinanceQuotes, BinanceQuoteData } from '@/contexts/BinanceDataContext';
+import { useState, useEffect, useCallback } from 'react';
 
-interface UseBinanceQuotesResult {
-  quotes: Record<string, BinanceQuoteData>;
-  loading: boolean;
-  error: string | null;
-  refresh: () => void;
+export interface BinanceQuote {
+  symbol: string;
+  lastPrice: number;
+  close: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  timestamp: number;
 }
 
-export function useBinanceQuotes(
-  symbols: string[],
-  refreshInterval = 5000,
-): UseBinanceQuotesResult {
-  const { quotes, subscribe, unsubscribe } = useGlobalBinanceQuotes();
-  const symbolsKey = symbols.join(',');
+/**
+ * Fetches Binance ticker data directly from Binance REST API
+ * Updates every 3 seconds for crypto symbols
+ */
+export function useBinanceQuotes(symbols: string[]) {
+  const [quotes, setQuotes] = useState<Record<string, BinanceQuote>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const currentSymbols = symbolsKey.split(',').filter(Boolean);
-    if (currentSymbols.length === 0) {
+  const fetchQuotes = useCallback(async () => {
+    if (symbols.length === 0) {
+      setQuotes({});
       setLoading(false);
       return;
     }
 
-    subscribe(currentSymbols);
-    setLoading(false); // No longer loading since context manages it
-    
-    return () => {
-      unsubscribe(currentSymbols);
-    };
-  }, [symbolsKey, subscribe, unsubscribe]);
+    try {
+      setLoading(true);
+      setError(null);
 
-  const localQuotes = useMemo(() => {
-    const res: Record<string, BinanceQuoteData> = {};
-    symbols.forEach(s => {
-      if (quotes[s]) res[s] = quotes[s];
-    });
-    return res;
-  }, [quotes, symbolsKey]);
+      // Build query with all symbols
+      const symbolList = symbols
+        .filter(s => s && !s.includes(':')) // Only Binance symbols (not Kite format)
+        .map(s => {
+          // Ensure symbol ends with USDT
+          const sym = s.toUpperCase();
+          return sym.endsWith('USDT') ? sym : `${sym}USDT`;
+        });
 
-  return { quotes: localQuotes, loading, error: null, refresh: () => {} };
+      if (symbolList.length === 0) {
+        setQuotes({});
+        setLoading(false);
+        return;
+      }
+
+      // Fetch from Binance API
+      const promises = symbolList.map(sym =>
+        fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.code) throw new Error(data.msg);
+            return {
+              symbol: sym,
+              lastPrice: parseFloat(data.lastPrice),
+              close: parseFloat(data.prevClosePrice),
+              open: parseFloat(data.openPrice),
+              high: parseFloat(data.highPrice),
+              low: parseFloat(data.lowPrice),
+              volume: parseFloat(data.volume),
+              timestamp: data.time,
+            } as BinanceQuote;
+          })
+          .catch(err => {
+            console.warn(`Failed to fetch ${sym}:`, err);
+            return null;
+          })
+      );
+
+      const results = await Promise.all(promises);
+      const quotesMap: Record<string, BinanceQuote> = {};
+
+      results.forEach(quote => {
+        if (quote) {
+          // Store by full symbol (e.g., BTCUSDT)
+          quotesMap[quote.symbol] = quote;
+          // Also store by short symbol (e.g., BTC)
+          const shortSymbol = quote.symbol.replace('USDT', '');
+          quotesMap[shortSymbol] = quote;
+        }
+      });
+
+      setQuotes(quotesMap);
+      setLoading(false);
+    } catch (err) {
+      console.error('Failed to fetch Binance quotes:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch quotes');
+      setLoading(false);
+    }
+  }, [symbols]);
+
+  // Fetch on mount and every 3 seconds
+  useEffect(() => {
+    fetchQuotes();
+    const interval = setInterval(fetchQuotes, 3000);
+    return () => clearInterval(interval);
+  }, [fetchQuotes]);
+
+  return { quotes, loading, error };
 }

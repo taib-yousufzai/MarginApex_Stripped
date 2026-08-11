@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useMarketQuotes, QuoteData } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
+import { useBinanceQuotes, BinanceQuote } from '@/hooks/useBinanceQuotes';
 import { ComexQuoteData } from '@/contexts/ComexDataContext';
 import { useOrderEntry, OrderSide, OrderType, ProductType } from '@/hooks/useOrderEntry';
 import { useActivePositions } from '@/hooks/useActivePositions';
@@ -510,6 +511,16 @@ function WatchlistContent() {
   useAuth();
   const { placeOrder, loading: placingOrder, error: placeOrderError } = useOrderEntry();
   const { positions: activePositions } = useActivePositions();
+
+  // Fetch Binance quotes directly for crypto symbols
+  const cryptoSymbols = useMemo(() => {
+    return watchlistItems
+      .filter(item => item.binanceSymbol && item.category === 'CRYPTO')
+      .map(item => item.binanceSymbol!)
+      .filter((v, i, a) => a.indexOf(v) === i); // unique
+  }, [watchlistItems]);
+
+  const { quotes: binanceQuotes, loading: binanceLoading } = useBinanceQuotes(cryptoSymbols);
 
   // Reset body overflow when this page unmounts (prevents scroll lock on other pages)
   useEffect(() => {
