@@ -373,13 +373,17 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           ? (Number(rawExitBuf) > 0.005 ? Number(rawExitBuf) / 100 : Number(rawExitBuf))
           : 0.0017;
 
+        const exitPriceMode = process.env.NEXT_PUBLIC_EXIT_PRICE_MODE || sideSetting?.exit_price_mode || 'BID_ASK';
+
         if (p.side === 'BUY') {
-          // BUY position — exiting means SELLING at ASK * (1 - exitBuffer)
-          const exitPrice = Math.round((ltp * 1.001) * (1 - exitBuffer) * 100) / 100;
+          // Closing BUY position = SELLING -> BID (0.999) OR LTP (1.000) - exitBuffer
+          const base = exitPriceMode === 'LTP' ? ltp : (ltp * 0.999);
+          const exitPrice = Math.round(base * (1 - exitBuffer) * 100) / 100;
           unrealised = (exitPrice - avgPrice) * p.qty_open;
         } else {
-          // SELL position — exiting means BUYING back at BID * (1 + exitBuffer)
-          const exitPrice = Math.round((ltp * 0.999) * (1 + exitBuffer) * 100) / 100;
+          // Closing SELL position = BUYING BACK -> ASK (1.001) OR LTP (1.000) + exitBuffer
+          const base = exitPriceMode === 'LTP' ? ltp : (ltp * 1.001);
+          const exitPrice = Math.round(base * (1 + exitBuffer) * 100) / 100;
           unrealised = (avgPrice - exitPrice) * p.qty_open;
         }
       }

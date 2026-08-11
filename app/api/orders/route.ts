@@ -815,21 +815,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const sellEntryBuffer = toDecimalBuffer(sellSetting?.entry_buffer, 0.003);
     const sellExitBuffer = toDecimalBuffer(sellSetting?.exit_buffer, 0.0017);
 
+    const exitPriceMode = process.env.EXIT_PRICE_MODE || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK';
+
     if (side === 'BUY') {
       if (is_exit) {
-        // Exiting SELL/Short (Buying back) executes at: BID * (1 + exitBuffer) of SELL side settings
-        fillPrice = (baseLtp * 0.999) * (1 + sellExitBuffer);
+        // Exiting SELL/Short (Buying back to close)
+        // Configurable: ASK (1.001) OR LTP (1.000)
+        const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 1.001);
+        fillPrice = base * (1 + sellExitBuffer);
       } else {
-        // Long Entry (Buying) executes at: BID * (1 + entryBuffer) of BUY side settings
-        fillPrice = (baseLtp * 0.999) * (1 + buyEntryBuffer);
+        // Fresh Long Entry (Buying) executes at ASK (1.001) + entryBuffer
+        fillPrice = (baseLtp * 1.001) * (1 + buyEntryBuffer);
       }
     } else {
       if (is_exit) {
-        // Exiting BUY/Long (Selling to close) executes at: ASK * (1 - exitBuffer) of BUY side settings
-        fillPrice = (baseLtp * 1.001) * (1 - buyExitBuffer);
+        // Exiting BUY/Long (Selling to close)
+        // Configurable: BID (0.999) OR LTP (1.000)
+        const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 0.999);
+        fillPrice = base * (1 - buyExitBuffer);
       } else {
-        // Short Entry (Selling) executes at: ASK * (1 - entryBuffer) of SELL side settings
-        fillPrice = (baseLtp * 1.001) * (1 - sellEntryBuffer);
+        // Fresh Short Entry (Selling) executes at BID (0.999) - entryBuffer
+        fillPrice = (baseLtp * 0.999) * (1 - sellEntryBuffer);
       }
     }
   }

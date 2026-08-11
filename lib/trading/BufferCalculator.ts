@@ -1,6 +1,7 @@
 export interface BufferSettings {
   entry_buffer?: number;
   exit_buffer?: number;
+  exit_price_mode?: 'BID_ASK' | 'LTP';
 }
 
 export interface BufferCalculationParams {
@@ -10,24 +11,17 @@ export interface BufferCalculationParams {
   buySetting: BufferSettings | undefined;
   sellSetting: BufferSettings | undefined;
   brokeragePerUnit?: number;
+  exitPriceMode?: 'BID_ASK' | 'LTP';
 }
 
 /**
  * Calculates the execution price after applying entry/exit buffers.
  *
- * Fill price formula:
- *   BUY  entry:  ltp * (1 + buyEntryBuffer)             — fills at LTP + slippage
- *   BUY  exit:   (ltp * 1.001) * (1 + sellExitBuffer)   — closing a short at ask
- *   SELL entry:  (ltp * 0.999) * (1 - sellEntryBuffer)  — simulates bid - slippage
- *   SELL exit:   (ltp * 0.999) * (1 - buyExitBuffer)    — closing a long at bid
- *
- * For LIMIT / SL / GTT orders the basePrice is already the client_price,
- * so the 0.999/1.001 spread is NOT applied (those orders fill at the exact limit).
- *
- * The buffer belongs to the side of the original position when exiting.
- *
- * NOTE: Buffers are stored in the DB as percentages (e.g. 0.17 = 0.17%)
- * and must be divided by 100 to convert to decimal form (0.0017).
+ * Fill price rules:
+ *   - Fresh BUY Entry  : ASK price (base * 1.001) * (1 + buyEntryBuffer)
+ *   - Fresh SELL Entry : BID price (base * 0.999) * (1 - sellEntryBuffer)
+ *   - BUY Exit (Close) : BID price (base * 0.999) OR LTP (base) * (1 - buyExitBuffer)
+ *   - SELL Exit (Close): ASK price (base * 1.001) OR LTP (base) * (1 + sellExitBuffer)
  */
 export function calculateBufferedPrice({
   side,
@@ -36,6 +30,7 @@ export function calculateBufferedPrice({
   buySetting,
   sellSetting,
   brokeragePerUnit = 0,
+  exitPriceMode,
 }: BufferCalculationParams): number {
   if (!Number.isFinite(basePrice) || basePrice <= 0) {
     throw new Error('Invalid base price for buffer calculation');
@@ -53,25 +48,29 @@ export function calculateBufferedPrice({
   const sellEntryBuffer = toDecimalBuffer(sellSetting?.entry_buffer, 0.003);
   const sellExitBuffer  = toDecimalBuffer(sellSetting?.exit_buffer, 0.0017);
 
+  const mode = exitPriceMode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK';
+
   let bufferedPrice: number;
 
   if (side === 'BUY') {
     if (isExit) {
-      // Exiting a short (buying back) — executes at BID + exit buffer (SELL side settings)
-      bufferedPrice = (basePrice * 0.999) * (1 + sellExitBuffer);
+      // Exiting a short position (Buying back to close) — executes at ASK or LTP + exit buffer
+      const base = mode === 'LTP' ? basePrice : (basePrice * 1.001);
+      bufferedPrice = base * (1 + sellExitBuffer);
     } else {
-      // Long entry — fills at BID + entry buffer (BUY side settings)
-      bufferedPrice = (basePrice * 0.999) * (1 + buyEntryBuffer);
+      // Fresh Long entry — ALWAYS fills at ASK (1.001) + entry buffer
+      bufferedPrice = (basePrice * 1.001) * (1 + buyEntryBuffer);
     }
     bufferedPrice += brokeragePerUnit;
   } else {
     // side === 'SELL'
     if (isExit) {
-      // Exiting a long (selling) — executes at ASK - exit buffer (BUY side settings)
-      bufferedPrice = (basePrice * 1.001) * (1 - buyExitBuffer);
+      // Exiting a long position (Selling to close) — executes at BID or LTP - exit buffer
+      const base = mode === 'LTP' ? basePrice : (basePrice * 0.999);
+      bufferedPrice = base * (1 - buyExitBuffer);
     } else {
-      // Short entry — executes at ASK - entry buffer (SELL side settings)
-      bufferedPrice = (basePrice * 1.001) * (1 - sellEntryBuffer);
+      // Fresh Short entry — ALWAYS fills at BID (0.999) - entry buffer
+      bufferedPrice = (basePrice * 0.999) * (1 - sellEntryBuffer);
     }
     bufferedPrice -= brokeragePerUnit;
   }

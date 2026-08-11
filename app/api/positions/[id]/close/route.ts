@@ -230,14 +230,18 @@ export async function POST(
 
   const baseLtp = kiteLtp ?? Number(pos.ltp ?? pos.entry_price);
 
-  // Exit price: opposite buffer to entry
+  const exitPriceMode = process.env.EXIT_PRICE_MODE || segSetting?.exit_price_mode || 'BID_ASK';
+
+  // Exit price calculation
   let exitPrice: number;
   if (pos.side === 'BUY') {
-    // Closing BUY position = SELLING -> executes at ASK (1.001) - exitBuffer
-    exitPrice = (baseLtp * 1.001) * (1 - exitBuffer);
+    // Closing BUY position = SELLING -> BID (0.999) OR LTP (1.000) - exitBuffer
+    const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 0.999);
+    exitPrice = base * (1 - exitBuffer);
   } else {
-    // Closing SELL position = BUYING -> executes at BID (0.999) + exitBuffer
-    exitPrice = (baseLtp * 0.999) * (1 + exitBuffer);
+    // Closing SELL position = BUYING BACK -> ASK (1.001) OR LTP (1.000) + exitBuffer
+    const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 1.001);
+    exitPrice = base * (1 + exitBuffer);
   }
   exitPrice = Math.round(exitPrice * 100) / 100;
 
