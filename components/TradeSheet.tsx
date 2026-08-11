@@ -10,6 +10,7 @@ import { api, ApiError } from '@/lib/api';
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
+import { useBinanceQuotes } from '@/hooks/useBinanceQuotes';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import { ErrorModal } from '@/components/ErrorModal';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
@@ -153,6 +154,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     return [];
   }, [item?.comexSymbol]);
 
+  const binanceSymbols = useMemo(() => (isCrypto && bSymbol ? [bSymbol] : []), [isCrypto, bSymbol]);
+  const { quotes: binanceQuotes } = useBinanceQuotes(binanceSymbols);
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
   const { quotes: comexQuotes } = useComexQuotes(comexSymbols);
 
@@ -160,9 +163,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     ? parseFloat((item.price as string).replace(/,/g, ''))
     : (item?.price ?? 0);
   let currentChangePercent = parseFloat(item?.change?.replace(/[%+]/g, '') || '0') || 0;
-  if (isCrypto && bSymbol && marketQuotes[bSymbol]) {
-    currentLtp = marketQuotes[bSymbol].lastPrice;
-    currentChangePercent = marketQuotes[bSymbol].changePercent;
+
+  const cryptoQuote = isCrypto && bSymbol ? (binanceQuotes[bSymbol] || marketQuotes[bSymbol]) : null;
+
+  if (isCrypto && bSymbol && cryptoQuote) {
+    currentLtp = cryptoQuote.lastPrice || currentLtp;
+    const prevClose = (cryptoQuote as any).prevClosePrice ?? (cryptoQuote as any).close ?? currentLtp;
+    currentChangePercent = (cryptoQuote as any).changePercent ?? (prevClose > 0 ? ((currentLtp - prevClose) / prevClose) * 100 : 0);
   } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
     currentLtp = comexQuotes[item.comexSymbol].lastPrice;
     currentChangePercent = comexQuotes[item.comexSymbol].changePercent;
@@ -192,9 +199,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let rawAsk = currentLtp;
 
   if (currentLtp > 0) {
-    if (isCrypto && bSymbol && marketQuotes[bSymbol]) {
-      rawBid = marketQuotes[bSymbol].bid || currentLtp;
-      rawAsk = marketQuotes[bSymbol].ask || currentLtp;
+    if (isCrypto && bSymbol && cryptoQuote) {
+      rawBid = (cryptoQuote as any).bid || currentLtp;
+      rawAsk = (cryptoQuote as any).ask || currentLtp;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || currentLtp;
       rawAsk = comexQuotes[item.comexSymbol].ask || currentLtp;

@@ -545,6 +545,28 @@ function WatchlistContent() {
 
   const { quotes: binanceQuotes, loading: binanceLoading } = useBinanceQuotes(cryptoSymbols);
 
+  // Convert BinanceQuote objects to QuoteData format for InstrumentRow consumption
+  const binanceQuotesAsQuoteData = useMemo(() => {
+    const result: Record<string, QuoteData> = {};
+    for (const [sym, bq] of Object.entries(binanceQuotes)) {
+      const close = bq.prevClosePrice || 0;
+      const lp = bq.lastPrice || 0;
+      result[sym] = {
+        lastPrice: lp,
+        change: lp - close,
+        changePercent: close > 0 ? ((lp - close) / close) * 100 : 0,
+        open: bq.openPrice || 0,
+        high: bq.highPrice || 0,
+        low: bq.lowPrice || 0,
+        close,
+        volume: bq.volume || 0,
+        bid: lp * 0.9995,
+        ask: lp * 1.0005,
+      };
+    }
+    return result;
+  }, [binanceQuotes]);
+
   // Expose binanceQuotes to window for inline script access
   useEffect(() => {
     (window as any).__binanceQuotes = binanceQuotes;
@@ -751,7 +773,7 @@ function WatchlistContent() {
   const isComex = !!(selectedItem?.comexSymbol) && (!(selectedItem?.kiteSymbol) || (selectedItem as any).preferredView === 'comex');
 
   const currentKiteQuote = selectedItem?.kiteSymbol ? marketQuotes[selectedItem.kiteSymbol] : null;
-  const currentBinanceQuote = selectedItem?.binanceSymbol ? marketQuotes[selectedItem.binanceSymbol] : null;
+  const currentBinanceQuote = selectedItem?.binanceSymbol ? (binanceQuotesAsQuoteData[selectedItem.binanceSymbol] || marketQuotes[selectedItem.binanceSymbol]) : null;
   const currentComexQuote = selectedItem?.comexSymbol ? comexQuotes[selectedItem.comexSymbol] : null;
 
   let currentLtp = 0;
@@ -1641,7 +1663,7 @@ function WatchlistContent() {
                       key={`${item.symbol}_${index}`}
                       item={item}
                       quote={marketQuotes[item.kiteSymbol]}
-                      binanceQuote={item.binanceSymbol ? marketQuotes[item.binanceSymbol] : undefined}
+                      binanceQuote={item.binanceSymbol ? (binanceQuotesAsQuoteData[item.binanceSymbol] || marketQuotes[item.binanceSymbol]) : undefined}
                       comexQuote={item.comexSymbol ? comexQuotes[item.comexSymbol] : undefined}
                       onTrade={(it: WatchlistItem, type?: 'BUY' | 'SELL' | 'BOTH') => {
                         if (!isMarketOpen(it)) { showToast('Market is closed', true); return; }

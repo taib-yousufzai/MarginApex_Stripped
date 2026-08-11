@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { api } from '@/lib/api';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
+import { useBinanceQuotes } from '@/hooks/useBinanceQuotes';
 import { MyPosition } from '@/lib/types/order';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
@@ -308,6 +309,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
   const marketSymbols = useMemo(() => [...kiteKeys, ...binanceKeys], [kiteKeys, binanceKeys]);
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
   const { quotes: comexQuotes } = useComexQuotes(comexKeys, refreshInterval);
+  const { quotes: binanceQuotes } = useBinanceQuotes(binanceKeys);
 
   const enrichedPositions = useMemo(() => {
     const settingsMap = new Map<string, any>();
@@ -335,11 +337,11 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       if (!contractExpired) {
         if (isCrypto) {
           const binanceKey = cached ? cached.binanceSymbol : (p.symbol || '').replace('/', '') + (p.symbol?.endsWith('USDT') ? '' : 'USDT');
-          const quote = marketQuotes[binanceKey];
+          const quote = binanceQuotes[binanceKey] || marketQuotes[binanceKey];
           if (quote) {
             ltp = quote.lastPrice ?? ltp;
-            bid = quote.bid ?? ltp;
-            ask = quote.ask ?? ltp;
+            bid = (quote as any).bid ?? (ltp * 0.9995);
+            ask = (quote as any).ask ?? (ltp * 1.0005);
           }
         } else if (isComex) {
           const quote = comexQuotes[p.symbol];
