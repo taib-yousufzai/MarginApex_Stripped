@@ -3,10 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { getRedisClient, isRedisMock } from '@/lib/redis';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 /**
  * Resolve a symbol to an instrument_token.
@@ -96,7 +98,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   // Fast path: symbol contains ':' (e.g. "NFO:NIFTY2661623700CE") — exact id match
   // We already know the canonical ID; no reverse lookup needed.
   if (symbol.includes(':')) {
-    const { data } = await supabase
+    const { data } = await getSupabase()
       .from('instruments')
       .select('instrument_token')
       .eq('id', symbol)
@@ -121,7 +123,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   };
   if (baseIndices[upperSymbol]) {
     const resolvedSymbol = baseIndices[upperSymbol];
-    const { data } = await supabase
+    const { data } = await getSupabase()
       .from('instruments')
       .select('instrument_token')
       .eq('id', resolvedSymbol)
@@ -139,7 +141,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
       const exchange = isCurrency ? 'CDS' : 'MCX';
       const instrumentTypes = isCurrency ? ['FUT'] : ['FUTCOM', 'FUT', 'MAPPED_FUT'];
       
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from('instruments')
         .select('instrument_token, tradingsymbol')
         .eq('name', matchedCommodity)
@@ -166,13 +168,13 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
 
   // Strategy 1: Exact id match
   queries.push(
-    supabase.from('instruments').select('instrument_token').eq('id', symbol).single()
+    getSupabase().from('instruments').select('instrument_token').eq('id', symbol).single()
       .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: symbol } : null)
   );
 
   // Strategy 2: tradingsymbol match
   queries.push(
-    supabase.from('instruments').select('instrument_token, exchange, tradingsymbol').eq('tradingsymbol', symbol).limit(1).single()
+    getSupabase().from('instruments').select('instrument_token, exchange, tradingsymbol').eq('tradingsymbol', symbol).limit(1).single()
       .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: `${r.data.exchange}:${r.data.tradingsymbol}` } : null)
   );
 
@@ -180,7 +182,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   for (const exchange of exchanges) {
     const prefixed = `${exchange}:${symbol}`;
     queries.push(
-      supabase.from('instruments').select('instrument_token').eq('id', prefixed).single()
+      getSupabase().from('instruments').select('instrument_token').eq('id', prefixed).single()
         .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: prefixed } : null)
     );
   }
@@ -190,7 +192,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
     for (const exchange of exchanges) {
       const prefixed = `${exchange}:${baseName}`;
       queries.push(
-        supabase.from('instruments').select('instrument_token')
+        getSupabase().from('instruments').select('instrument_token')
           .eq('id', prefixed).eq('instrument_type', 'MAPPED_FUT').single()
           .then(r => r.data?.instrument_token ? { token: r.data.instrument_token, canonicalId: prefixed } : null)
       );
@@ -201,7 +203,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   if (hasUnderscore) {
     const fuzzyPattern = symbol.replace(/_/g, '%');
     queries.push(
-      supabase.from('instruments').select('instrument_token, instrument_type, exchange, tradingsymbol')
+      getSupabase().from('instruments').select('instrument_token, instrument_type, exchange, tradingsymbol')
         .ilike('tradingsymbol', fuzzyPattern).in('exchange', exchanges)
         .order('instrument_type', { ascending: true }).limit(5)
         .then(r => {
@@ -317,7 +319,7 @@ export async function GET(request: Request) {
     if (!candlesData || candlesData.length === 0) {
       console.warn(`[historical] Kite fetch unavailable or returned empty for ${canonicalSymbol} (Reason: ${kiteError}). Falling back to local DB historical_candles.`);
       try {
-        const { data: dbData, error: dbError } = await supabase
+        const { data: dbData, error: dbError } = await getSupabase()
           .from('historical_candles')
           .select('timestamp, open, high, low, close, volume')
           .eq('symbol', canonicalSymbol)
@@ -356,7 +358,7 @@ export async function GET(request: Request) {
 
       if (lastPrice === 0) {
         try {
-          const { data: instData } = await supabase
+          const { data: instData } = await getSupabase()
             .from('instruments')
             .select('last_price')
             .eq('id', canonicalSymbol)

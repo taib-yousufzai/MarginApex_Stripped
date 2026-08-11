@@ -50,7 +50,7 @@ async function resolveMcxKiteIds(names: string[], today: string): Promise<Record
   const baseNames = Array.from(new Set(names.map(n => MCX_BASE_MAP[n] || n)));
 
   try {
-    const { data: futs } = await supabase
+    const { data: futs } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, expiry')
       .eq('exchange', 'MCX')
@@ -120,11 +120,13 @@ function getUnderlyingId(symbol: string): string {
   return `NSE:${u}`;
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+}
 
 // Known underlying symbols for smart parsing
 const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'BANKEX', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
@@ -341,7 +343,7 @@ async function fetchLivePrices(
       if (instrumentUpserts.length > 0) {
         (async () => {
           try {
-            await supabase.from('instruments').upsert(instrumentUpserts, { onConflict: 'id' });
+            await getSupabase().from('instruments').upsert(instrumentUpserts, { onConflict: 'id' });
           } catch (err) {
             console.error('[fetchLivePrices] Background cache error:', err);
           }
@@ -419,7 +421,7 @@ export async function GET(request: NextRequest) {
 
     if (parsed) {
       // Try fetching active expiries directly matching the underlying and strike
-      let qry = supabase
+      let qry = getSupabase()
         .from('instruments')
         .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol')
         .eq('strike_price', parsed.strike)
@@ -445,7 +447,7 @@ export async function GET(request: NextRequest) {
       const qNoSpace = q.replace(/\s+/g, '').toUpperCase();
 
       let buildBaseFallbackQuery = () => {
-        let qry = supabase
+        let qry = getSupabase()
           .from('instruments')
           .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol')
           .neq('exchange', 'NCO'); // NCO has sub-interval strike rows that pollute results
@@ -561,7 +563,7 @@ export async function GET(request: NextRequest) {
     if (filteredOptions.length > 0) {
       try {
         const today2 = new Date().toISOString().split('T')[0];
-        const strikeConfig = await loadStrikeConfig(supabase);
+        const strikeConfig = await loadStrikeConfig(getSupabase());
 
         // Collect unique underlying names
         const underlyingNames = Array.from(new Set(
@@ -871,7 +873,7 @@ export async function GET(request: NextRequest) {
     // This ensures blocked symbols don't appear in watchlist search at all.
     if (user) {
       try {
-        const { data: blockedRows } = await supabase
+        const { data: blockedRows } = await getSupabase()
           .from('user_blocked_scripts')
           .select('symbol')
           .eq('user_id', user.id);
@@ -890,8 +892,8 @@ export async function GET(request: NextRequest) {
 
         // Also filter out entire segments if they are blocked (trade_allowed = false)
         const [ { data: segRows }, { data: scalperRows } ] = await Promise.all([
-          supabase.from('segment_settings').select('segment').eq('user_id', user.id).eq('trade_allowed', false),
-          supabase.from('scalper_segment_settings').select('segment').eq('user_id', user.id).eq('trade_allowed', false)
+          getSupabase().from('segment_settings').select('segment').eq('user_id', user.id).eq('trade_allowed', false),
+          getSupabase().from('scalper_segment_settings').select('segment').eq('user_id', user.id).eq('trade_allowed', false)
         ]);
 
         const blockedSegments = new Set<string>([

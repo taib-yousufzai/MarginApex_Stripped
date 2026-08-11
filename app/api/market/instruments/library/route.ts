@@ -22,11 +22,13 @@ function safeOptName(i: any) {
   return isRealValue(i.tradingsymbol) ? i.tradingsymbol : 'Unknown';
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+}
 
 export async function GET() {
   try {
@@ -46,10 +48,10 @@ export async function GET() {
     let usedFallback = false;
 
     // Load strike config once for the entire request
-    const strikeConfig = await loadStrikeConfig(supabase);
+    const strikeConfig = await loadStrikeConfig(getSupabase());
 
     // 1. Index-FUT
-    const { data: indexFuts } = await supabase
+    const { data: indexFuts } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, instrument_type, segment, expiry')
       .in('name', ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'])
@@ -86,7 +88,7 @@ export async function GET() {
     };
 
     const indexOptCats = (await Promise.all(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(async (idx) => {
-      const { data: expData } = await supabase.rpc('get_option_expiries', { p_symbol: idx, p_min_date: today });
+      const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: idx, p_min_date: today });
       if (!expData || expData.length === 0) return null;
 
       // Apply expiry filter — nearest active only
@@ -95,7 +97,7 @@ export async function GET() {
       if (activeExpiries.length === 0) return null;
       const nearestExpiry = activeExpiries[0];
 
-      const { data: opts } = await supabase
+      const { data: opts } = await getSupabase()
         .from('instruments')
         .select('tradingsymbol, name, exchange, instrument_type, strike_price, option_type, expiry, underlying_symbol')
         .eq('name', idx)
@@ -154,7 +156,7 @@ export async function GET() {
 
     await Promise.all(commodities.map(async (cmd) => {
       // FUT — collect directly into flat instruments array
-      const { data: futs } = await supabase.from('instruments').select('*').eq('name', cmd).in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
+      const { data: futs } = await getSupabase().from('instruments').select('*').eq('name', cmd).in('instrument_type', ['FUTCOM', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
       if (futs && futs.length > 0) {
         futs.forEach((i: any) => mcxFutInstruments.push({
           name: i.tradingsymbol, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
@@ -162,14 +164,14 @@ export async function GET() {
         }));
       }
       // OPT — apply expiry + strike range filter
-      const { data: expData } = await supabase.from('instruments').select('expiry').eq('name', cmd).in('instrument_type', ['CE', 'PE', 'FUTOPT']).gte('expiry', today);
+      const { data: expData } = await getSupabase().from('instruments').select('expiry').eq('name', cmd).in('instrument_type', ['CE', 'PE', 'FUTOPT']).gte('expiry', today);
       if (expData && expData.length > 0) {
         const allExpiries: string[] = [...new Set(expData.map((e: any) => e.expiry))];
         const activeExpiries = applyExpiryFilter(allExpiries, today);
         if (activeExpiries.length === 0) return;
         const nearestExpiry = activeExpiries[0];
 
-        const { data: opts } = await supabase.from('instruments').select('*').eq('name', cmd).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
+        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', cmd).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
         if (opts && opts.length > 0) {
           let selectedOpts: Instrument[] = opts as Instrument[];
           try {
@@ -224,7 +226,7 @@ export async function GET() {
 
     await Promise.all(topStocks.map(async (stk) => {
       // FUT — flat into instruments array
-      const { data: futs } = await supabase.from('instruments').select('*').eq('name', stk).in('instrument_type', ['FUTSTK', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
+      const { data: futs } = await getSupabase().from('instruments').select('*').eq('name', stk).in('instrument_type', ['FUTSTK', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
       if (futs && futs.length > 0) {
         futs.forEach((i: any) => stockFutInstruments.push({
           name: i.tradingsymbol, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
@@ -232,10 +234,10 @@ export async function GET() {
         }));
       }
       // OPT
-      const { data: expData } = await supabase.rpc('get_option_expiries', { p_symbol: stk, p_min_date: today });
+      const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: stk, p_min_date: today });
       if (expData && expData.length > 0) {
         const nearestExpiry = expData[0].expiry;
-        const { data: opts } = await supabase.from('instruments').select('*').eq('name', stk).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
+        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', stk).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
         if (opts && opts.length > 0) {
           let selectedOpts: Instrument[] = opts as Instrument[];
           try {
@@ -274,7 +276,7 @@ export async function GET() {
         }
       }
       // EQ — flat into instruments array
-      const { data: eq } = await supabase.from('instruments').select('*').eq('instrument_type', 'EQ').eq('tradingsymbol', stk).limit(1);
+      const { data: eq } = await getSupabase().from('instruments').select('*').eq('instrument_type', 'EQ').eq('tradingsymbol', stk).limit(1);
       if (eq && eq.length > 0) {
         eq.forEach((i: any) => nseEqInstruments.push({
           name: `${i.tradingsymbol} (EQ)`, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
@@ -288,7 +290,7 @@ export async function GET() {
     if (nseEqInstruments.length > 0) segments.push({ name: 'NSE-EQ', icon: 'fa-building', instruments: nseEqInstruments });
 
     // 5. Crypto — apply applyCryptoWhitelist
-    const { data: cryptos } = await supabase.from('instruments').select('*').eq('segment', 'CRYPTO').order('name', { ascending: true });
+    const { data: cryptos } = await getSupabase().from('instruments').select('*').eq('segment', 'CRYPTO').order('name', { ascending: true });
     if (cryptos && cryptos.length > 0) {
       const whitelisted = applyCryptoWhitelist(cryptos as Instrument[]);
       const uniqueCryptos = new Map();
@@ -310,9 +312,9 @@ export async function GET() {
     }
 
     // 6. Comex
-    const { data: comex } = await supabase.from('instruments').select('*').eq('segment', 'COMEX').order('name', { ascending: true });
+    const { data: comex } = await getSupabase().from('instruments').select('*').eq('segment', 'COMEX').order('name', { ascending: true });
     if (comex && comex.length > 0) {
-      const { data: mcxFuts } = await supabase
+      const { data: mcxFuts } = await getSupabase()
         .from('instruments')
         .select('tradingsymbol, name, exchange, expiry')
         .eq('exchange', 'MCX')
@@ -372,12 +374,12 @@ export async function GET() {
     const forexInstruments: any[] = [];  // flat — no subCategories
 
     await Promise.all(currencies.map(async (curr) => {
-      const { data: futs } = await supabase.from('instruments').select('*').eq('name', curr).in('instrument_type', ['FUTCUR', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
-      const { data: expData } = await supabase.rpc('get_option_expiries', { p_symbol: curr, p_min_date: today });
+      const { data: futs } = await getSupabase().from('instruments').select('*').eq('name', curr).in('instrument_type', ['FUTCUR', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
+      const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: curr, p_min_date: today });
       let opts: any[] | null = null;
       if (expData && expData.length > 0) {
         const nearestExpiry = expData[0].expiry;
-        const { data } = await supabase.from('instruments').select('*').eq('name', curr).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
+        const { data } = await getSupabase().from('instruments').select('*').eq('name', curr).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
         opts = data;
       }
 
