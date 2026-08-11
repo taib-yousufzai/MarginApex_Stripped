@@ -35,15 +35,20 @@ export async function GET(request: NextRequest) {
       if (Array.isArray(data)) {
         data.forEach((item: any) => {
           if (item && item.symbol) {
+            const lp = parseFloat(item.lastPrice || '0');
+            const b = parseFloat(item.bidPrice || '0') || (lp * 0.9995);
+            const a = parseFloat(item.askPrice || '0') || (lp * 1.0005);
             const quote = {
               symbol: item.symbol,
-              lastPrice: parseFloat(item.lastPrice || '0'),
+              lastPrice: lp,
               prevClosePrice: parseFloat(item.prevClosePrice || item.openPrice || '0'),
               openPrice: parseFloat(item.openPrice || '0'),
               highPrice: parseFloat(item.highPrice || '0'),
               lowPrice: parseFloat(item.lowPrice || '0'),
               volume: parseFloat(item.volume || '0'),
               time: item.closeTime || Date.now(),
+              bid: b,
+              ask: a,
             };
             quotes[item.symbol] = quote;
             const shortSymbol = item.symbol.replace('USDT', '');

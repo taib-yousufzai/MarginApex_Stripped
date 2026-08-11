@@ -9,6 +9,8 @@ export interface BinanceQuote {
   lowPrice: number;
   volume: number;
   time: number;
+  bid: number;
+  ask: number;
 }
 
 /**

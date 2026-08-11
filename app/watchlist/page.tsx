@@ -560,8 +560,8 @@ function WatchlistContent() {
         low: bq.lowPrice || 0,
         close,
         volume: bq.volume || 0,
-        bid: lp * 0.9995,
-        ask: lp * 1.0005,
+        bid: bq.bid || (lp * 0.9995),
+        ask: bq.ask || (lp * 1.0005),
       };
     }
     return result;
