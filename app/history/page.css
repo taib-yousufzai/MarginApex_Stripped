@@ -1,7 +1,9 @@
 .history-root {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
+    height: 100dvh;
+    max-height: 100dvh;
     width: 100%;
     background: #F5F7FB;
     overflow: hidden;
