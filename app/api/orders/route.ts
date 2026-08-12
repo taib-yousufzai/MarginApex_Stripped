@@ -247,6 +247,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       trigger_price: r.trigger_price !== null ? Number(r.trigger_price) : undefined,
       stop_loss:    r.stop_loss !== null ? Number(r.stop_loss) : undefined,
       target:       r.target !== null ? Number(r.target) : undefined,
+      is_exit:      r.is_exit !== undefined ? Boolean(r.is_exit) : false,
       created_at:   r.created_at as string,
     }));
 
