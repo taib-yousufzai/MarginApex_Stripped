@@ -4,6 +4,20 @@
 -- Uses FIFO (First-In, First-Out) lot selection for cumulative exits.
 -- ==============================================================================
 
+-- Drop all existing versions to avoid overloaded function ambiguity
+DO $$ 
+DECLARE 
+  r record;
+BEGIN
+  FOR r IN 
+    SELECT oid::regprocedure AS proc
+    FROM pg_proc 
+    WHERE proname = 'place_order_v2' AND pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+  LOOP
+    EXECUTE 'DROP FUNCTION ' || r.proc || ' CASCADE';
+  END LOOP;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.place_order_v2(
   p_user_id        uuid,
   p_symbol         text,
@@ -25,7 +39,8 @@ CREATE OR REPLACE FUNCTION public.place_order_v2(
   p_info           text DEFAULT NULL,
   p_expected_margin numeric DEFAULT 0,
   p_expected_brokerage numeric DEFAULT 0,
-  p_idempotency_key text DEFAULT NULL
+  p_idempotency_key text DEFAULT NULL,
+  p_linked_position_id uuid DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -137,40 +152,76 @@ BEGIN
             END IF;
 
         ELSE
-            -- Lifecycle: Opposite-Side Netting/Exiting (FIFO Order Consuming Oldest First)
+            -- Lifecycle: Opposite-Side Netting/Exiting
             v_remaining_qty := p_qty;
             
-            FOR v_pos IN 
-                SELECT id, qty_open 
-                FROM public.positions
-                WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active') AND side = v_pos_side AND product_type = p_product_type
-                ORDER BY entry_time ASC
-                FOR UPDATE
-            LOOP
-                IF v_remaining_qty <= 0 THEN
-                    EXIT;
-                END IF;
+            IF p_linked_position_id IS NOT NULL THEN
+                -- Target specific lot
+                FOR v_pos IN 
+                    SELECT id, qty_open 
+                    FROM public.positions
+                    WHERE id = p_linked_position_id AND status IN ('open', 'active') AND side = v_pos_side AND product_type = p_product_type
+                    FOR UPDATE
+                LOOP
+                    IF v_remaining_qty <= 0 THEN
+                        EXIT;
+                    END IF;
+                    
+                    IF v_pos.qty_open > v_remaining_qty THEN
+                        -- Lifecycle: Reduce Position (Partial Close lot)
+                        v_closed_qty := v_remaining_qty;
+                        PERFORM public.reduce_position_internal(
+                            v_pos.id, v_closed_qty, p_fill_price, p_ltp,
+                            round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
+                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                        );
+                        v_remaining_qty := 0;
+                    ELSE
+                        -- Lifecycle: Close Position (Full Close lot)
+                        v_closed_qty := v_pos.qty_open;
+                        PERFORM public.close_position_v2(
+                            v_pos.id, v_closed_qty, p_fill_price,
+                            'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
+                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                        );
+                        v_remaining_qty := v_remaining_qty - v_closed_qty;
+                    END IF;
+                END LOOP;
+            ELSE
+                -- Default FIFO Order Consuming Oldest First
+                FOR v_pos IN 
+                    SELECT id, qty_open 
+                    FROM public.positions
+                    WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active') AND side = v_pos_side AND product_type = p_product_type
+                    ORDER BY entry_time ASC
+                    FOR UPDATE
+                LOOP
+                    IF v_remaining_qty <= 0 THEN
+                        EXIT;
+                    END IF;
+    
+                    IF v_pos.qty_open > v_remaining_qty THEN
+                        -- Lifecycle: Reduce Position (Partial Close lot)
+                        v_closed_qty := v_remaining_qty;
+                        PERFORM public.reduce_position_internal(
+                            v_pos.id, v_closed_qty, p_fill_price, p_ltp,
+                            round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
+                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                        );
+                        v_remaining_qty := 0;
+                    ELSE
+                        -- Lifecycle: Close Position (Full Close lot)
+                        v_closed_qty := v_pos.qty_open;
+                        PERFORM public.close_position_v2(
+                            v_pos.id, v_closed_qty, p_fill_price,
+                            'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
+                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                        );
+                        v_remaining_qty := v_remaining_qty - v_closed_qty;
+                    END IF;
+                END LOOP;
+            END IF;
 
-                IF v_pos.qty_open > v_remaining_qty THEN
-                    -- Lifecycle: Reduce Position (Partial Close lot)
-                    v_closed_qty := v_remaining_qty;
-                    PERFORM public.reduce_position_internal(
-                        v_pos.id, v_closed_qty, p_fill_price, p_ltp,
-                        round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                        p_idempotency_key || '_' || v_pos.id::text -- unique per lot
-                    );
-                    v_remaining_qty := 0;
-                ELSE
-                    -- Lifecycle: Close Position (Full Close lot)
-                    v_closed_qty := v_pos.qty_open;
-                    PERFORM public.close_position_v2(
-                        v_pos.id, v_closed_qty, p_fill_price,
-                        'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                        p_idempotency_key || '_' || v_pos.id::text -- unique per lot
-                    );
-                    v_remaining_qty := v_remaining_qty - v_closed_qty;
-                END IF;
-            END LOOP;
 
             -- Lifecycle: Reverse Position (Create new opposite side position if remaining quantity exists)
             IF v_remaining_qty > 0 THEN

@@ -251,9 +251,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       created_at:   r.created_at as string,
     }));
 
+    // Build a set of position IDs that already have a real EXECUTED exit order
+    // so we don't also synthesize virtual SL/Target orders for them
+    const posIdsWithRealExitOrder = new Set<string>(
+      dbOrders
+        .filter((o: any) => o.is_exit === true && o.status === 'EXECUTED')
+        .map((o: any) => o.info as string)
+        .filter(Boolean)
+    );
+
     // Dynamically synthesize virtual pending orders for positions with SL/Target
     const virtualOrders: MyOrder[] = [];
     for (const pos of openPositions) {
+      // Skip if we already have a real executed exit order for this position
+      if (posIdsWithRealExitOrder.has(pos.id)) continue;
+
       const stopLoss = pos.stop_loss ? Number(pos.stop_loss) : (pos.sl ? Number(pos.sl) : null);
       const target = pos.target ? Number(pos.target) : (pos.tp ? Number(pos.tp) : null);
 
@@ -328,7 +340,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { symbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit } = body;
+  const { symbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit, linked_position_id } = body;
 
   // 3. Basic field validation
   if (!symbol || !side || !qty || !segment) {
@@ -900,7 +912,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       p_info:         null,
       p_expected_margin: requiredMargin,
       p_expected_brokerage: expectedBrokerage,
-      p_idempotency_key: null
+      p_idempotency_key: null,
+      p_linked_position_id: linked_position_id ?? null
     });
     if (rpcErr) {
       throw new Error(rpcErr.message || 'Order execution failed. Please try again.');
