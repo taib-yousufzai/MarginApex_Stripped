@@ -33,6 +33,7 @@ export interface SegmentSetting {
   exit_buffer: number;
   top_limit?: number;
   min_limit?: number;
+  exit_price_mode?: 'BID_ASK' | 'LTP';
   created_at?: string;
   updated_at?: string;
 }

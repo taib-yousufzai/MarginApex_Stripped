@@ -376,14 +376,24 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         const exitPriceMode = sideSetting?.exit_price_mode || 'BID_ASK';
 
         if (p.side === 'BUY') {
-          // Closing BUY position = SELLING -> BID (0.999) OR LTP (1.000) - exitBuffer
-          const base = exitPriceMode === 'LTP' ? ltp : (ltp * 0.999);
-          const exitPrice = Math.round(base * (1 - exitBuffer) * 100) / 100;
+          let exitPrice: number;
+          if (exitPriceMode === 'LTP') {
+            // LTP mode: pure raw price, no spread, no buffer
+            exitPrice = Math.round(ltp * 100) / 100;
+          } else {
+            // BID_ASK mode: BID price (ltp * 0.999) minus exit buffer
+            exitPrice = Math.round(ltp * 0.999 * (1 - exitBuffer) * 100) / 100;
+          }
           unrealised = (exitPrice - avgPrice) * p.qty_open;
         } else {
-          // Closing SELL position = BUYING BACK -> ASK (1.001) OR LTP (1.000) + exitBuffer
-          const base = exitPriceMode === 'LTP' ? ltp : (ltp * 1.001);
-          const exitPrice = Math.round(base * (1 + exitBuffer) * 100) / 100;
+          let exitPrice: number;
+          if (exitPriceMode === 'LTP') {
+            // LTP mode: pure raw price, no spread, no buffer
+            exitPrice = Math.round(ltp * 100) / 100;
+          } else {
+            // BID_ASK mode: ASK price (ltp * 1.001) plus exit buffer
+            exitPrice = Math.round(ltp * 1.001 * (1 + exitBuffer) * 100) / 100;
+          }
           unrealised = (avgPrice - exitPrice) * p.qty_open;
         }
       }
