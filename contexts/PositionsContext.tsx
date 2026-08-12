@@ -399,7 +399,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       }
 
       const total_pnl = (p.status === 'closed') ? p.pnl : unrealised;
-      const investment = avgPrice * p.qty_open;
+      const investment = avgPrice * p.qty_open; 
       const pnl_percent = investment > 0 ? (total_pnl / investment) * 100 : 0;
 
       const profitHoldSec = sideSetting ? Number(sideSetting.profit_hold_sec) : 120;

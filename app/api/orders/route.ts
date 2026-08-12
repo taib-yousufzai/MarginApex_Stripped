@@ -21,6 +21,7 @@ import type {
   PlaceOrderResponse,
   MyOrder,
 } from '@/lib/types/order';
+import { calculateSingleLegCharge } from '@/lib/trading/BrokerageCalculator';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -599,9 +600,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const exposure      = qty * client_price;
   const requiredMargin = exposure / leverage;
 
-  if (balance < requiredMargin) {
+  let expectedBrokerage = 0;
+  if (!is_exit) {
+    const isCustomCalc = segSetting.use_custom_calc;
+    if (dbSegment === 'CRYPTO' && isCustomCalc) {
+      expectedBrokerage = 0;
+    } else {
+      const commType = segSetting.commission_type || 'Per Crore';
+      const commVal  = Number(segSetting.commission_value ?? 0);
+      const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
+      expectedBrokerage = Math.round(singleLeg * 2 * 100) / 100;
+    }
+  }
+
+  if (balance < (requiredMargin + expectedBrokerage) && !is_exit) {
     return NextResponse.json({
-      error: `Insufficient margin. Available: ₹${balance.toFixed(2)}, Required: ₹${requiredMargin.toFixed(2)}`,
+      error: `Insufficient margin. Available: ₹${balance.toFixed(2)}, Required: ₹${(requiredMargin + expectedBrokerage).toFixed(2)}`,
     }, { status: 400 });
   }
 
@@ -883,8 +897,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       p_stop_loss:    resolvedStopLoss,
       p_target:       target ? parseFloat(target.toString()) : null,
       p_info:         null,
-      p_expected_margin: 0,
-      p_expected_brokerage: 0,
+      p_expected_margin: requiredMargin,
+      p_expected_brokerage: expectedBrokerage,
       p_idempotency_key: null
     });
     if (rpcErr) {
