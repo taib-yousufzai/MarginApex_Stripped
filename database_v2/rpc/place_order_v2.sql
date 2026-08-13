@@ -179,7 +179,7 @@ BEGIN
                         PERFORM public.reduce_position_internal(
                             v_pos.id, v_closed_qty, p_fill_price, p_ltp,
                             round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                            COALESCE(p_idempotency_key, v_order_id::text) || '_' || v_pos.id::text -- unique per lot
                         );
                         v_remaining_qty := 0;
                     ELSE
@@ -193,13 +193,17 @@ BEGIN
                         v_remaining_qty := v_remaining_qty - v_closed_qty;
                     END IF;
                 END LOOP;
-            ELSE
-                -- Default FIFO Order Consuming Oldest First
+            END IF;
+
+            -- Default FIFO Order Consuming Oldest First (used for unlinked exits or fallback)
+            -- Secondary sort: qty_open ASC ensures smallest lots are consumed first when entry_time is identical
+            IF v_remaining_qty > 0 THEN
                 FOR v_pos IN 
                     SELECT id, qty_open 
                     FROM public.positions
                     WHERE user_id = p_user_id AND symbol = p_symbol AND status IN ('open', 'active') AND side = v_pos_side AND product_type = p_product_type
-                    ORDER BY entry_time ASC
+                      AND (p_linked_position_id IS NULL OR id != p_linked_position_id)
+                    ORDER BY entry_time ASC, qty_open ASC, id ASC
                     FOR UPDATE
                 LOOP
                     IF v_remaining_qty <= 0 THEN
@@ -212,7 +216,7 @@ BEGIN
                         PERFORM public.reduce_position_internal(
                             v_pos.id, v_closed_qty, p_fill_price, p_ltp,
                             round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                            COALESCE(p_idempotency_key, v_order_id::text) || '_' || v_pos.id::text -- unique per lot
                         );
                         v_remaining_qty := 0;
                     ELSE
@@ -221,7 +225,7 @@ BEGIN
                         PERFORM public.close_position_v2(
                             v_pos.id, v_closed_qty, p_fill_price,
                             'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                            v_order_id::text  -- reuse the already-inserted order id so close_position_v2 skips its own insert
+                            COALESCE(p_idempotency_key, v_order_id::text) || '_' || v_pos.id::text
                         );
                         v_remaining_qty := v_remaining_qty - v_closed_qty;
                     END IF;

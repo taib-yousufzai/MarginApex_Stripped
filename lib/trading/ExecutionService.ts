@@ -104,6 +104,7 @@ export class ExecutionService {
           p_expected_margin:    params.requiredMargin,
           p_expected_brokerage: params.brokerage,
           p_idempotency_key:    idempotencyKey,
+          p_linked_position_id: params.linkedPositionId || null,
         },
         {
           userId: params.userId,

@@ -298,7 +298,7 @@ export default function PositionPage() {
     setTradeSheetProductType(group.product_type as 'INTRADAY' | 'CARRY');
     setTradeSheetIsAddMore(false);
     setTradeSheetLinkedPosId(group.ids.length === 1 ? group.ids[0] : null);
-    setTradeSheetInitialExitQty(group.qty_total);
+    setTradeSheetInitialExitQty(group.qty_open);
   };
 
   const openTradeAgain = (pos: EnrichedPosition) => {
