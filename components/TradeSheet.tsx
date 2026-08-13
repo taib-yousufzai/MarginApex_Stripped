@@ -545,8 +545,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         if (maxOrderLot > 0) {
           const maxOrderQty = maxOrderLot * lotSize;
           if (rawQty > maxOrderQty) {
-            setQtyError(`Exceeds max limit of ${maxOrderLot} lots (${maxOrderQty} qty)`);
-            showToast(`Order quantity exceeds the maximum limit of ${maxOrderLot} lots (${maxOrderQty} qty).`);
+            setQtyError(`Max ${maxOrderLot} lots or ${maxOrderQty} qty per order`);
+            showToast(`The maximum you can exit in a single order is ${maxOrderLot} lots or ${maxOrderQty} qty. Please execute your position in multiple orders, or use the Exit All button available on the top right.`);
             return;
           }
         }
@@ -1718,7 +1718,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     )}
                     {(side === 'BUY' || side === 'BOTH') && (
                       <button
-                        className={`ts2-btn${(exitMode || hasSellPos) ? ' ts2-btn-buy' : ' ts2-btn-buy'}`}
+                        className={`ts2-btn${exitMode ? ' ts2-btn-sell' : ' ts2-btn-buy'}`}
                         disabled={isBusy || isExpired}
                         style={(isBusy || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('BUY')}

@@ -1260,7 +1260,7 @@ function WatchlistContent() {
 
   const getLegPrice = (legItem: WatchlistItem) => {
     if (legItem.binanceSymbol) {
-      return marketQuotes?.[legItem.binanceSymbol]?.lastPrice ?? legItem.price;
+      return (binanceQuotesAsQuoteData[legItem.binanceSymbol] || marketQuotes?.[legItem.binanceSymbol])?.lastPrice ?? legItem.price;
     }
     if (legItem.comexSymbol) {
       return comexQuotes?.[legItem.comexSymbol]?.lastPrice ?? legItem.price;
@@ -2163,7 +2163,7 @@ function WatchlistContent() {
                       )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px' }}>
                         <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-primary)' }}>Available Balance</span>
-                        <span style={{ fontSize: '0.88rem', fontWeight: '800', color: '#2C8E5A', background: '#E9F6EF', padding: '4px 12px', borderRadius: '20px' }}>{availableBalance !== null ? `₹${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'}</span>
+                        <span style={{ fontSize: '0.88rem', fontWeight: '800', color: '#2C8E5A' }}>{availableBalance !== null ? `₹${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'}</span>
                       </div>
                     </div>
                   );

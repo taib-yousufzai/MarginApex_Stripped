@@ -231,30 +231,26 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="desktop-layout">
-      
-      <main className="main-viewport">
-        <div className="flex-1 flex flex-col min-h-0 bg-gray-50 dark:bg-[#0B0E14] relative">
-          <style>{`
-          .tooltip:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            white-space: pre;
-            z-index: 10;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          }
-        `}</style>
-          <div className="app-container">
-            <div className="history-root">
+    <>
+      <style>{`
+      .tooltip:hover::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        white-space: pre;
+        z-index: 10;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      }
+    `}</style>
+      <div className="history-root">
               {/* ── Header (Mobile Only) ── */}
               <div className="app-header mobile-only">
                 <div className="header-top">
@@ -525,12 +521,7 @@ export default function HistoryPage() {
                   </span>
                 </div>
               </div>
-
-                          </div>
-          </div>
-        </div>
-      </main>
-
-    </div>
+            </div>
+    </>
   );
 }

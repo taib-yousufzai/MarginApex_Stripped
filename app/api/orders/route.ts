@@ -579,7 +579,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const maxQty = (segSetting.max_order_lot as number) * symbolLotSize;
   if (qty > maxQty) {
     return NextResponse.json({
-      error: `Order exceeds maximum allowed order limit of ${segSetting.max_order_lot} lots (${maxQty} units)`,
+      error: `The maximum you can exit in a single order is ${segSetting.max_order_lot} lots or ${maxQty} qty. Please execute your position in multiple orders, or use the Exit All button available on the top right.`,
     }, { status: 400 });
   }
 

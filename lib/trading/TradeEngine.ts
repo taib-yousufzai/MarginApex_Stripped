@@ -362,7 +362,7 @@ export class TradeEngine {
 
     const maxQty = Number(segSetting.max_order_lot || 50) * symbolLotSize;
     if (!is_exit && !RiskValidation.validateFreezeQuantity(qty, maxQty)) {
-      throw new Error(`Order exceeds maximum allowed order limit of ${segSetting.max_order_lot} lots (${maxQty} units)`);
+      throw new Error(`The maximum you can exit in a single order is ${segSetting.max_order_lot} lots or ${maxQty} qty. Please execute your position in multiple orders, or use the Exit All button available on the top right.`);
     }
 
     // Cumulative Position limit check
