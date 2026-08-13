@@ -101,6 +101,12 @@ BEGIN
         END IF;
     END;
 
+    -- Set self-referential idempotency key so close_position_v2 can detect this order
+    -- and skip creating a duplicate exit order (it checks WHERE idempotency_key = v_order_id::text)
+    IF p_idempotency_key IS NULL THEN
+        UPDATE public.orders SET idempotency_key = v_order_id::text WHERE id = v_order_id;
+    END IF;
+
     -- STEP 3: ROUTE INTO POSITION ENGINE (Only if immediate execution)
     IF p_status = 'EXECUTED' THEN
         -- Validate exit order constraints
@@ -182,7 +188,7 @@ BEGIN
                         PERFORM public.close_position_v2(
                             v_pos.id, v_closed_qty, p_fill_price,
                             'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                            v_order_id::text  -- reuse the already-inserted order id so close_position_v2 skips its own insert
                         );
                         v_remaining_qty := v_remaining_qty - v_closed_qty;
                     END IF;
@@ -215,7 +221,7 @@ BEGIN
                         PERFORM public.close_position_v2(
                             v_pos.id, v_closed_qty, p_fill_price,
                             'FIFO_EXIT', round((p_expected_brokerage * v_closed_qty) / p_qty, 2),
-                            p_idempotency_key || '_' || v_pos.id::text -- unique per lot
+                            v_order_id::text  -- reuse the already-inserted order id so close_position_v2 skips its own insert
                         );
                         v_remaining_qty := v_remaining_qty - v_closed_qty;
                     END IF;

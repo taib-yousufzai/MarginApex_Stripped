@@ -251,20 +251,34 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       created_at:   r.created_at as string,
     }));
 
-    // Build a set of position IDs that already have a real EXECUTED exit order
-    // so we don't also synthesize virtual SL/Target orders for them
-    const posIdsWithRealExitOrder = new Set<string>(
+    // Build a set of "symbol|exitSide" from real EXECUTED exit orders.
+    // If a real exit order already exists for a given symbol+exitSide, we skip generating
+    // a virtual SL/Target order for the same open position.
+    const realExitOrderKeys = new Set<string>(
       dbOrders
         .filter((o: any) => o.is_exit === true && o.status === 'EXECUTED')
-        .map((o: any) => o.info as string)
-        .filter(Boolean)
+        .map((o: any) => `${o.symbol}|${o.side}`)
     );
+
+    // Also build a set of position IDs that are fully closed to skip virtual orders
+    const closedPosRes = await admin
+      .from('positions')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'closed');
+    const closedPosIds = new Set<string>((closedPosRes.data ?? []).map((p: any) => p.id));
 
     // Dynamically synthesize virtual pending orders for positions with SL/Target
     const virtualOrders: MyOrder[] = [];
     for (const pos of openPositions) {
-      // Skip if we already have a real executed exit order for this position
-      if (posIdsWithRealExitOrder.has(pos.id)) continue;
+      // Skip if position is already closed
+      if (closedPosIds.has(pos.id)) continue;
+
+      const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
+      const exitKey = `${pos.symbol}|${exitSide}`;
+
+      // Skip if a real executed exit order already exists for this symbol+exitSide
+      if (realExitOrderKeys.has(exitKey)) continue;
 
       const stopLoss = pos.stop_loss ? Number(pos.stop_loss) : (pos.sl ? Number(pos.sl) : null);
       const target = pos.target ? Number(pos.target) : (pos.tp ? Number(pos.tp) : null);

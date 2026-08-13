@@ -535,10 +535,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           maxExitQty = totalOpenQtyForSymbol || existingPos.qty_open;
         }
         if (maxExitQty > 0 && rawQty > maxExitQty) {
-          showToast(`Exit quantity cannot exceed open position (${maxExitQty} qty). Corrected to maximum.`);
-          rawQty = maxExitQty;
-          setQtyInput(String(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty));
-          setOrderQty(orderUnit === 'lot' ? maxExitQty / lotSize : maxExitQty);
+          showToast(`Error: Exit qty (${rawQty}) exceeds this lot's available qty (${maxExitQty}). Please reduce the quantity.`);
+          setQtyError(`Cannot exceed ${maxExitQty} qty for this lot`);
+          return;
         }
       } else {
         const placeSetting = dbSeg ? getSegment(dbSeg, placeSide) : undefined;
