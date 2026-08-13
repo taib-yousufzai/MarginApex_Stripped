@@ -2245,14 +2245,14 @@ function WatchlistContent() {
                       }
                     } finally { clearTimeout(safetyTimer); setIsExecutingBasket(false); }
                   }}
-                  style={{ flex: 1, background: isExecutingBasket ? '#9CA3AF' : '#2C8E5A', color: '#fff', border: 'none', padding: '15px 0', borderRadius: '14px', fontSize: '0.9rem', fontWeight: '800', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', whiteSpace: 'nowrap', boxShadow: isExecutingBasket ? 'none' : '0 4px 12px rgba(44,142,90,0.25)' }}
+                  style={{ flex: 1.5, background: isExecutingBasket ? '#9CA3AF' : '#2C8E5A', color: '#fff', border: 'none', padding: '15px 0', borderRadius: '14px', fontSize: '0.9rem', fontWeight: '800', cursor: isExecutingBasket ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', whiteSpace: 'nowrap', boxShadow: isExecutingBasket ? 'none' : '0 4px 12px rgba(44,142,90,0.25)' }}
                 >
                   {isExecutingBasket ? <><AnimatedLoader size="small" /> Executing...</> : <><i className="fas fa-bolt" style={{ marginRight: '4px' }} /> Confirm</>}
                 </button>
                 <button
                   onClick={() => { if (isExecutingBasket) return; const s = document.getElementById('checkoutSheet'); const o = document.getElementById('checkoutSheetOverlay'); if (s) s.classList.remove('open'); if (o) o.classList.remove('active'); }}
                   disabled={isExecutingBasket}
-                  style={{ flex: 1, background: 'var(--bg-body, #F3F4F6)', color: isExecutingBasket ? '#9CA3AF' : 'var(--text-secondary)', border: '1px solid var(--border-light, #EEF2F8)', padding: '15px 22px', borderRadius: '14px', fontSize: '0.9rem', fontWeight: '700', cursor: isExecutingBasket ? 'not-allowed' : 'pointer' }}
+                  style={{ flex: 1, background: 'var(--bg-body, #F3F4F6)', color: isExecutingBasket ? '#9CA3AF' : 'var(--text-secondary)', border: '1px solid var(--border-light, #EEF2F8)', padding: '15px 0', borderRadius: '14px', fontSize: '0.9rem', fontWeight: '700', cursor: isExecutingBasket ? 'not-allowed' : 'pointer' }}
                 >
                   Cancel
                 </button>
