@@ -2604,7 +2604,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
                     disabled={isSubmitting} 
                     onClick={handlePlaceOrder}
                   >
-                      {isSubmitting ? <AnimatedLoader size="small" /> : (modifyOrderId ? 'Update Order' : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue}`))}
+                      {isSubmitting ? <AnimatedLoader size="small" /> : (modifyOrderId ? 'Update Order' : (isExitFlow ? 'Exit Position' : `${orderSide} ${useLots ? (Number(qtyValue) || 1) + ' Lot' : qtyValue + ' Qty'}`))}
                   </button>
                 </div>
               </div>
