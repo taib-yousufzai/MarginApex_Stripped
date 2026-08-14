@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useMarketQuotes, QuoteData } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
-import { useBinanceQuotes, BinanceQuote } from '@/hooks/useBinanceQuotes';
 import { ComexQuoteData } from '@/contexts/ComexDataContext';
 import { useOrderEntry, OrderSide, OrderType, ProductType } from '@/hooks/useOrderEntry';
 import { useActivePositions } from '@/hooks/useActivePositions';
@@ -543,34 +542,21 @@ function WatchlistContent() {
       .filter((v, i, a) => a.indexOf(v) === i); // unique
   }, [watchlistItems]);
 
-  const { quotes: binanceQuotes, loading: binanceLoading } = useBinanceQuotes(cryptoSymbols);
-
-  // Convert BinanceQuote objects to QuoteData format for InstrumentRow consumption
+  // Use marketQuotes instead of legacy binanceQuotes
   const binanceQuotesAsQuoteData = useMemo(() => {
     const result: Record<string, QuoteData> = {};
-    for (const [sym, bq] of Object.entries(binanceQuotes)) {
-      const close = bq.prevClosePrice || 0;
-      const lp = bq.lastPrice || 0;
-      result[sym] = {
-        lastPrice: lp,
-        change: lp - close,
-        changePercent: close > 0 ? ((lp - close) / close) * 100 : 0,
-        open: bq.openPrice || 0,
-        high: bq.highPrice || 0,
-        low: bq.lowPrice || 0,
-        close,
-        volume: bq.volume || 0,
-        bid: bq.bid || (lp * 0.9995),
-        ask: bq.ask || (lp * 1.0005),
-      };
+    for (const sym of cryptoSymbols) {
+      if (marketQuotes[sym]) {
+        result[sym] = marketQuotes[sym];
+      }
     }
     return result;
-  }, [binanceQuotes]);
+  }, [cryptoSymbols, marketQuotes]);
 
   // Expose binanceQuotes to window for inline script access
   useEffect(() => {
-    (window as any).__binanceQuotes = binanceQuotes;
-  }, [binanceQuotes]);
+    (window as any).__binanceQuotes = binanceQuotesAsQuoteData;
+  }, [binanceQuotesAsQuoteData]);
 
   // order_error is now handled centrally in ClientShell — no local listener needed.
 
