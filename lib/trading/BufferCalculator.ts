@@ -12,6 +12,7 @@ export interface BufferCalculationParams {
   sellSetting: BufferSettings | undefined;
   brokeragePerUnit?: number;
   exitPriceMode?: 'BID_ASK' | 'LTP';
+  isBasePriceRealBidAsk?: boolean;
 }
 
 /**
@@ -39,6 +40,7 @@ export function calculateBufferedPrice({
   sellSetting,
   brokeragePerUnit = 0,
   exitPriceMode,
+  isBasePriceRealBidAsk = false,
 }: BufferCalculationParams): number {
   if (!Number.isFinite(basePrice) || basePrice <= 0) {
     throw new Error('Invalid base price for buffer calculation');
@@ -64,11 +66,11 @@ export function calculateBufferedPrice({
   if (side === 'BUY') {
     if (isExit) {
       // Exiting a short position (Buying back to close)
-      const base = mode === 'LTP' ? basePrice : (basePrice * 1.001);
+      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 1.001);
       bufferedPrice = base * (1 + sellExitBuffer);
     } else {
       // Fresh Long entry (Buying)
-      const base = mode === 'LTP' ? basePrice : (basePrice * 1.001);
+      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 1.001);
       bufferedPrice = base * (1 + buyEntryBuffer);
     }
     bufferedPrice += brokeragePerUnit;
@@ -76,11 +78,11 @@ export function calculateBufferedPrice({
     // side === 'SELL'
     if (isExit) {
       // Exiting a long position (Selling to close)
-      const base = mode === 'LTP' ? basePrice : (basePrice * 0.999);
+      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 0.999);
       bufferedPrice = base * (1 - buyExitBuffer);
     } else {
       // Fresh Short entry (Selling)
-      const base = mode === 'LTP' ? basePrice : (basePrice * 0.999);
+      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 0.999);
       bufferedPrice = base * (1 - sellEntryBuffer);
     }
     bufferedPrice -= brokeragePerUnit;

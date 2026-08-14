@@ -20,6 +20,8 @@ vi.mock('@/lib/trading/BrokerageCalculator', () => ({
   calculateCarryBrokerage: vi.fn().mockReturnValue(0),
 }));
 
+global.fetch = vi.fn();
+
 describe('Admin Square-Off POST /api/admin/positions/[id]/sqoff', () => {
   let mockRpc: any;
   let mockFrom: any;
@@ -75,6 +77,19 @@ describe('Admin Square-Off POST /api/admin/positions/[id]/sqoff', () => {
     });
 
     mockRpc.mockResolvedValue({ data: 500, error: null });
+
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          'NSE:NIFTY': {
+            bid: 110,
+            ask: 110.5,
+          }
+        }
+      })
+    });
   });
 
   it('should call close_position RPC with p_closed_by: "ADMIN"', async () => {

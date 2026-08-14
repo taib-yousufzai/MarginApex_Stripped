@@ -213,7 +213,7 @@ export class TradeEngine {
           if (!q) return {};
           // Store under both `symbol` (e.g. BTC) and `kiteInst` (e.g. BTCUSDT)
           // so the price lookup at quotesMap[kiteInst] succeeds
-          const map: Record<string, number> = {
+          const map: Record<string, any> = {
             [symbol]: q.bid, [`${symbol}_bid`]: q.bid, [`${symbol}_ask`]: q.ask,
           };
           if (kiteInst && kiteInst !== symbol) {
@@ -373,7 +373,7 @@ export class TradeEngine {
       if (pos.symbol === symbol) {
         const pLot = Number(
           ctxScriptSettings.find((s: any) => s.symbol === pos.symbol)?.lot_size
-          || getLotSizeFallback(pos.symbol, dbSegment)
+          || getLotSizeFallback(pos.symbol, ctxScriptSettings)
         );
         if (pLot > 0) totalOpenLots += Number(pos.qty_open) / pLot;
       }
@@ -383,7 +383,7 @@ export class TradeEngine {
       if (!po.is_exit && po.symbol === symbol) {
         const poLot = Number(
           ctxScriptSettings.find((s: any) => s.symbol === po.symbol)?.lot_size
-          || getLotSizeFallback(po.symbol, dbSegment)
+          || getLotSizeFallback(po.symbol, ctxScriptSettings)
         );
         if (poLot > 0) {
           totalOpenLots += Number(po.lots) > 0
@@ -406,6 +406,8 @@ export class TradeEngine {
     let kiteLtp = quotesMap[kiteInst] ?? null;
     let kiteBid = quotesMap[`${kiteInst}_bid`] || kiteLtp;
     let kiteAsk = quotesMap[`${kiteInst}_ask`] || kiteLtp;
+    const depthBuy: any[] = quotesMap[`${kiteInst}_depth_buy`] || [];
+    const depthSell: any[] = quotesMap[`${kiteInst}_depth_sell`] || [];
 
     // Speed cache missed (common for MCX options not streamed by Ticker Daemon).
     // Fall back: 1) client_price observed by the UI, 2) Kite REST quote.
@@ -560,12 +562,54 @@ export class TradeEngine {
 
 
     // 4. Execution Price Calculation (BufferCalculator)
-    //
-    // For MARKET / SLM orders: use raw LTP as base — the buffer formula applies
-    // the 0.999/1.001 spread simulation internally (matches original order execution).
-    // For LIMIT / SL / GTT orders: use client_price as-is (no spread applied).
     const isLimitType = ['LIMIT', 'SL', 'GTT'].includes(order_type);
-    const executionBasePrice = isLimitType ? clientPriceNum : kiteLtp;
+    
+    let executionBasePrice = kiteLtp;
+    let isRealBidAsk = false;
+
+    if (isLimitType) {
+      executionBasePrice = clientPriceNum > 0 ? clientPriceNum : kiteLtp;
+      isRealBidAsk = true;
+    } else {
+      // MARKET or SLM orders - Consume Order Book Depth to calculate VWAP
+      const isExecutingBuy = side === 'BUY';
+      const depth = isExecutingBuy ? depthSell : depthBuy;
+      
+      let remainingQty = qty;
+      let totalCost = 0;
+      let matchedQty = 0;
+
+      if (depth && Array.isArray(depth) && depth.length > 0) {
+        // Sort levels (best price first). Ask (Sell) side: lowest price first. Bid (Buy) side: highest price first.
+        const sortedDepth = [...depth].sort((a, b) => isExecutingBuy ? a.price - b.price : b.price - a.price);
+
+        for (const level of sortedDepth) {
+          if (remainingQty <= 0) break;
+          const levelQty = Number(level.quantity || 0);
+          if (levelQty <= 0) continue;
+
+          const matchAmount = Math.min(remainingQty, levelQty);
+          totalCost += matchAmount * level.price;
+          matchedQty += matchAmount;
+          remainingQty -= matchAmount;
+        }
+      }
+
+      if (matchedQty > 0) {
+        // If partial fill from depth, fallback remaining to Best Ask/Bid
+        if (remainingQty > 0) {
+          const fallbackPrice = isExecutingBuy ? kiteAsk : kiteBid;
+          totalCost += remainingQty * fallbackPrice;
+          matchedQty += remainingQty;
+        }
+        executionBasePrice = totalCost / matchedQty;
+        isRealBidAsk = true;
+      } else {
+        // No depth available, fallback to Best Ask/Bid entirely
+        executionBasePrice = isExecutingBuy ? kiteAsk : kiteBid;
+        isRealBidAsk = true;
+      }
+    }
 
     const exitPriceMode = (await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK')) as 'BID_ASK' | 'LTP';
     let fillPrice = calculateBufferedPrice({
@@ -576,6 +620,7 @@ export class TradeEngine {
       sellSetting,
       brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0,
       exitPriceMode,
+      isBasePriceRealBidAsk: isRealBidAsk,
     });
 
     fillPrice = Math.max(0.01, Math.round(fillPrice * 100) / 100);

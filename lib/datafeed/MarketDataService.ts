@@ -110,6 +110,8 @@ async function executeRawKiteQuotes(instruments: string[]): Promise<Record<strin
               result[inst] = q.last_price;
               result[`${inst}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${inst}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
+              result[`${inst}_depth_buy`] = q.depth?.buy || [];
+              result[`${inst}_depth_sell`] = q.depth?.sell || [];
               foundKiteIds.add(inst);
             }
           } catch { /* malformed cache entry — fall through */ }
@@ -134,6 +136,8 @@ async function executeRawKiteQuotes(instruments: string[]): Promise<Record<strin
               result[key] = q.last_price;
               result[`${key}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${key}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
+              result[`${key}_depth_buy`] = q.depth?.buy || [];
+              result[`${key}_depth_sell`] = q.depth?.sell || [];
               foundKiteIds.add(key);
             }
           }
@@ -175,6 +179,8 @@ async function executeRawKiteQuotes(instruments: string[]): Promise<Record<strin
           result[inst] = quote.last_price;
           result[`${inst}_bid`] = Number(quote.depth?.buy?.[0]?.price ?? quote.last_price);
           result[`${inst}_ask`] = Number(quote.depth?.sell?.[0]?.price ?? quote.last_price);
+          result[`${inst}_depth_buy`] = quote.depth?.buy || [];
+          result[`${inst}_depth_sell`] = quote.depth?.sell || [];
 
           const parts = inst.split(':');
           const exchange = parts[0] || 'NSE';
@@ -252,6 +258,8 @@ export function fetchKiteQuotes(instruments: string[]): Promise<Record<string, n
           subset[inst] = batchQuotes[inst];
           subset[`${inst}_bid`] = batchQuotes[`${inst}_bid`];
           subset[`${inst}_ask`] = batchQuotes[`${inst}_ask`];
+          subset[`${inst}_depth_buy`] = batchQuotes[`${inst}_depth_buy`];
+          subset[`${inst}_depth_sell`] = batchQuotes[`${inst}_depth_sell`];
         }
       });
       resolve(subset);
@@ -265,9 +273,9 @@ export function fetchKiteQuotes(instruments: string[]): Promise<Record<string, n
 
 export async function fetchSpeedQuotes(
   instruments: string[]
-): Promise<Record<string, number>> {
+): Promise<Record<string, any>> {
   const start = performance.now();
-  const result: Record<string, number> = {};
+  const result: Record<string, any> = {};
   if (instruments.length === 0) return result;
 
   const MAX_QUOTE_AGE_MS = 15000; // 15 seconds max age
@@ -301,6 +309,8 @@ export async function fetchSpeedQuotes(
               result[inst] = q.last_price;
               result[`${inst}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${inst}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
+              result[`${inst}_depth_buy`] = q.depth?.buy || [];
+              result[`${inst}_depth_sell`] = q.depth?.sell || [];
               foundKiteIds.add(inst);
               redisHits++;
             }
@@ -335,6 +345,8 @@ export async function fetchSpeedQuotes(
               result[key] = q.last_price;
               result[`${key}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${key}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);
+              result[`${key}_depth_buy`] = q.depth?.buy || [];
+              result[`${key}_depth_sell`] = q.depth?.sell || [];
               foundKiteIds.add(key);
               daemonHits++;
             }

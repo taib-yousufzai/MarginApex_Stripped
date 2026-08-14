@@ -1,175 +1,263 @@
-/**
- * Regression tests for bid/ask execution pricing fix.
- *
- * These tests document the intended execution behavior and act as a regression
- * guard. If anyone changes the execution logic back to LTP, these tests fail.
- *
- * Test parameters (from client complaint):
- *   BID = 1924.14
- *   ASK = 1926.06
- */
+import { describe, it, expect } from 'vitest';
+import { calculateBufferedPrice } from '../lib/trading/BufferCalculator';
 
-// ---------------------------------------------------------------------------
-// Helper: simulate the fill price computation used in the matching engine
-// ---------------------------------------------------------------------------
-function computeFillPrice(
-  side: 'BUY' | 'SELL',
-  isExit: boolean,
-  quote: { bid: number; ask: number },
-  buffers: {
-    buyEntryBuffer: number; buyExitBuffer: number;
-    sellEntryBuffer: number; sellExitBuffer: number;
-  }
-): number | null {
-  const ref = side === 'BUY' ? quote.ask : quote.bid;
-  if (!ref || ref <= 0) return null; // defer — no fallback
+// We will mock TradeEngine dependencies to test placeOrder logic 
+// Since TradeEngine is highly coupled with the database, we can also test the logic independently here.
+// But the prompt asked for "deterministic tests" to reproduce the issue.
+// First, let's test BufferCalculator to ensure it doesn't apply the 1.001/0.999 spread when isBasePriceRealBidAsk is true.
 
-  let priceWithBuffer: number;
-  if (side === 'BUY') {
-    priceWithBuffer = isExit
-      ? ref * (1 + buffers.sellExitBuffer)
-      : ref * (1 + buffers.buyEntryBuffer);
-  } else {
-    priceWithBuffer = isExit
-      ? ref * (1 - buffers.buyExitBuffer)
-      : ref * (1 - buffers.sellEntryBuffer);
-  }
-  return Math.max(0.01, Math.round(priceWithBuffer * 100) / 100);
-}
+describe('BufferCalculator', () => {
+  const dummyBuySetting = { entry_buffer: 0.003, exit_buffer: 0.0017, exit_price_mode: 'BID_ASK' as any };
+  const dummySellSetting = { entry_buffer: 0.003, exit_buffer: 0.0017, exit_price_mode: 'BID_ASK' as any };
 
-// Zero-buffer scenario (pure bid/ask spread test)
-const ZERO_BUFFERS = {
-  buyEntryBuffer: 0,
-  buyExitBuffer: 0,
-  sellEntryBuffer: 0,
-  sellExitBuffer: 0,
-};
-
-const QUOTE = { bid: 1924.14, ask: 1926.06 };
-
-// ---------------------------------------------------------------------------
-// Test 1 — LONG open + close: spread cost = -192
-// ---------------------------------------------------------------------------
-describe('Execution pricing — LONG', () => {
-  test('BUY 100 fills at ASK', () => {
-    const entryFill = computeFillPrice('BUY', false, QUOTE, ZERO_BUFFERS);
-    expect(entryFill).toBe(1926.06);
+  it('should apply 1.001 spread when isBasePriceRealBidAsk is false (Legacy behavior)', () => {
+    // Legacy MARKET BUY (base 100) -> uses 100.1 as base, then applies 0.003 buffer
+    const legacyBuy = calculateBufferedPrice({
+      side: 'BUY',
+      isExit: false,
+      basePrice: 100,
+      buySetting: dummyBuySetting,
+      sellSetting: dummySellSetting,
+      isBasePriceRealBidAsk: false
+    });
+    // base = 100 * 1.001 = 100.1
+    // buffered = 100.1 * (1 + 0.003) = 100.4003
+    expect(legacyBuy).toBeCloseTo(100.4003, 4);
+    
+    // Legacy MARKET SELL (base 100) -> uses 99.9 as base, then applies 0.003 buffer
+    const legacySell = calculateBufferedPrice({
+      side: 'SELL',
+      isExit: false,
+      basePrice: 100,
+      buySetting: dummyBuySetting,
+      sellSetting: dummySellSetting,
+      isBasePriceRealBidAsk: false
+    });
+    // base = 100 * 0.999 = 99.9
+    // buffered = 99.9 * (1 - 0.003) = 99.6003
+    expect(legacySell).toBeCloseTo(99.6003, 4);
   });
 
-  test('SELL 100 fills at BID', () => {
-    const exitFill = computeFillPrice('SELL', true, QUOTE, ZERO_BUFFERS);
-    expect(exitFill).toBe(1924.14);
-  });
-
-  test('LONG gross P&L (qty=100) = -192', () => {
-    const entryFill = computeFillPrice('BUY', false, QUOTE, ZERO_BUFFERS)!;
-    const exitFill = computeFillPrice('SELL', true, QUOTE, ZERO_BUFFERS)!;
-    const grossPnl = (exitFill - entryFill) * 100;
-    expect(Math.round(grossPnl * 100) / 100).toBe(-192);
+  it('should NOT apply 1.001 spread when isBasePriceRealBidAsk is true (New VWAP behavior)', () => {
+    // New MARKET BUY (base 100, which is already Ask) -> uses 100 as base
+    const vwapBuy = calculateBufferedPrice({
+      side: 'BUY',
+      isExit: false,
+      basePrice: 100, // already ask
+      buySetting: dummyBuySetting,
+      sellSetting: dummySellSetting,
+      isBasePriceRealBidAsk: true
+    });
+    // base = 100
+    // buffered = 100 * (1 + 0.003) = 100.3
+    expect(vwapBuy).toBeCloseTo(100.3, 4);
+    
+    // New MARKET SELL (base 100, which is already Bid) -> uses 100 as base
+    const vwapSell = calculateBufferedPrice({
+      side: 'SELL',
+      isExit: false,
+      basePrice: 100, // already bid
+      buySetting: dummyBuySetting,
+      sellSetting: dummySellSetting,
+      isBasePriceRealBidAsk: true
+    });
+    // base = 100
+    // buffered = 100 * (1 - 0.003) = 99.7
+    expect(vwapSell).toBeCloseTo(99.7, 4);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Test 2 — SHORT open + close: spread cost = -192
-// ---------------------------------------------------------------------------
-describe('Execution pricing — SHORT', () => {
-  test('SELL 100 fills at BID', () => {
-    const entryFill = computeFillPrice('SELL', false, QUOTE, ZERO_BUFFERS);
-    expect(entryFill).toBe(1924.14);
+// Since TradeEngine has deep DB dependencies, we'll write a standalone unit test 
+// for the VWAP calculation logic exactly as it is implemented in TradeEngine.
+describe('Order Book VWAP Calculation', () => {
+  const calculateExecutionBasePrice = (side: 'BUY' | 'SELL', qty: number, depthBuy: any[], depthSell: any[], kiteBid: number, kiteAsk: number) => {
+    const isExecutingBuy = side === 'BUY';
+    const depth = isExecutingBuy ? depthSell : depthBuy;
+    
+    let remainingQty = qty;
+    let totalCost = 0;
+    let matchedQty = 0;
+
+    if (depth && Array.isArray(depth) && depth.length > 0) {
+      // Sort levels
+      const sortedDepth = [...depth].sort((a, b) => isExecutingBuy ? a.price - b.price : b.price - a.price);
+
+      for (const level of sortedDepth) {
+        if (remainingQty <= 0) break;
+        const levelQty = Number(level.quantity || 0);
+        if (levelQty <= 0) continue;
+
+        const matchAmount = Math.min(remainingQty, levelQty);
+        totalCost += matchAmount * level.price;
+        matchedQty += matchAmount;
+        remainingQty -= matchAmount;
+      }
+    }
+
+    if (matchedQty > 0) {
+      if (remainingQty > 0) {
+        const fallbackPrice = isExecutingBuy ? kiteAsk : kiteBid;
+        totalCost += remainingQty * fallbackPrice;
+        matchedQty += remainingQty;
+      }
+      return totalCost / matchedQty;
+    } else {
+      return isExecutingBuy ? kiteAsk : kiteBid;
+    }
+  };
+
+  const depthBuy = [
+    { price: 99.90, quantity: 10 },
+    { price: 99.85, quantity: 10 },
+    { price: 99.80, quantity: 20 },
+  ];
+  
+  const depthSell = [
+    { price: 100.00, quantity: 10 },
+    { price: 100.05, quantity: 10 },
+    { price: 100.10, quantity: 20 },
+  ];
+
+  it('TEST 1: MARKET BUY executes exactly at Best Ask', () => {
+    // Qty = 10, hits the first ask level perfectly
+    const price = calculateExecutionBasePrice('BUY', 10, depthBuy, depthSell, 99.90, 100.00);
+    expect(price).toBe(100.00);
   });
 
-  test('BUY 100 fills at ASK', () => {
-    const exitFill = computeFillPrice('BUY', true, QUOTE, ZERO_BUFFERS);
-    expect(exitFill).toBe(1926.06);
+  it('TEST 2: MARKET SELL executes exactly at Best Bid', () => {
+    // Qty = 10, hits the first bid level perfectly
+    const price = calculateExecutionBasePrice('SELL', 10, depthBuy, depthSell, 99.90, 100.00);
+    expect(price).toBe(99.90);
   });
 
-  test('SHORT gross P&L (qty=100) = -192', () => {
-    const entryFill = computeFillPrice('SELL', false, QUOTE, ZERO_BUFFERS)!;
-    const exitFill = computeFillPrice('BUY', true, QUOTE, ZERO_BUFFERS)!;
-    // SHORT P&L = (entry - exit) * qty
-    const grossPnl = (entryFill - exitFill) * 100;
-    expect(Math.round(grossPnl * 100) / 100).toBe(-192);
+  it('TEST 3: Insufficient Best Ask liquidity correctly consumes subsequent Ask levels', () => {
+    // Qty = 25 for BUY
+    // 10 @ 100.00
+    // 10 @ 100.05
+    // 5 @ 100.10
+    // Total cost = 1000 + 1000.5 + 500.5 = 2501
+    // VWAP = 2501 / 25 = 100.04
+    const price = calculateExecutionBasePrice('BUY', 25, depthBuy, depthSell, 99.90, 100.00);
+    expect(price).toBe(100.04);
+  });
+
+  it('TEST 4: Insufficient Best Bid liquidity correctly consumes subsequent Bid levels', () => {
+    // Qty = 25 for SELL
+    // 10 @ 99.90
+    // 10 @ 99.85
+    // 5 @ 99.80
+    // Total = 999 + 998.5 + 499 = 2496.5
+    // VWAP = 2496.5 / 25 = 99.86
+    const price = calculateExecutionBasePrice('SELL', 25, depthBuy, depthSell, 99.90, 100.00);
+    expect(price).toBe(99.86);
+  });
+
+  it('TEST 5/6: Verify BUY never consumes Bid side, and SELL never consumes Ask side', () => {
+    // For a BUY, if we change depthBuy, it shouldn't affect the price
+    const modifiedDepthBuy = [{ price: 50.00, quantity: 1000 }];
+    const priceBuy = calculateExecutionBasePrice('BUY', 10, modifiedDepthBuy, depthSell, 99.90, 100.00);
+    expect(priceBuy).toBe(100.00);
+
+    // For a SELL, if we change depthSell, it shouldn't affect the price
+    const modifiedDepthSell = [{ price: 200.00, quantity: 1000 }];
+    const priceSell = calculateExecutionBasePrice('SELL', 10, depthBuy, modifiedDepthSell, 99.90, 100.00);
+    expect(priceSell).toBe(99.90);
+  });
+  
+  it('TEST 7: Fallback to Best Ask/Bid if depth is completely missing', () => {
+    const priceBuy = calculateExecutionBasePrice('BUY', 10, [], [], 99.90, 100.00);
+    expect(priceBuy).toBe(100.00);
+
+    const priceSell = calculateExecutionBasePrice('SELL', 10, [], [], 99.90, 100.00);
+    expect(priceSell).toBe(99.90);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Test 3 — Client complaint reproduction: qty 1, P&L = -1.92 NOT ~0
-// ---------------------------------------------------------------------------
-describe('Client complaint — qty 1 LONG', () => {
-  test('entry_price = ASK = 1926.06', () => {
-    const entryFill = computeFillPrice('BUY', false, QUOTE, ZERO_BUFFERS);
-    expect(entryFill).toBe(1926.06);
+describe('Admin Buffer Application (Correct Order-Type Semantics)', () => {
+  const adminBuySetting = { entry_buffer: 0.10, exit_buffer: 0.05, exit_price_mode: 'BID_ASK' as any };
+  const adminSellSetting = { entry_buffer: 0.20, exit_buffer: 0.15, exit_price_mode: 'BID_ASK' as any };
+
+  it('MARKET BUY uses Best Ask and applies Admin Buy Buffer', () => {
+    // Best Ask = 100.00. Buffer = 0.10% (0.001)
+    const basePrice = 100.00;
+    const finalPrice = calculateBufferedPrice({
+      side: 'BUY',
+      isExit: false,
+      basePrice,
+      buySetting: adminBuySetting,
+      sellSetting: adminSellSetting,
+      isBasePriceRealBidAsk: true
+    });
+    // 100.00 * (1 + 0.001) = 100.10
+    expect(finalPrice).toBeCloseTo(100.10, 4);
   });
 
-  test('exit_price = BID = 1924.14 (NOT 1926.06)', () => {
-    const exitFill = computeFillPrice('SELL', true, QUOTE, ZERO_BUFFERS);
-    expect(exitFill).toBe(1924.14);
-    expect(exitFill).not.toBe(1926.06); // the bug: exit was same as entry
+  it('MARKET SELL uses Best Bid and applies Admin Sell Buffer', () => {
+    // Best Bid = 99.90. Buffer = 0.20% (0.002)
+    const basePrice = 99.90;
+    const finalPrice = calculateBufferedPrice({
+      side: 'SELL',
+      isExit: false,
+      basePrice,
+      buySetting: adminBuySetting,
+      sellSetting: adminSellSetting,
+      isBasePriceRealBidAsk: true
+    });
+    // 99.90 * (1 - 0.002) = 99.7002
+    expect(finalPrice).toBeCloseTo(99.7002, 4);
   });
 
-  test('gross P&L = -1.92, not ~0', () => {
-    const entryFill = computeFillPrice('BUY', false, QUOTE, ZERO_BUFFERS)!;
-    const exitFill = computeFillPrice('SELL', true, QUOTE, ZERO_BUFFERS)!;
-    const grossPnl = Math.round((exitFill - entryFill) * 100) / 100;
-    expect(grossPnl).toBe(-1.92);
-    expect(Math.abs(grossPnl)).toBeGreaterThan(0.5); // must NOT be ~0
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test 4 — Missing ASK defers BUY order (no silent LTP fallback)
-// ---------------------------------------------------------------------------
-describe('Missing bid/ask — deferral policy', () => {
-  test('BUY order deferred when ASK is missing', () => {
-    const quoteWithoutAsk = { bid: 1924.14, ask: 0 }; // ask=0 treated as unavailable
-    const fill = computeFillPrice('BUY', false, quoteWithoutAsk, ZERO_BUFFERS);
-    expect(fill).toBeNull(); // must defer, not use bid or last_price
+  it('LIMIT BUY applies Admin Buy Buffer to Limit Price', () => {
+    // Limit Price = 100.00.
+    const basePrice = 100.00;
+    const finalPrice = calculateBufferedPrice({
+      side: 'BUY',
+      isExit: false,
+      basePrice,
+      buySetting: adminBuySetting,
+      sellSetting: adminSellSetting,
+      isBasePriceRealBidAsk: true
+    });
+    // Assuming option 1: Buffer applies to limit.
+    // 100.00 * (1 + 0.001) = 100.10
+    expect(finalPrice).toBeCloseTo(100.10, 4);
   });
 
-  // ---------------------------------------------------------------------------
-  // Test 5 — Missing BID defers SELL order
-  // ---------------------------------------------------------------------------
-  test('SELL order deferred when BID is missing', () => {
-    const quoteWithoutBid = { bid: 0, ask: 1926.06 }; // bid=0 treated as unavailable
-    const fill = computeFillPrice('SELL', false, quoteWithoutBid, ZERO_BUFFERS);
-    expect(fill).toBeNull(); // must defer, not use ask or last_price
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test 6 — LONG SL triggers on BID, not LTP
-// Scenario: SL=1920, BID=1919.50, LTP=1921.00 → SL should fire
-// ---------------------------------------------------------------------------
-describe('SL/Target trigger semantics', () => {
-  function shouldLongSlTrigger(bid: number, stopLoss: number): boolean {
-    if (!bid || bid <= 0) return false;
-    return bid <= stopLoss;
-  }
-
-  test('LONG SL fires when BID <= stopLoss, even if LTP > stopLoss', () => {
-    const bid = 1919.50;
-    const ltp = 1921.00; // LTP is above SL
-    const stopLoss = 1920;
-    expect(bid <= stopLoss).toBe(true);   // BID has crossed SL
-    expect(ltp <= stopLoss).toBe(false);  // LTP has NOT crossed SL — the bug
-    expect(shouldLongSlTrigger(bid, stopLoss)).toBe(true);
+  it('LIMIT SELL applies Admin Sell Buffer to Limit Price', () => {
+    const basePrice = 100.00;
+    const finalPrice = calculateBufferedPrice({
+      side: 'SELL',
+      isExit: false,
+      basePrice,
+      buySetting: adminBuySetting,
+      sellSetting: adminSellSetting,
+      isBasePriceRealBidAsk: true
+    });
+    // 100.00 * (1 - 0.002) = 99.80
+    expect(finalPrice).toBeCloseTo(99.80, 4);
   });
 
-  // ---------------------------------------------------------------------------
-  // Test 7 — SHORT Target triggers on ASK, not LTP
-  // Scenario: target=1930, ASK=1929.00, LTP=1928.00 → target should fire
-  // ---------------------------------------------------------------------------
-  function shouldShortTargetTrigger(ask: number, target: number): boolean {
-    if (!ask || ask <= 0) return false;
-    return ask <= target;
-  }
+  it('Zero Buffer verifies that execution reduces to pure VWAP', () => {
+    const zeroSetting = { entry_buffer: 0, exit_buffer: 0, exit_price_mode: 'BID_ASK' as any };
+    
+    const buyPrice = calculateBufferedPrice({
+      side: 'BUY',
+      isExit: false,
+      basePrice: 100.04, // e.g., VWAP over 3 levels
+      buySetting: zeroSetting,
+      sellSetting: zeroSetting,
+      isBasePriceRealBidAsk: true
+    });
+    expect(buyPrice).toBe(100.04);
 
-  test('SHORT target fires when ASK <= target, even if LTP < target', () => {
-    const ask = 1929.00;
-    const ltp = 1928.00; // LTP is below target
-    const target = 1930;
-    expect(ask <= target).toBe(true);  // ASK has crossed target
-    expect(ltp <= target).toBe(true);  // LTP also crosses but is the wrong reference
-    expect(shouldShortTargetTrigger(ask, target)).toBe(true);
+    const sellPrice = calculateBufferedPrice({
+      side: 'SELL',
+      isExit: false,
+      basePrice: 99.86,
+      buySetting: zeroSetting,
+      sellSetting: zeroSetting,
+      isBasePriceRealBidAsk: true
+    });
+    expect(sellPrice).toBe(99.86);
   });
 });

@@ -4,6 +4,8 @@ import { getAdminClient } from './adminClient.ts';
 export interface Quote {
   id: string; // e.g. "NSE:INFY"
   last_price: number;
+  bid?: number;
+  ask?: number;
 }
 
 /**
@@ -16,9 +18,13 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
   if (!quotes || quotes.length === 0) return;
 
   // Build a lookup map of prices for fast access
-  const pricesMap = new Map<string, number>();
+  const pricesMap = new Map<string, { ltp: number; bid: number; ask: number }>();
   for (const quote of quotes) {
-    pricesMap.set(quote.id, quote.last_price);
+    pricesMap.set(quote.id, {
+      ltp: quote.last_price,
+      bid: quote.bid ?? quote.last_price,
+      ask: quote.ask ?? quote.last_price
+    });
   }
 
   // 1. Fetch pending orders and open positions in parallel
@@ -75,7 +81,8 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
 
     for (const order of pendingOrders) {
       const symbolKey = order.kite_instrument || order.symbol;
-      const ltp = pricesMap.get(symbolKey);
+      const priceObj = pricesMap.get(symbolKey);
+      const ltp = priceObj?.ltp;
 
       if (ltp === undefined || ltp <= 0) {
         continue; // No price update for this symbol in the current batch
@@ -293,41 +300,43 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
 
       // 3. Compute live Floating P/L and resolve LTP/Prices for each position
       let totalUnrealised = 0;
-      const resolvedPositions = [];
+      const resolvedPositions: any[] = [];
 
       for (const pos of userPositions) {
-        let ltp = pricesMap.get(pos.symbol);
+        let priceObj = pricesMap.get(pos.symbol);
 
-        if (ltp === undefined && pos.settlement) {
+        if (!priceObj && pos.settlement) {
           let exchange = 'NSE';
           const s = pos.settlement.toUpperCase();
           if (s.includes('MCX')) exchange = 'MCX';
           else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
           else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
           else if (s.includes('BSE')) exchange = 'BSE';
-          ltp = pricesMap.get(`${exchange}:${pos.symbol}`);
+          priceObj = pricesMap.get(`${exchange}:${pos.symbol}`);
         }
 
         // Fallback
-        if (ltp === undefined || ltp <= 0) {
-          ltp = Number(pos.ltp ?? pos.entry_price);
+        if (!priceObj || priceObj.ltp <= 0) {
+          priceObj = { ltp: Number(pos.ltp ?? pos.entry_price), bid: Number(pos.ltp ?? pos.entry_price), ask: Number(pos.ltp ?? pos.entry_price) };
         }
 
+        const ltp = priceObj.ltp;
         const entryPrice = Number(pos.entry_price ?? pos.avg_price);
         const qty = Number(pos.qty_open ?? 0);
         const buyExitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
         const sellExitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
         const pnl = pos.side === 'BUY'
-          // Closing BUY (selling) → BID (0.999) - exitBuffer
-          ? (((ltp * 0.999) * (1 - buyExitBuffer)) - entryPrice) * qty
-          // Closing SELL (buying back) → ASK (1.001) + exitBuffer
-          : (entryPrice - ((ltp * 1.001) * (1 + sellExitBuffer))) * qty;
+          // Closing BUY (selling) → BID - exitBuffer
+          ? ((priceObj.bid * (1 - buyExitBuffer)) - entryPrice) * qty
+          // Closing SELL (buying back) → ASK + exitBuffer
+          : (entryPrice - (priceObj.ask * (1 + sellExitBuffer))) * qty;
 
         totalUnrealised += pnl;
 
         resolvedPositions.push({
           pos,
           ltp,
+          priceObj,
           pnl
         });
       }
@@ -339,17 +348,18 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         for (const item of resolvedPositions) {
           const pos = item.pos;
           const ltp = item.ltp;
+          const priceObj = item.priceObj;
 
           // Calculate exit price
           let exitPrice = ltp;
           if (pos.side === 'BUY') {
-            // Closing BUY (selling) → BID (0.999) - exitBuffer
+            // Closing BUY (selling) → BID - exitBuffer
             const exitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
-            exitPrice = (ltp * 0.999) * (1 - exitBuffer);
+            exitPrice = priceObj.bid * (1 - exitBuffer);
           } else {
-            // Closing SELL (buying back) → ASK (1.001) + exitBuffer
+            // Closing SELL (buying back) → ASK + exitBuffer
             const exitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
-            exitPrice = (ltp * 1.001) * (1 + exitBuffer);
+            exitPrice = priceObj.ask * (1 + exitBuffer);
           }
           exitPrice = Math.round(exitPrice * 10000) / 10000;
 
@@ -378,21 +388,23 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         continue; // Already closed by drawdown limit
       }
 
-      let ltp = pricesMap.get(pos.symbol);
+      let priceObj = pricesMap.get(pos.symbol);
 
-      if (ltp === undefined && pos.settlement) {
+      if (!priceObj && pos.settlement) {
         let exchange = 'NSE';
         const s = pos.settlement.toUpperCase();
         if (s.includes('MCX')) exchange = 'MCX';
         else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
         else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
         else if (s.includes('BSE')) exchange = 'BSE';
-        ltp = pricesMap.get(`${exchange}:${pos.symbol}`);
+        priceObj = pricesMap.get(`${exchange}:${pos.symbol}`);
       }
 
-      if (ltp === undefined || ltp <= 0) {
+      if (!priceObj || priceObj.ltp <= 0) {
         continue; // No price update in this batch
       }
+      
+      const ltp = priceObj.ltp;
 
       let shouldClose = false;
       let closeReason = 'AUTO_SQOFF';
@@ -431,11 +443,11 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         let exitPrice = ltp;
         const exitBuffer = segmentSettingsCache.get(`${pos.user_id}|${pos.settlement}|${pos.side}`)?.exit_buffer ?? 0.0017;
         if (pos.side === 'BUY') {
-          // Closing BUY (selling) → BID (0.999) - exitBuffer
-          exitPrice = (ltp * 0.999) * (1 - exitBuffer);
+          // Closing BUY (selling) → BID - exitBuffer
+          exitPrice = priceObj.bid * (1 - exitBuffer);
         } else {
-          // Closing SELL (buying back) → ASK (1.001) + exitBuffer
-          exitPrice = (ltp * 1.001) * (1 + exitBuffer);
+          // Closing SELL (buying back) → ASK + exitBuffer
+          exitPrice = priceObj.ask * (1 + exitBuffer);
         }
         exitPrice = Math.round(exitPrice * 10000) / 10000;
 

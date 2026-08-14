@@ -80,7 +80,14 @@ export async function POST(
       .eq('side', position.side)
       .maybeSingle();
 
-    const exitBuffer = Number(segSetting?.exit_buffer ?? 0.0017);
+    const toDecimalBuffer = (val: any, fallback: number) => {
+      if (val === undefined || val === null || isNaN(Number(val))) return fallback;
+      const num = Number(val);
+      if (num === 0) return 0;
+      return num > 0.005 ? num / 100 : num;
+    };
+
+    const exitBuffer = toDecimalBuffer(segSetting?.exit_buffer, 0.0017);
 
     // Step 6: Compute exit price — buffer applied on top of the correct market side price.
     // BUY pos (SELL exit): BID × (1 - exitBuffer)
