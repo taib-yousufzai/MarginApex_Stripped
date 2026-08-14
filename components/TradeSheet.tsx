@@ -148,6 +148,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       let sym = item.symbol.replace('/', '');
       if (sym.endsWith('USDT')) sym = sym.replace('USDT', '');
       list.push(sym);
+      list.push(`${sym}USDT`);
     } else if (bSymbol) {
       list.push(bSymbol);
     }
