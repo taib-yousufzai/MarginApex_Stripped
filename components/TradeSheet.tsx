@@ -145,11 +145,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     const list: string[] = [];
     if (computedKiteSymbol) list.push(computedKiteSymbol);
     if (isCrypto && item?.symbol) {
-      let sym = item.symbol.replace('/', '');
-      if (sym.endsWith('USDT')) sym = sym.replace('USDT', '');
-      list.push(sym);
-      list.push(`${sym}USDT`);
-    } else if (bSymbol) {
+      list.push(item.symbol.replace('/', ''));
+    }
+    if (bSymbol) {
       list.push(bSymbol);
     }
     return list;
@@ -168,11 +166,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     : (item?.price ?? 0);
   let currentChangePercent = parseFloat(item?.change?.replace(/[%+]/g, '') || '0') || 0;
 
-  let cryptoSymbol = item?.symbol ? item.symbol.replace('/', '') : '';
-  if (cryptoSymbol.endsWith('USDT')) cryptoSymbol = cryptoSymbol.replace('USDT', '');
-  const cryptoQuote = isCrypto && cryptoSymbol ? marketQuotes[cryptoSymbol] : null;
+  const cryptoQuote = isCrypto && bSymbol ? (marketQuotes[bSymbol] || marketQuotes[item?.symbol?.replace('/', '') || '']) : null;
 
-  if (isCrypto && cryptoSymbol && cryptoQuote) {
+  if (isCrypto && bSymbol && cryptoQuote) {
     currentLtp = cryptoQuote.lastPrice || currentLtp;
     const prevClose = (cryptoQuote as any).prevClosePrice ?? (cryptoQuote as any).close ?? currentLtp;
     currentChangePercent = (cryptoQuote as any).changePercent ?? (prevClose > 0 ? ((currentLtp - prevClose) / prevClose) * 100 : 0);
@@ -205,7 +201,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let rawAsk = currentLtp;
 
   if (currentLtp > 0) {
-    if (isCrypto && cryptoSymbol && cryptoQuote) {
+    if (isCrypto && bSymbol && cryptoQuote) {
       rawBid = (cryptoQuote as any).bid || currentLtp;
       rawAsk = (cryptoQuote as any).ask || currentLtp;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
