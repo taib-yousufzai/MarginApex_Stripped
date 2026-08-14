@@ -542,22 +542,6 @@ function WatchlistContent() {
       .filter((v, i, a) => a.indexOf(v) === i); // unique
   }, [watchlistItems]);
 
-  // Use marketQuotes instead of legacy binanceQuotes
-  const binanceQuotesAsQuoteData = useMemo(() => {
-    const result: Record<string, QuoteData> = {};
-    for (const sym of cryptoSymbols) {
-      if (marketQuotes[sym]) {
-        result[sym] = marketQuotes[sym];
-      }
-    }
-    return result;
-  }, [cryptoSymbols, marketQuotes]);
-
-  // Expose binanceQuotes to window for inline script access
-  useEffect(() => {
-    (window as any).__binanceQuotes = binanceQuotesAsQuoteData;
-  }, [binanceQuotesAsQuoteData]);
-
   // order_error is now handled centrally in ClientShell — no local listener needed.
 
   const isMarketOpen = (item: WatchlistItem) => {
@@ -747,6 +731,22 @@ function WatchlistContent() {
   }, [watchlistItems, selectedItem?.kiteSymbol]);
 
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
+
+  // Use marketQuotes instead of legacy binanceQuotes
+  const binanceQuotesAsQuoteData = useMemo(() => {
+    const result: Record<string, QuoteData> = {};
+    for (const sym of cryptoSymbols) {
+      if (marketQuotes[sym]) {
+        result[sym] = marketQuotes[sym];
+      }
+    }
+    return result;
+  }, [cryptoSymbols, marketQuotes]);
+
+  // Expose binanceQuotes to window for inline script access
+  useEffect(() => {
+    (window as any).__binanceQuotes = binanceQuotesAsQuoteData;
+  }, [binanceQuotesAsQuoteData]);
 
   const comexSymbols = Array.from(new Set([
     ...watchlistItems.map(i => i.comexSymbol).filter((s): s is string => !!s),
