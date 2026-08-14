@@ -10,7 +10,6 @@ import { api, ApiError } from '@/lib/api';
 import { useActivePositions } from '@/hooks/useActivePositions';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
-import { useBinanceQuotes } from '@/hooks/useBinanceQuotes';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import { ErrorModal } from '@/components/ErrorModal';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
@@ -145,17 +144,21 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const marketSymbols = useMemo(() => {
     const list: string[] = [];
     if (computedKiteSymbol) list.push(computedKiteSymbol);
-    if (bSymbol) list.push(bSymbol);
+    if (isCrypto && item?.symbol) {
+      let sym = item.symbol.replace('/', '');
+      if (sym.endsWith('USDT')) sym = sym.replace('USDT', '');
+      list.push(sym);
+    } else if (bSymbol) {
+      list.push(bSymbol);
+    }
     return list;
-  }, [computedKiteSymbol, bSymbol]);
+  }, [computedKiteSymbol, isCrypto, item?.symbol, bSymbol]);
 
   const comexSymbols = useMemo(() => {
     if (item?.comexSymbol) return [item.comexSymbol];
     return [];
   }, [item?.comexSymbol]);
 
-  const binanceSymbols = useMemo(() => (isCrypto && bSymbol ? [bSymbol] : []), [isCrypto, bSymbol]);
-  const { quotes: binanceQuotes } = useBinanceQuotes(binanceSymbols);
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
   const { quotes: comexQuotes } = useComexQuotes(comexSymbols);
 
@@ -164,9 +167,11 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     : (item?.price ?? 0);
   let currentChangePercent = parseFloat(item?.change?.replace(/[%+]/g, '') || '0') || 0;
 
-  const cryptoQuote = isCrypto && bSymbol ? (binanceQuotes[bSymbol] || marketQuotes[bSymbol]) : null;
+  let cryptoSymbol = item?.symbol ? item.symbol.replace('/', '') : '';
+  if (cryptoSymbol.endsWith('USDT')) cryptoSymbol = cryptoSymbol.replace('USDT', '');
+  const cryptoQuote = isCrypto && cryptoSymbol ? marketQuotes[cryptoSymbol] : null;
 
-  if (isCrypto && bSymbol && cryptoQuote) {
+  if (isCrypto && cryptoSymbol && cryptoQuote) {
     currentLtp = cryptoQuote.lastPrice || currentLtp;
     const prevClose = (cryptoQuote as any).prevClosePrice ?? (cryptoQuote as any).close ?? currentLtp;
     currentChangePercent = (cryptoQuote as any).changePercent ?? (prevClose > 0 ? ((currentLtp - prevClose) / prevClose) * 100 : 0);
@@ -199,7 +204,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let rawAsk = currentLtp;
 
   if (currentLtp > 0) {
-    if (isCrypto && bSymbol && cryptoQuote) {
+    if (isCrypto && cryptoSymbol && cryptoQuote) {
       rawBid = (cryptoQuote as any).bid || currentLtp;
       rawAsk = (cryptoQuote as any).ask || currentLtp;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
