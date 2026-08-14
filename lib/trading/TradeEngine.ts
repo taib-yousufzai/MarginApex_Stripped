@@ -549,8 +549,6 @@ export class TradeEngine {
       brokerage = 0;
     }
 
-    if (dbSegment === 'CRYPTO' && isCustomCalc) {
-      brokerage = 0;
     }
 
     // Inline balance check (mirrors old route's explicit check before hitting the DB)
@@ -618,7 +616,7 @@ export class TradeEngine {
       basePrice: executionBasePrice,
       buySetting,
       sellSetting,
-      brokeragePerUnit: (dbSegment === 'CRYPTO' && isCustomCalc && qty > 0) ? (brokerage / qty) : 0,
+      brokeragePerUnit: 0,
       exitPriceMode,
       isBasePriceRealBidAsk: isRealBidAsk,
     });
