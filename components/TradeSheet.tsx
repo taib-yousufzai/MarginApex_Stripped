@@ -197,19 +197,20 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   let bidPrice = 0;
   let askPrice = 0;
-  let rawBid = currentLtp;
-  let rawAsk = currentLtp;
+  let rawBid = 0;
+  let rawAsk = 0;
 
   if (currentLtp > 0) {
     if (isCrypto && bSymbol && cryptoQuote) {
-      rawBid = (cryptoQuote as any).bid || currentLtp;
-      rawAsk = (cryptoQuote as any).ask || currentLtp;
+      // Force 0 so it uses the synthetic 0.05% spread fallback, ignoring the tight 0.01 Binance spread
+      rawBid = 0; 
+      rawAsk = 0; 
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
-      rawBid = comexQuotes[item.comexSymbol].bid || currentLtp;
-      rawAsk = comexQuotes[item.comexSymbol].ask || currentLtp;
+      rawBid = comexQuotes[item.comexSymbol].bid || 0;
+      rawAsk = comexQuotes[item.comexSymbol].ask || 0;
     } else if (computedKiteSymbol && marketQuotes[computedKiteSymbol]) {
-      rawBid = marketQuotes[computedKiteSymbol].bid || currentLtp;
-      rawAsk = marketQuotes[computedKiteSymbol].ask || currentLtp;
+      rawBid = marketQuotes[computedKiteSymbol].bid || 0;
+      rawAsk = marketQuotes[computedKiteSymbol].ask || 0;
     }
 
     // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
