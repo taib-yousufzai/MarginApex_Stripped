@@ -36,6 +36,7 @@ const MarketDataContext = createContext<MarketDataContextType>({
 // Singleton manager
 class MarketWSManager {
   private ws: WebSocket | null = null;
+  private binanceWs: WebSocket | null = null;
   private listeners: Set<(type: string, data: any) => void> = new Set();
   public symbolRefCount: Map<string, number> = new Map();
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -46,7 +47,7 @@ class MarketWSManager {
   public reconnectCount = 0;
 
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private lastMessageReceivedTime = 0;
+  public lastMessageReceivedTime = 0;
 
   constructor() {
     let url = process.env.NEXT_PUBLIC_TICKER_WS_URL;
@@ -112,7 +113,6 @@ class MarketWSManager {
     this.stopHeartbeat();
     if (this.ws) {
       console.log('[MarketWSManager] Disconnecting current WebSocket cleanly...');
-      // Detach all listeners first so async closures don't trigger events on discarded sockets
       this.ws.onopen = null;
       this.ws.onmessage = null;
       this.ws.onerror = null;
@@ -124,14 +124,95 @@ class MarketWSManager {
       }
       this.ws = null;
     }
+    if (this.binanceWs) {
+      this.binanceWs.onopen = null;
+      this.binanceWs.onmessage = null;
+      this.binanceWs.onerror = null;
+      this.binanceWs.onclose = null;
+      try { this.binanceWs.close(); } catch {}
+      this.binanceWs = null;
+    }
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
   }
 
+  private connectBinance() {
+    if (typeof window === 'undefined') return;
+    const cryptoSymbols: string[] = [];
+    const CRYPTO_BASES = ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'];
+    for (const sym of Array.from(this.symbolRefCount.keys())) {
+      const upper = sym.toUpperCase().replace(/^CRYPTO:/, '').trim();
+      if (upper.endsWith('USDT')) {
+        cryptoSymbols.push(upper);
+      } else if (CRYPTO_BASES.includes(upper)) {
+        cryptoSymbols.push(`${upper}USDT`);
+      }
+    }
+
+    const uniqueStreams = Array.from(new Set(cryptoSymbols)).map(s => `${s.toLowerCase()}@ticker`);
+    if (uniqueStreams.length === 0) return;
+
+    if (this.binanceWs && (this.binanceWs.readyState === WebSocket.CONNECTING || this.binanceWs.readyState === WebSocket.OPEN)) {
+      return;
+    }
+
+    try {
+      const wsUrl = `wss://stream.binance.com:9443/stream?streams=${uniqueStreams.join('/')}`;
+      console.log('[MarketWSManager] Connecting direct Binance WS stream:', wsUrl);
+      const bws = new WebSocket(wsUrl);
+      this.binanceWs = bws;
+
+      bws.onmessage = (event) => {
+        this.lastMessageReceivedTime = Date.now();
+        try {
+          const payload = JSON.parse(event.data);
+          const data = payload?.data;
+          if (data && data.s) {
+            const symUpper = data.s.toUpperCase();
+            const lp = parseFloat(data.c || '0');
+            const bp = parseFloat(data.b || data.c || '0');
+            const ap = parseFloat(data.a || data.c || '0');
+            const close = parseFloat(data.x || data.o || '0');
+
+            const quoteObj = {
+              timestamp: new Date(data.E || Date.now()).toISOString(),
+              last_price: lp,
+              volume: parseFloat(data.v || '0'),
+              ohlc: {
+                open: parseFloat(data.o || '0'),
+                high: parseFloat(data.h || '0'),
+                low: parseFloat(data.l || '0'),
+                close,
+              },
+              net_change: lp - close,
+              bid: bp,
+              ask: ap,
+            };
+
+            const shortSymbol = symUpper.replace('USDT', '');
+            this.notifyListeners('update', { symbol: symUpper, quote: quoteObj });
+            this.notifyListeners('update', { symbol: shortSymbol, quote: quoteObj });
+            this.notifyListeners('update', { symbol: `CRYPTO:${shortSymbol}`, quote: quoteObj });
+          }
+        } catch (e) {
+          console.error('[MarketWSManager] Binance WS parse error:', e);
+        }
+      };
+
+      bws.onerror = (err) => {
+        console.warn('[MarketWSManager] Binance WS error:', err);
+      };
+    } catch (e) {
+      console.error('[MarketWSManager] Error creating Binance WS:', e);
+    }
+  }
+
   private connect() {
     if (this.symbolRefCount.size === 0) return;
+
+    this.connectBinance();
     
     // Prevent overlapping connection attempts
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
@@ -399,8 +480,9 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
     wsManager.addListener(onMessage);
 
     const fetchInitialQuotes = async () => {
-      // Don't skip if connection status is not fully 'connected' to ensure fallback updates flow during connection phase
-      if (wsManager.connectionStatus === 'connected') return;
+      // Only skip HTTP fallback if WebSocket is connected AND ticks are actively flowing (< 3s ago)
+      const ticksAreFlowing = wsManager.connectionStatus === 'connected' && (Date.now() - wsManager.lastMessageReceivedTime < 3000);
+      if (ticksAreFlowing) return;
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
       

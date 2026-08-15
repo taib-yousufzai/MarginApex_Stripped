@@ -868,10 +868,18 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
       if (exitMode) {
         // Exit mode: show the full-screen overlay and await the order
-        handedOffToOrderFlow = true;
         window.dispatchEvent(new Event('exit-overlay-start'));
 
         try {
+          const activeQuoteObj = (isCrypto && bSymbol ? cryptoQuote : null) || (computedKiteSymbol ? marketQuotes[computedKiteSymbol] : null) || (item?.symbol ? marketQuotes[item.symbol] : null);
+          const diagnosticFields = {
+            frontend_bid: activeQuoteObj?.bid,
+            frontend_ask: activeQuoteObj?.ask,
+            frontend_ltp: activeQuoteObj?.lastPrice ?? (activeQuoteObj as any)?.last_price ?? currentLtp,
+            frontend_quote_time: activeQuoteObj?.time || (activeQuoteObj as any)?.timestamp || Date.now(),
+            client_click_time: Date.now(),
+          };
+
           const res = await placeOrder({
             symbol: item.symbol,
             kite_instrument: computedKiteSymbol || item.symbol,
@@ -887,6 +895,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             target: resolvedTarget,
             is_exit: true,
             linked_position_id: linkedPosId || undefined,
+            ...diagnosticFields,
           });
           window.dispatchEvent(new Event('order_placed'));
           window.dispatchEvent(new Event('position-closed'));
@@ -941,6 +950,15 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
 
         try {
+          const activeQuoteObj = (isCrypto && bSymbol ? cryptoQuote : null) || (computedKiteSymbol ? marketQuotes[computedKiteSymbol] : null) || (item?.symbol ? marketQuotes[item.symbol] : null);
+          const diagnosticFields = {
+            frontend_bid: activeQuoteObj?.bid,
+            frontend_ask: activeQuoteObj?.ask,
+            frontend_ltp: activeQuoteObj?.lastPrice ?? (activeQuoteObj as any)?.last_price ?? currentLtp,
+            frontend_quote_time: activeQuoteObj?.time || (activeQuoteObj as any)?.timestamp || Date.now(),
+            client_click_time: Date.now(),
+          };
+
           const res = await placeOrder({
             symbol: item.symbol,
             kite_instrument: computedKiteSymbol || item.symbol,
@@ -956,6 +974,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             target: resolvedTarget,
             is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
             linked_position_id: linkedPosId || undefined,
+            ...diagnosticFields,
           });
 
           if (res.success) {
@@ -1009,8 +1028,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     }
   };
 
+  const currencySymbol = isCrypto || isComex ? '$' : '₹';
   const fmt = (n: number) =>
-    n > 0 ? `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
+    n > 0 ? `${currencySymbol}${n.toLocaleString(isCrypto || isComex ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
 
   return (
     <>
@@ -1479,7 +1499,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                 {/* LIMIT / TARGET — Price input (separate card, matches watchlist) */}
                 {(orderType === 'LIMIT' || orderType === 'TARGET') && (
                   <div className="ts2-card">
-                    <div className="ts2-label">{orderType === 'TARGET' ? 'Target Price' : 'Price'} <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                    <div className="ts2-label">{orderType === 'TARGET' ? 'Target Price' : 'Price'} <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
                     <input
                       className="ts2-field-input"
                       type="number"
@@ -1496,8 +1516,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   <div className="ts2-card">
                     <div className="ts2-label">
                       {orderType === 'SLM'
-                        ? <>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹) — order executes at market price</span></>
-                        : <>Stop Loss Price <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></>
+                        ? <>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol}) — order executes at market price</span></>
+                        : <>Stop Loss Price <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></>
                       }
                     </div>
                     <input
@@ -1519,7 +1539,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         <div className="ts2-label" style={{ marginBottom: 0 }}>SL / TARGET</div>
                         <div style={{ display: 'flex', gap: '12px' }}>
                           <div style={{ flex: 1 }}>
-                            <div className="ts2-label" style={{ marginBottom: 6 }}>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                            <div className="ts2-label" style={{ marginBottom: 6 }}>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
                             <input
                               className="ts2-field-input"
                               type="number"
@@ -1530,13 +1550,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                             {currentLtp > 0 && (
                               <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
                                 {activeSide === 'BUY'
-                                  ? `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                  ? `Below ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Above ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </div>
                             )}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div className="ts2-label" style={{ marginBottom: 6 }}>Target <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                            <div className="ts2-label" style={{ marginBottom: 6 }}>Target <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
                             <input
                               className="ts2-field-input"
                               type="number"
@@ -1547,8 +1567,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                             {currentLtp > 0 && (
                               <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
                                 {activeSide === 'BUY'
-                                  ? `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                  ? `Above ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Below ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </div>
                             )}
                           </div>
@@ -1559,7 +1579,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         <div className="ts2-label" style={{ marginBottom: 0 }}>SL / LIMIT / TARGET</div>
                         <div style={{ display: 'flex', gap: '12px' }}>
                           <div style={{ flex: 1 }}>
-                            <div className="ts2-label" style={{ marginBottom: 6 }}>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                            <div className="ts2-label" style={{ marginBottom: 6 }}>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
                             <input
                               className="ts2-field-input"
                               type="number"
@@ -1570,13 +1590,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                             {currentLtp > 0 && (
                               <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
                                 {activeSide === 'BUY'
-                                  ? `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                  ? `Below ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Above ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </div>
                             )}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div className="ts2-label" style={{ marginBottom: 6 }}>Target <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                            <div className="ts2-label" style={{ marginBottom: 6 }}>Target <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
                             <input
                               className="ts2-field-input"
                               type="number"
@@ -1587,14 +1607,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                             {currentLtp > 0 && (
                               <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary, #6B7280)', marginTop: 4, fontWeight: 600 }}>
                                 {activeSide === 'BUY'
-                                  ? `Above ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                  : `Below ₹${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                  ? `Above ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  : `Below ${currencySymbol}${currentLtp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </div>
                             )}
                           </div>
                         </div>
                         <div>
-                          <div className="ts2-label" style={{ marginBottom: 6 }}>{activeSide === 'SELL' ? 'Sell at Limit' : 'Buy at Limit'} <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>(₹)</span></div>
+                          <div className="ts2-label" style={{ marginBottom: 6 }}>{activeSide === 'SELL' ? 'Sell at Limit' : 'Buy at Limit'} <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
                           <input
                             className="ts2-field-input"
                             type="number"

@@ -341,7 +341,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         if (isCrypto) {
           const binanceKey = cached ? cached.binanceSymbol : (p.symbol || '').replace('/', '') + (p.symbol?.endsWith('USDT') ? '' : 'USDT');
           const shortSymbol = (p.symbol || '').replace('/', '').replace('USDT', '');
-          const quote = binanceQuotes[binanceKey] || binanceQuotes[shortSymbol] || marketQuotes[binanceKey] || marketQuotes[shortSymbol] || marketQuotes[p.symbol] || marketQuotes[`CRYPTO:${shortSymbol}`];
+          const quote = marketQuotes[binanceKey] || marketQuotes[shortSymbol] || marketQuotes[p.symbol] || marketQuotes[`CRYPTO:${shortSymbol}`] || binanceQuotes[binanceKey] || binanceQuotes[shortSymbol];
           if (quote) {
             rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
@@ -378,7 +378,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         const rawExitBuf = sideSetting?.exit_buffer;
         const exitBuffer = (rawExitBuf !== undefined && rawExitBuf !== null && !isNaN(Number(rawExitBuf)))
           ? (Number(rawExitBuf) > 0.005 ? Number(rawExitBuf) / 100 : Number(rawExitBuf))
-          : 0.0017;
+          : 0;
 
         const exitPriceMode = (sideSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
 
@@ -393,7 +393,9 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
 
         // For BUY position exit (selling to close) -> target Effective Bid
         // For SELL position exit (buying back to close) -> target Effective Ask
-        const basePrice = p.side === 'BUY' ? effective.effectiveBid : effective.effectiveAsk;
+        const basePrice = exitPriceMode === 'LTP'
+          ? ltp
+          : (p.side === 'BUY' ? effective.effectiveBid : effective.effectiveAsk);
 
         const exitPrice = calculateBufferedPrice({
           side: p.side === 'BUY' ? 'SELL' : 'BUY',

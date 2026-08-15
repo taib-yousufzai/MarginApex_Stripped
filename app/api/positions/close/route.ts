@@ -261,7 +261,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Get settings and LTP
         const segSetting = segSettingsMap.get(`${pos.settlement ?? ''}|${pos.side}`);
         // exit_buffer is stored in decimal form in DB (e.g. 0.0017 = 0.17%), use directly
-        const exitBuffer = Number(segSetting?.exit_buffer ?? 0.0017);
+        const exitBuffer = Number(segSetting?.exit_buffer ?? 0);
         const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
         const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 

@@ -226,11 +226,15 @@ export async function POST(
   const rawExitBuffer = segSetting?.exit_buffer;
   const exitBuffer = (rawExitBuffer !== undefined && rawExitBuffer !== null && !isNaN(Number(rawExitBuffer)))
     ? (Number(rawExitBuffer) > 0.005 ? Number(rawExitBuffer) / 100 : Number(rawExitBuffer))
-    : 0.0017;
+    : 0;
   const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
   const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
-  const baseLtp = kiteLtp ?? Number(pos.ltp ?? pos.entry_price);
+  const quoteDetails = typeof kiteLtp === 'object' && kiteLtp !== null ? kiteLtp : (typeof kiteLtp === 'number' ? { ltp: kiteLtp, bid: null, ask: null } : null);
+  const baseLtp = quoteDetails?.ltp ?? Number(pos.ltp ?? pos.entry_price);
+  const rawBid = quoteDetails?.bid ?? null;
+  const rawAsk = quoteDetails?.ask ?? null;
+  const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
 
   const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
   const exitPriceMode = platformExitMode || segSetting?.exit_price_mode || 'BID_ASK';
@@ -238,7 +242,11 @@ export async function POST(
   // Exit price calculation using resolveEffectivePrices
   const effective = resolveEffectivePrices({
     ltp: baseLtp,
-    hasRealBidAsk: false,
+    rawBid,
+    rawAsk,
+    hasRealBidAsk,
+    askBuffer: Number(segSetting?.bid_buffer ?? 0),
+    bidBuffer: Number(segSetting?.bid_buffer ?? 0),
   });
 
   let exitPrice: number;

@@ -37,6 +37,12 @@ export interface PlaceOrderRequest {
   is_exit?: boolean;
   /** Optional position ID to directly exit a specific position */
   linked_position_id?: string;
+  /** Optional diagnostic fields for UI quote auditing */
+  frontend_bid?: number;
+  frontend_ask?: number;
+  frontend_ltp?: number;
+  frontend_quote_time?: number;
+  client_click_time?: number;
 }
 
 // ─── Response (POST /api/orders) ─────────────────────────────────────────────

@@ -198,11 +198,15 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
         const cached = await redis.hget('market:quotes', searchId);
         if (cached) {
           const q = JSON.parse(cached);
+          const rawTime = q.last_trade_time || q.timestamp || q.time || 0;
+          const qTime = new Date(rawTime).getTime();
+          // Reject stale Redis cached ticks older than 15 seconds
+          const isFresh = qTime > 0 && !isNaN(qTime) && (Date.now() - qTime < 15000);
           const reqId = realToRequestedMap[searchId] || searchId;
-          if (reqId && q) {
+          if (isFresh && reqId && q && q.last_price > 0) {
             const close = q.ohlc?.close || q.close || 0;
             finalMappedData[reqId] = {
-              timestamp: q.last_trade_time || q.timestamp || new Date().toISOString(),
+              timestamp: new Date(qTime).toISOString(),
               last_price: q.last_price,
               volume: q.volume || 0,
               ohlc: {

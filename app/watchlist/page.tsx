@@ -761,7 +761,7 @@ function WatchlistContent() {
   const isComex = !!(selectedItem?.comexSymbol) && (!(selectedItem?.kiteSymbol) || (selectedItem as any).preferredView === 'comex');
 
   const currentKiteQuote = selectedItem?.kiteSymbol ? marketQuotes[selectedItem.kiteSymbol] : null;
-  const currentBinanceQuote = selectedItem?.binanceSymbol ? (binanceQuotesAsQuoteData[selectedItem.binanceSymbol] || marketQuotes[selectedItem.binanceSymbol]) : null;
+  const currentBinanceQuote = selectedItem?.binanceSymbol ? (marketQuotes[selectedItem.binanceSymbol] || binanceQuotesAsQuoteData[selectedItem.binanceSymbol]) : null;
   const currentComexQuote = selectedItem?.comexSymbol ? comexQuotes[selectedItem.comexSymbol] : null;
 
   let currentLtp = 0;
@@ -784,7 +784,9 @@ function WatchlistContent() {
 
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price as number)) return '--';
-    return `₹${price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const sym = (isCrypto || isComex) ? '$' : '₹';
+    const locale = (isCrypto || isComex) ? 'en-US' : 'en-IN';
+    return `${sym}${price.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const dbSeg = selectedItem ? mapSegmentToDbSegment(selectedItem.segment) : '';
@@ -1248,7 +1250,7 @@ function WatchlistContent() {
 
   const getLegPrice = (legItem: WatchlistItem) => {
     if (legItem.binanceSymbol) {
-      return (binanceQuotesAsQuoteData[legItem.binanceSymbol] || marketQuotes?.[legItem.binanceSymbol])?.lastPrice ?? legItem.price;
+      return (marketQuotes?.[legItem.binanceSymbol] || binanceQuotesAsQuoteData[legItem.binanceSymbol])?.lastPrice ?? legItem.price;
     }
     if (legItem.comexSymbol) {
       return comexQuotes?.[legItem.comexSymbol]?.lastPrice ?? legItem.price;
@@ -1650,8 +1652,8 @@ function WatchlistContent() {
                     <InstrumentRow
                       key={`${item.symbol}_${index}`}
                       item={item}
-                      quote={marketQuotes[item.kiteSymbol]}
-                      binanceQuote={item.binanceSymbol ? (binanceQuotesAsQuoteData[item.binanceSymbol] || marketQuotes[item.binanceSymbol]) : undefined}
+                      quote={marketQuotes[item.kiteSymbol] || (item.binanceSymbol ? marketQuotes[item.binanceSymbol] : undefined)}
+                      binanceQuote={item.binanceSymbol ? (marketQuotes[item.binanceSymbol] || binanceQuotesAsQuoteData[item.binanceSymbol]) : undefined}
                       comexQuote={item.comexSymbol ? comexQuotes[item.comexSymbol] : undefined}
                       onTrade={(it: WatchlistItem, type?: 'BUY' | 'SELL' | 'BOTH') => {
                         if (!isMarketOpen(it)) { showToast('Market is closed', true); return; }
@@ -2655,7 +2657,9 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
 
       function formatPrice(price, isCrypto) {
         var numPrice = typeof price === 'number' ? price : parseFloat(price);
-        return '₹' + numPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var sym = isCrypto ? '$' : '₹';
+        var loc = isCrypto ? 'en-US' : 'en-IN';
+        return sym + numPrice.toLocaleString(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
 
       function escapeHtml(str) {

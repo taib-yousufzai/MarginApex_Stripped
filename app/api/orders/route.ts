@@ -28,24 +28,63 @@ import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Fetch the Binance LTP for a crypto symbol.
+ * Fetch the Binance quote (LTP, bid, ask, depth) for a crypto symbol.
  */
-async function fetchBinanceQuote(symbol: string): Promise<number | null> {
+async function fetchBinanceQuote(symbol: string): Promise<ServerQuote | null> {
   try {
     let cleanSym = symbol.replace('/', '').toUpperCase();
     if (!cleanSym.endsWith('USDT')) {
       cleanSym = cleanSym + 'USDT';
     }
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, {
-      cache: 'no-store'
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.price ? parseFloat(data.price) : null;
+
+    // 1. Try Redis cache first (populated by ticker daemon if running)
+    try {
+      const redis = getRedisClient();
+      const cached = await redis.hget('market:quotes', cleanSym);
+      if (cached) {
+        const tick = JSON.parse(cached);
+        if (tick && (tick.last_price > 0 || tick.lastPrice > 0)) {
+          const ltp = Number(tick.last_price || tick.lastPrice);
+          const bp = tick.bid ? Number(tick.bid) : ltp;
+          const ap = tick.ask ? Number(tick.ask) : ltp;
+          return {
+            last_price: ltp,
+            bid: bp,
+            ask: ap,
+            depth: tick.depth || null,
+          };
+        }
+      }
+    } catch (e) {}
+
+    // 2. Fetch Binance ticker bookTicker (best bid & ask) + ticker price in parallel
+    const [bookRes, priceRes] = await Promise.all([
+      fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${cleanSym}`, { cache: 'no-store' }).catch(() => null),
+      fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' }).catch(() => null),
+    ]);
+
+    if (bookRes?.ok && priceRes?.ok) {
+      const bookData = await bookRes.json();
+      const priceData = await priceRes.json();
+      const ltp = parseFloat(priceData.price || '0');
+      const bid = parseFloat(bookData.bidPrice || '0');
+      const ask = parseFloat(bookData.askPrice || '0');
+      const bidQty = parseFloat(bookData.bidQty || '0');
+      const askQty = parseFloat(bookData.askQty || '0');
+      return {
+        last_price: ltp,
+        bid: bid > 0 ? bid : ltp,
+        ask: ask > 0 ? ask : ltp,
+        depth: {
+          buy: [{ price: bid, quantity: bidQty }],
+          sell: [{ price: ask, quantity: askQty }],
+        }
+      };
+    }
   } catch (err) {
     console.error('[fetchBinanceQuote] Error:', err);
-    return null;
   }
+  return null;
 }
 
 export interface ServerQuote {
@@ -365,6 +404,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 // ─── POST /api/orders ─────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const t3_apiArrival = Date.now();
   try {
     // 1. Authenticate
     const user = await getUserFromRequest(request);
@@ -478,8 +518,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Fetch quotes — either Kite or Binance depending on segment
       (async () => {
         if (dbSegment === 'CRYPTO') {
-          const price = await fetchBinanceQuote(symbol);
-          return price ? { [kiteInst]: price } : {};
+          const quote = await fetchBinanceQuote(symbol);
+          return quote ? { [kiteInst]: quote } : {};
         } else {
           return fetchKiteQuotes(instrumentsToFetch);
         }
@@ -490,6 +530,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         .select('symbol, lot_size'),
     ]);
 
+    const t4_backendQuoteRead = Date.now();
     const profile = profileResult.data;
     const profileErr = profileResult.error;
     const rawQuote = quotesMap[kiteInst];
@@ -558,8 +599,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         holding_leverage,
         intraday_type: 'Multiplier',
         holding_type: 'Multiplier',
-        entry_buffer: 0.003,
-        exit_buffer: 0.0017,
+        entry_buffer: 0,
+        exit_buffer: 0,
         strike_range: 0,
         commission_type: 'Per Crore',
         commission_value: isScalper ? 8500 : (segUpper.includes('FOREX') || segUpper.includes('CDS') ? 2000 : (segUpper.includes('CRYPTO') ? 1000 : 4500)),
@@ -582,8 +623,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         holding_leverage,
         intraday_type: 'Multiplier',
         holding_type: 'Multiplier',
-        entry_buffer: 0.003,
-        exit_buffer: 0.0017,
+        entry_buffer: 0,
+        exit_buffer: 0,
         strike_range: 0,
         commission_type: 'Per Crore',
         commission_value: isScalper ? 8500 : (segUpper.includes('FOREX') || segUpper.includes('CDS') ? 2000 : (segUpper.includes('CRYPTO') ? 1000 : 4500)),
@@ -702,9 +743,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const trigPrice = trigger_price ? parseFloat(trigger_price.toString()) : null;
       if (trigPrice !== null && !isNaN(trigPrice)) {
         if (is_exit) {
-          // Exit stop loss order:
-          // - Exiting LONG (SELL order): trigger price must be below market price (LTP) to act as stop loss
-          // - Exiting SHORT (BUY order): trigger price must be above market price (LTP) to act as stop loss
           if (side === 'BUY' && trigPrice <= baseLtp) {
             return NextResponse.json({ error: 'Stop loss trigger price must be above the current market price for short exits.' }, { status: 400 });
           }
@@ -712,11 +750,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json({ error: 'Stop loss trigger price must be below the current market price for long exits.' }, { status: 400 });
           }
         } else {
-          // Entry order:
-          // - SLM entry on MarginApex executes immediately as a MARKET order and sets the trigger price as the position's stop loss.
-          //   Thus, BUY SLM = LONG position (SL below market), SELL SLM = SHORT position (SL above market).
-          // - SL entry is a pending breakout order.
-          //   Thus, BUY SL = pending buy above market, SELL SL = pending sell below market.
           if (order_type === 'SLM') {
             if (side === 'BUY' && trigPrice >= baseLtp) {
               return NextResponse.json({ error: 'Stop loss price must be below the current market price.' }, { status: 400 });
@@ -751,7 +784,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Enforce Anti-Scalping hold duration for manual market exits
     if (is_exit && activePosition && (order_type === 'MARKET' || order_type === 'SLM')) {
-      const exitBuffer = segSetting?.exit_buffer ?? 0.0017;
+      const exitBuffer = segSetting?.exit_buffer ?? 0;
       const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
       const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
@@ -870,27 +903,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let fillPrice: number;
     const isImmediate = (order_type ?? 'MARKET') === 'MARKET' || order_type === 'SLM';
 
+    const rawBid = typeof rawQuote === 'object' ? (rawQuote?.bid ?? null) : null;
+    const rawAsk = typeof rawQuote === 'object' ? (rawQuote?.ask ?? null) : null;
+    const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
+
+    const effective = resolveEffectivePrices({
+      ltp: baseLtp,
+      rawBid,
+      rawAsk,
+      hasRealBidAsk,
+      askBuffer: buySetting?.ask_buffer ?? buySetting?.bid_buffer ?? 0,
+      bidBuffer: sellSetting?.bid_buffer ?? sellSetting?.ask_buffer ?? 0,
+    });
+
     if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
       fillPrice = client_price;
     } else {
       const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
       const exitPriceMode = (platformExitMode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
 
-      const rawBid = typeof rawQuote === 'object' ? (rawQuote?.bid ?? null) : null;
-      const rawAsk = typeof rawQuote === 'object' ? (rawQuote?.ask ?? null) : null;
-      const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
-
-      const effective = resolveEffectivePrices({
-        ltp: baseLtp,
-        rawBid,
-        rawAsk,
-        hasRealBidAsk,
-        askBuffer: buySetting?.ask_buffer ?? buySetting?.bid_buffer ?? 0,
-        bidBuffer: sellSetting?.bid_buffer ?? sellSetting?.ask_buffer ?? 0,
-      });
-
-      const isExecutingBuy = side === 'BUY';
-      const basePrice = isExecutingBuy ? effective.effectiveAsk : effective.effectiveBid;
+      let basePrice: number;
+      if (exitPriceMode === 'LTP') {
+        basePrice = baseLtp;
+      } else {
+        const isExecutingBuy = side === 'BUY';
+        basePrice = isExecutingBuy ? effective.effectiveAsk : effective.effectiveBid;
+      }
 
       fillPrice = calculateBufferedPrice({
         side: side as 'BUY' | 'SELL',
@@ -903,6 +941,53 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     fillPrice = Math.round(fillPrice * 100) / 100; // 2 dp
+
+    // Timestamps T5 and T6 for diagnostic log
+    const t5_executionTime = Date.now();
+    let t6_dbFillTime = t5_executionTime;
+
+    // Emit structured diagnostic log for Market / SLM orders
+    if (isImmediate) {
+      console.log('[MARKET_ORDER_DIAGNOSTIC]', JSON.stringify({
+        symbol,
+        side,
+        quantity: qty,
+
+        frontendAsk: body.frontend_ask ?? null,
+        frontendBid: body.frontend_bid ?? null,
+        frontendLtp: body.frontend_ltp ?? client_price ?? null,
+
+        backendLtp: baseLtp,
+        backendBid: rawBid,
+        backendAsk: rawAsk,
+
+        executionBid: effective.effectiveBid,
+        executionAsk: effective.effectiveAsk,
+
+        depthBestAsk: typeof rawQuote === 'object' ? (rawQuote?.depth?.sell?.[0]?.price ?? rawAsk) : rawAsk,
+        depthBestAskQuantity: typeof rawQuote === 'object' ? (rawQuote?.depth?.sell?.[0]?.quantity ?? null) : null,
+
+        askBuffer: buySetting?.ask_buffer ?? buySetting?.bid_buffer ?? 0,
+        bidBuffer: sellSetting?.bid_buffer ?? sellSetting?.ask_buffer ?? 0,
+        normalBuffer: segSetting?.entry_buffer ?? 0,
+
+        effectiveBid: effective.effectiveBid,
+        effectiveAsk: effective.effectiveAsk,
+
+        finalFillPrice: fillPrice,
+
+        quoteTimestamp: typeof rawQuote === 'object' ? (rawQuote?.timestamp ?? t4_backendQuoteRead) : t4_backendQuoteRead,
+        executionTimestamp: t5_executionTime,
+
+        timestamps: {
+          T1_frontendQuoteTime: body.frontend_quote_time ?? null,
+          T2_clientClickTime: body.client_click_time ?? null,
+          T3_apiArrival: t3_apiArrival,
+          T4_backendQuoteRead: t4_backendQuoteRead,
+          T5_executionTime: t5_executionTime,
+        }
+      }, null, 2));
+    }
 
     // 11. Atomic write via Postgres RPC
     const targetOrderType = order_type ?? 'MARKET';
@@ -955,6 +1040,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let orderId: string;
     try {
       orderId = await executeDbCall();
+      t6_dbFillTime = Date.now();
+      if (isImmediate) {
+        console.log(`[MARKET_ORDER_DIAGNOSTIC] T6 DB Fill Timestamp: ${t6_dbFillTime}`);
+      }
     } catch (err: any) {
       console.error('[POST /api/orders] Order execution error:', err);
       return NextResponse.json({ error: err.message || 'Order execution failed. Please try again.' }, { status: 400 });

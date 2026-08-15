@@ -330,8 +330,8 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         const ltp = priceObj.ltp;
         const entryPrice = Number(pos.entry_price ?? pos.avg_price);
         const qty = Number(pos.qty_open ?? 0);
-        const buyExitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
-        const sellExitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
+        const buyExitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0;
+        const sellExitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0;
         const pnl = pos.side === 'BUY'
           // Closing BUY (selling) → BID - exitBuffer
           ? ((priceObj.bid * (1 - buyExitBuffer)) - entryPrice) * qty
@@ -361,11 +361,11 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
           let exitPrice = ltp;
           if (pos.side === 'BUY') {
             // Closing BUY (selling) → BID - exitBuffer
-            const exitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0.0017;
+            const exitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0;
             exitPrice = priceObj.bid * (1 - exitBuffer);
           } else {
             // Closing SELL (buying back) → ASK + exitBuffer
-            const exitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0.0017;
+            const exitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0;
             exitPrice = priceObj.ask * (1 + exitBuffer);
           }
           exitPrice = Math.round(exitPrice * 10000) / 10000;
