@@ -337,7 +337,8 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       if (!contractExpired) {
         if (isCrypto) {
           const binanceKey = cached ? cached.binanceSymbol : (p.symbol || '').replace('/', '') + (p.symbol?.endsWith('USDT') ? '' : 'USDT');
-          const quote = binanceQuotes[binanceKey] || marketQuotes[binanceKey];
+          const shortSymbol = (p.symbol || '').replace('/', '').replace('USDT', '');
+          const quote = binanceQuotes[binanceKey] || binanceQuotes[shortSymbol] || marketQuotes[binanceKey] || marketQuotes[shortSymbol] || marketQuotes[p.symbol] || marketQuotes[`CRYPTO:${shortSymbol}`];
           if (quote) {
             ltp = quote.lastPrice ?? ltp;
             bid = (quote as any).bid ?? (ltp * 0.9995);
@@ -432,6 +433,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     rawPositions,
     marketQuotes,
     comexQuotes,
+    binanceQuotes,
     segmentSettings,
     inFlightConversions
   ]);
