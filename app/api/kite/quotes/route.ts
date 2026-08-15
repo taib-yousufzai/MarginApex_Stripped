@@ -34,47 +34,57 @@ async function fetchBinanceQuotesBatch(cryptoSymbols: string[]): Promise<Record<
   if (pairs.length === 0) return {};
 
   const result: Record<string, any> = {};
-  try {
-    const formattedParams = JSON.stringify(pairs);
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(formattedParams)}`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(3000)
-    });
-    if (res.ok) {
-      const array = await res.json();
-      for (const item of array) {
-        const pair = item.symbol; // e.g. BTCUSDT
-        const base = pair.replace('USDT', ''); // e.g. BTC
-        const lastPrice = parseFloat(item.lastPrice);
-        const prevClose = parseFloat(item.prevClosePrice || item.openPrice);
-        const open = parseFloat(item.openPrice);
-        const high = parseFloat(item.highPrice);
-        const low = parseFloat(item.lowPrice);
-        const volume = Math.round(parseFloat(item.volume));
-        const bid = parseFloat(item.bidPrice) || (lastPrice * 0.9995);
-        const ask = parseFloat(item.askPrice) || (lastPrice * 1.0005);
+  const formattedParams = JSON.stringify(pairs);
+  const binanceEndpoints = [
+    `https://data-api.binance.vision/api/v3/ticker/24hr?symbols=${encodeURIComponent(formattedParams)}`,
+    `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(formattedParams)}`,
+    `https://api1.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(formattedParams)}`
+  ];
 
-        const quoteObj = {
-          timestamp: new Date(item.closeTime || Date.now()).toISOString(),
-          last_price: lastPrice,
-          volume,
-          ohlc: { open, high, low, close: prevClose },
-          net_change: lastPrice - prevClose,
-          bid,
-          ask,
-        };
+  for (const url of binanceEndpoints) {
+    try {
+      const res = await fetch(url, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2500)
+      });
+      if (res.ok) {
+        const array = await res.json();
+        for (const item of array) {
+          const pair = item.symbol; // e.g. BTCUSDT
+          const base = pair.replace('USDT', ''); // e.g. BTC
+          const lastPrice = parseFloat(item.lastPrice);
+          const prevClose = parseFloat(item.prevClosePrice || item.openPrice);
+          const open = parseFloat(item.openPrice);
+          const high = parseFloat(item.highPrice);
+          const low = parseFloat(item.lowPrice);
+          const volume = Math.round(parseFloat(item.volume));
+          const bid = parseFloat(item.bidPrice) || (lastPrice * 0.9995);
+          const ask = parseFloat(item.askPrice) || (lastPrice * 1.0005);
 
-        result[pair] = quoteObj;
-        result[base] = quoteObj;
-        result[pair.toLowerCase()] = quoteObj;
-        result[base.toLowerCase()] = quoteObj;
-        result[`CRYPTO:${base}`] = quoteObj;
-        result[`CRYPTO:${pair}`] = quoteObj;
+          const quoteObj = {
+            timestamp: new Date(item.closeTime || Date.now()).toISOString(),
+            last_price: lastPrice,
+            volume,
+            ohlc: { open, high, low, close: prevClose },
+            net_change: lastPrice - prevClose,
+            bid,
+            ask,
+          };
+
+          result[pair] = quoteObj;
+          result[base] = quoteObj;
+          result[pair.toLowerCase()] = quoteObj;
+          result[base.toLowerCase()] = quoteObj;
+          result[`CRYPTO:${base}`] = quoteObj;
+          result[`CRYPTO:${pair}`] = quoteObj;
+        }
+        if (Object.keys(result).length > 0) break;
       }
+    } catch (err) {
+      console.warn(`[Binance Quotes API] Warning fetching from ${url}:`, err);
     }
-  } catch (err) {
-    console.error('[Binance Quotes API] Error fetching from Binance REST API:', err);
   }
+
   return result;
 }
 

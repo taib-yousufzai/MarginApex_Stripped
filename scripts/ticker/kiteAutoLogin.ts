@@ -98,8 +98,8 @@ export async function performKiteLogin(): Promise<KiteSessionData> {
   const proxyUrl = process.env.ZERODHA_PROXY_URL;
   if (proxyUrl) {
     try {
-      // Use require for undici so it doesn't break if not available in some environments
-      const { ProxyAgent } = require('undici');
+      const dynamicRequire = eval('require');
+      const { ProxyAgent } = dynamicRequire('undici');
       dispatcher = new ProxyAgent(proxyUrl);
       logger.info('Kite autologin: Using proxy from ZERODHA_PROXY_URL');
     } catch (e: any) {
