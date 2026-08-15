@@ -1,4 +1,6 @@
 import { parseOptionSymbol } from '../../lib/positionStore';
+import { resolveEffectivePrices } from './marketPriceResolver';
+import { calculateBufferedPrice } from './BufferCalculator';
 
 export class OrderService {
   /**
@@ -183,13 +185,16 @@ export class OrderService {
     if (isExit && activePosition && activePosition.entry_time && (orderType === 'MARKET' || orderType === 'SLM')) {
       const buf = exitBuffer ?? 0.0017;
       // Estimate the buffered exit price the way the actual execution would compute it
-      let estExitPrice: number;
-      if (activePosition.side === 'BUY') {
-        estExitPrice = (baseLtp * 0.999) * (1 - buf);
-      } else {
-        estExitPrice = (baseLtp * 1.001) * (1 + buf);
-      }
-      estExitPrice = Math.round(estExitPrice * 100) / 100;
+      const effective = resolveEffectivePrices({ ltp: baseLtp, hasRealBidAsk: false, askBuffer: 0, bidBuffer: 0 });
+      const basePrice = activePosition.side === 'BUY' ? effective.effectiveBid : effective.effectiveAsk;
+      const setting = { entry_buffer: buf, exit_buffer: buf, exit_price_mode: 'BID_ASK' as const };
+      const estExitPrice = calculateBufferedPrice({
+        side: activePosition.side === 'BUY' ? 'SELL' : 'BUY',
+        isExit: true,
+        basePrice,
+        buySetting: setting,
+        sellSetting: setting,
+      });
 
       const entryPrice = Number(activePosition.avg_price || activePosition.entry_price || 0);
       const pnlValue = activePosition.side === 'BUY'

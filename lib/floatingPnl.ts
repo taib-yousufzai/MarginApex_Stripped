@@ -88,6 +88,9 @@ export function calculateFreeMarginFromPositions(
  * BUY:  ((ltp × 0.999) × (1 - exitBuffer) − entryPrice) × qty   [closing long → BID]
  * SELL: (entryPrice − (ltp × 1.001) × (1 + exitBuffer)) × qty   [closing short → ASK]
  */
+import { resolveEffectivePrices } from './trading/marketPriceResolver';
+import { calculateBufferedPrice } from './trading/BufferCalculator';
+
 export function calculateFloatingPnl({
   side,
   ltp,
@@ -95,13 +98,11 @@ export function calculateFloatingPnl({
   qty,
   exitBufferPct,
 }: FloatingPnlParams): number {
-  const exitBuffer = toDecimalBuffer(exitBufferPct, 0.0017);
+  const exitPrice = calculateExitPrice({ side, ltp, exitBufferPct });
   if (side === 'BUY') {
-    // Closing BUY position = SELLING → BID price (0.999) - exitBuffer
-    return ((ltp * 0.999) * (1 - exitBuffer) - entryPrice) * qty;
+    return (exitPrice - entryPrice) * qty;
   }
-  // Closing SELL position = BUYING BACK → ASK price (1.001) + exitBuffer
-  return (entryPrice - (ltp * 1.001) * (1 + exitBuffer)) * qty;
+  return (entryPrice - exitPrice) * qty;
 }
 
 /**
@@ -110,10 +111,6 @@ export function calculateFloatingPnl({
  * For forced / liquidation closes on BUY positions, the bid_buffer is used
  * (the user receives the bid price, which is below LTP).
  * For all other closes (user-initiated, SL/TP, EOD) use exit_buffer.
- * Includes spread simulation (0.999 for BUY, 1.001 for SELL).
- *
- * BUY:  ltp × 0.999 × (1 − buffer)   — user receives bid
- * SELL: ltp × 1.001 × (1 + buffer)   — user pays ask
  *
  * @param precision - decimal places to round to (default 4; use 2 for display)
  */
@@ -126,12 +123,30 @@ export function calculateExitPrice({
   precision = 4,
 ): number {
   const factor = Math.pow(10, precision);
-  if (side === 'BUY') {
-    // Closing BUY position = SELLING → BID (0.999) - buffer
-    const bidBuffer = toDecimalBuffer(bidBufferPct ?? exitBufferPct, 0.0017);
-    return Math.round(ltp * 0.999 * (1 - bidBuffer) * factor) / factor;
-  }
-  // Closing SELL position = BUYING BACK → ASK (1.001) + buffer
-  const exitBuffer = toDecimalBuffer(exitBufferPct, 0.0017);
-  return Math.round(ltp * 1.001 * (1 + exitBuffer) * factor) / factor;
+
+  const effective = resolveEffectivePrices({
+    ltp,
+    hasRealBidAsk: false,
+    askBuffer: 0,
+    bidBuffer: 0,
+  });
+
+  const basePrice = side === 'BUY' ? effective.effectiveBid : effective.effectiveAsk;
+  const bufferVal = side === 'BUY' ? (bidBufferPct ?? exitBufferPct) : exitBufferPct;
+
+  const setting = {
+    entry_buffer: bufferVal,
+    exit_buffer: bufferVal,
+    exit_price_mode: 'BID_ASK' as const,
+  };
+
+  const rawExitPrice = calculateBufferedPrice({
+    side: side === 'BUY' ? 'SELL' : 'BUY',
+    isExit: true,
+    basePrice,
+    buySetting: setting,
+    sellSetting: setting,
+  });
+
+  return Math.round(rawExitPrice * factor) / factor;
 }

@@ -10,6 +10,8 @@ import { MyPosition } from '@/lib/types/order';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 import { isContractExpired } from '@/lib/contractExpiry';
+import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
 
 export interface EnrichedPosition extends MyPosition {
   current_ltp: number;
@@ -374,27 +376,33 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           ? (Number(rawExitBuf) > 0.005 ? Number(rawExitBuf) / 100 : Number(rawExitBuf))
           : 0.0017;
 
-        const exitPriceMode = sideSetting?.exit_price_mode || 'BID_ASK';
+        const exitPriceMode = (sideSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
+
+        const effective = resolveEffectivePrices({
+          ltp,
+          rawBid: bid,
+          rawAsk: ask,
+          hasRealBidAsk: Boolean(quote?.bid || quote?.ask),
+          askBuffer: sideSetting?.ask_buffer ?? sideSetting?.bid_buffer ?? 0,
+          bidBuffer: sideSetting?.bid_buffer ?? sideSetting?.ask_buffer ?? 0,
+        });
+
+        // For BUY position exit (selling to close) -> target Effective Bid
+        // For SELL position exit (buying back to close) -> target Effective Ask
+        const basePrice = p.side === 'BUY' ? effective.effectiveBid : effective.effectiveAsk;
+
+        const exitPrice = calculateBufferedPrice({
+          side: p.side === 'BUY' ? 'SELL' : 'BUY',
+          isExit: true,
+          basePrice,
+          buySetting: sideSetting,
+          sellSetting: sideSetting,
+          exitPriceModeOverride: exitPriceMode,
+        });
 
         if (p.side === 'BUY') {
-          let exitPrice: number;
-          if (exitPriceMode === 'LTP') {
-            // LTP mode: pure raw price, no spread, no buffer
-            exitPrice = Math.round(ltp * 100) / 100;
-          } else {
-            // BID_ASK mode: BID price (ltp * 0.999) minus exit buffer
-            exitPrice = Math.round(ltp * 0.999 * (1 - exitBuffer) * 100) / 100;
-          }
           unrealised = (exitPrice - avgPrice) * p.qty_open;
         } else {
-          let exitPrice: number;
-          if (exitPriceMode === 'LTP') {
-            // LTP mode: pure raw price, no spread, no buffer
-            exitPrice = Math.round(ltp * 100) / 100;
-          } else {
-            // BID_ASK mode: ASK price (ltp * 1.001) plus exit buffer
-            exitPrice = Math.round(ltp * 1.001 * (1 + exitBuffer) * 100) / 100;
-          }
           unrealised = (avgPrice - exitPrice) * p.qty_open;
         }
       }

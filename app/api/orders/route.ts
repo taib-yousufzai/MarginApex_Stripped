@@ -22,6 +22,8 @@ import type {
   MyOrder,
 } from '@/lib/types/order';
 import { calculateSingleLegCharge } from '@/lib/trading/BrokerageCalculator';
+import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,14 +48,21 @@ async function fetchBinanceQuote(symbol: string): Promise<number | null> {
   }
 }
 
+export interface ServerQuote {
+  last_price: number;
+  bid?: number | null;
+  ask?: number | null;
+  depth?: any;
+}
+
 /**
- * Fetch the Kite LTP for one or more instruments server-side.
- * Resolves from local market_quotes DB cache first, falling back on-demand.
- * Returns a map of instrument -> last_price.
+ * Fetch the Kite quote for one or more instruments server-side.
+ * Resolves from local market_quotes / ticker daemon first, falling back on-demand.
+ * Returns a map of instrument -> ServerQuote.
  */
-async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, number>> {
+async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, ServerQuote>> {
   if (instruments.length === 0) return {};
-  const result: Record<string, number> = {};
+  const result: Record<string, ServerQuote> = {};
   const foundKiteIds = new Set<string>();
 
   try {
@@ -68,7 +77,15 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, nu
         const json = await resTicker.json();
         if (json.success && json.data) {
           for (const [key, val] of Object.entries(json.data)) {
-            result[key] = (val as any).last_price;
+            const v = val as any;
+            const bidPrice = v.bid ?? v.depth?.buy?.[0]?.price ?? null;
+            const askPrice = v.ask ?? v.depth?.sell?.[0]?.price ?? null;
+            result[key] = {
+              last_price: Number(v.last_price || 0),
+              bid: bidPrice ? Number(bidPrice) : null,
+              ask: askPrice ? Number(askPrice) : null,
+              depth: v.depth || null,
+            };
             foundKiteIds.add(key);
           }
         }
@@ -100,13 +117,21 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, nu
 
       if (!res.ok) return result;
 
-      const data = await res.json() as { data?: Record<string, { last_price: number; instrument_token?: number; ohlc?: { close?: number } }> };
+      const data = await res.json() as { data?: Record<string, any> };
       const instrumentUpserts: any[] = [];
 
       for (const inst of missingKiteIds) {
         const quote = data.data?.[inst];
         if (quote) {
-          result[inst] = quote.last_price;
+          const bidPrice = quote.depth?.buy?.[0]?.price ?? quote.buy_price ?? null;
+          const askPrice = quote.depth?.sell?.[0]?.price ?? quote.sell_price ?? null;
+
+          result[inst] = {
+            last_price: Number(quote.last_price || 0),
+            bid: bidPrice ? Number(bidPrice) : null,
+            ask: askPrice ? Number(askPrice) : null,
+            depth: quote.depth || null,
+          };
 
           const parts = inst.split(':');
           const exchange = parts[0] || 'NSE';
@@ -466,8 +491,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const profile = profileResult.data;
   const profileErr = profileResult.error;
-  const openPositions = positionsResult?.data ?? [];
-  const kiteLtp = quotesMap[kiteInst] ?? null;
+  const rawQuote = quotesMap[kiteInst];
+  const kiteLtp = typeof rawQuote === 'number' ? rawQuote : (rawQuote?.last_price ?? null);
   const dbScriptSettings = (scriptSettingsResult?.data as any[]) ?? [];
 
   // 4. Profile checks
@@ -845,42 +870,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
     fillPrice = client_price;
   } else {
-    const toDecimalBuffer = (val: any, fallback: number) => {
-      if (val === undefined || val === null || isNaN(Number(val))) return fallback;
-      const num = Number(val);
-      if (num === 0) return 0;
-      return num > 0.005 ? num / 100 : num;
-    };
-
-    const buyEntryBuffer = toDecimalBuffer(buySetting?.entry_buffer, 0.003);
-    const buyExitBuffer = toDecimalBuffer(buySetting?.exit_buffer, 0.0017);
-    const sellEntryBuffer = toDecimalBuffer(sellSetting?.entry_buffer, 0.003);
-    const sellExitBuffer = toDecimalBuffer(sellSetting?.exit_buffer, 0.0017);
-
     const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
-    const exitPriceMode = platformExitMode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK';
+    const exitPriceMode = (platformExitMode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
 
-    if (side === 'BUY') {
-      if (is_exit) {
-        // Exiting SELL/Short (Buying back to close)
-        // Configurable: ASK (1.001) OR LTP (1.000)
-        const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 1.001);
-        fillPrice = base * (1 + sellExitBuffer);
-      } else {
-        // Fresh Long Entry (Buying) executes at ASK (1.001) + entryBuffer
-        fillPrice = (baseLtp * 1.001) * (1 + buyEntryBuffer);
-      }
-    } else {
-      if (is_exit) {
-        // Exiting BUY/Long (Selling to close)
-        // Configurable: BID (0.999) OR LTP (1.000)
-        const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 0.999);
-        fillPrice = base * (1 - buyExitBuffer);
-      } else {
-        // Fresh Short Entry (Selling) executes at BID (0.999) - entryBuffer
-        fillPrice = (baseLtp * 0.999) * (1 - sellEntryBuffer);
-      }
-    }
+    const rawBid = typeof rawQuote === 'object' ? (rawQuote?.bid ?? null) : null;
+    const rawAsk = typeof rawQuote === 'object' ? (rawQuote?.ask ?? null) : null;
+    const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
+
+    const effective = resolveEffectivePrices({
+      ltp: baseLtp,
+      rawBid,
+      rawAsk,
+      hasRealBidAsk,
+      askBuffer: buySetting?.ask_buffer ?? buySetting?.bid_buffer ?? 0,
+      bidBuffer: sellSetting?.bid_buffer ?? sellSetting?.ask_buffer ?? 0,
+    });
+
+    const isExecutingBuy = side === 'BUY';
+    const basePrice = isExecutingBuy ? effective.effectiveAsk : effective.effectiveBid;
+
+    fillPrice = calculateBufferedPrice({
+      side: side as 'BUY' | 'SELL',
+      isExit: is_exit ?? false,
+      basePrice,
+      buySetting,
+      sellSetting,
+      exitPriceModeOverride: exitPriceMode,
+    });
   }
 
   fillPrice = Math.round(fillPrice * 100) / 100; // 2 dp
