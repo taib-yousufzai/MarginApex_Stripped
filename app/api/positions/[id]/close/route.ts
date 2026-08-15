@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { getSharedKiteSession } from '@/lib/kiteSession';
+import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 import type { ClosePositionResponse } from '@/lib/types/order';
 
 /**
@@ -234,15 +235,20 @@ export async function POST(
   const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
   const exitPriceMode = platformExitMode || segSetting?.exit_price_mode || 'BID_ASK';
 
-  // Exit price calculation
+  // Exit price calculation using resolveEffectivePrices
+  const effective = resolveEffectivePrices({
+    ltp: baseLtp,
+    hasRealBidAsk: false,
+  });
+
   let exitPrice: number;
   if (pos.side === 'BUY') {
-    // Closing BUY position = SELLING -> BID (0.999) OR LTP (1.000) - exitBuffer
-    const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 0.999);
+    // Closing BUY position = SELLING -> Base is Effective Bid minus exitBuffer
+    const base = exitPriceMode === 'LTP' ? baseLtp : effective.effectiveBid;
     exitPrice = base * (1 - exitBuffer);
   } else {
-    // Closing SELL position = BUYING BACK -> ASK (1.001) OR LTP (1.000) + exitBuffer
-    const base = exitPriceMode === 'LTP' ? baseLtp : (baseLtp * 1.001);
+    // Closing SELL position = BUYING BACK -> Base is Effective Ask plus exitBuffer
+    const base = exitPriceMode === 'LTP' ? baseLtp : effective.effectiveAsk;
     exitPrice = base * (1 + exitBuffer);
   }
   exitPrice = Math.round(exitPrice * 100) / 100;

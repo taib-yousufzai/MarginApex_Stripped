@@ -10,9 +10,9 @@ describe('BufferCalculator', () => {
   const dummyBuySetting = { entry_buffer: 0.003, exit_buffer: 0.0017, exit_price_mode: 'BID_ASK' as any };
   const dummySellSetting = { entry_buffer: 0.003, exit_buffer: 0.0017, exit_price_mode: 'BID_ASK' as any };
 
-  it('should apply 1.001 spread when isBasePriceRealBidAsk is false (Legacy behavior)', () => {
-    // Legacy MARKET BUY (base 100) -> uses 100.1 as base, then applies 0.003 buffer
-    const legacyBuy = calculateBufferedPrice({
+  it('should use base price directly without hardcoded 1.001 spread', () => {
+    // MARKET BUY (base 100) -> applies 0.003 buffer directly
+    const buyPrice = calculateBufferedPrice({
       side: 'BUY',
       isExit: false,
       basePrice: 100,
@@ -20,12 +20,11 @@ describe('BufferCalculator', () => {
       sellSetting: dummySellSetting,
       isBasePriceRealBidAsk: false
     });
-    // base = 100 * 1.001 = 100.1
-    // buffered = 100.1 * (1 + 0.003) = 100.4003
-    expect(legacyBuy).toBeCloseTo(100.4003, 4);
+    // buffered = 100 * (1 + 0.003) = 100.3
+    expect(buyPrice).toBeCloseTo(100.3, 4);
     
-    // Legacy MARKET SELL (base 100) -> uses 99.9 as base, then applies 0.003 buffer
-    const legacySell = calculateBufferedPrice({
+    // MARKET SELL (base 100) -> applies 0.003 buffer directly
+    const sellPrice = calculateBufferedPrice({
       side: 'SELL',
       isExit: false,
       basePrice: 100,
@@ -33,9 +32,8 @@ describe('BufferCalculator', () => {
       sellSetting: dummySellSetting,
       isBasePriceRealBidAsk: false
     });
-    // base = 100 * 0.999 = 99.9
-    // buffered = 99.9 * (1 - 0.003) = 99.6003
-    expect(legacySell).toBeCloseTo(99.6003, 4);
+    // buffered = 100 * (1 - 0.003) = 99.7
+    expect(sellPrice).toBeCloseTo(99.7, 4);
   });
 
   it('should NOT apply 1.001 spread when isBasePriceRealBidAsk is true (New VWAP behavior)', () => {

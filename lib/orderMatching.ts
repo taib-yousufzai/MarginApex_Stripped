@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { getAdminClient } from './adminClient.ts';
+import { resolveEffectivePrices } from './trading/marketPriceResolver.ts';
 
 export interface Quote {
   id: string; // e.g. "NSE:INFY"
@@ -96,21 +97,28 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
       const triggerPrice = order.trigger_price ? Number(order.trigger_price) : null;
       const limitPrice = order.price ? Number(order.price) : null;
 
+      const effective = resolveEffectivePrices({
+        ltp,
+        rawBid: priceObj?.bid,
+        rawAsk: priceObj?.ask,
+        hasRealBidAsk: Boolean(priceObj?.bid && priceObj?.ask),
+      });
+
       if (orderType === 'LIMIT' && limitPrice !== null) {
         if (side === 'BUY' && ltp <= limitPrice) {
           shouldTrigger = true;
+          fillPrice = limitPrice;
         } else if (side === 'SELL' && ltp >= limitPrice) {
           shouldTrigger = true;
+          fillPrice = limitPrice;
         }
       } else if ((orderType === 'SL' || orderType === 'SLM') && triggerPrice !== null) {
         if (side === 'BUY' && ltp >= triggerPrice) {
           shouldTrigger = true;
-          // SL and SLM execute at market price (LTP)
-          fillPrice = ltp;
+          fillPrice = effective.effectiveAsk;
         } else if (side === 'SELL' && ltp <= triggerPrice) {
           shouldTrigger = true;
-          // SL and SLM execute at market price (LTP)
-          fillPrice = ltp;
+          fillPrice = effective.effectiveBid;
         }
       } else if (orderType === 'GTT') {
         if (triggerPrice !== null) {
@@ -157,8 +165,7 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         }
 
         if (shouldTrigger) {
-          // GTT triggers execute at market price (LTP)
-          fillPrice = ltp;
+          fillPrice = side === 'BUY' ? effective.effectiveAsk : effective.effectiveBid;
         }
       }
 

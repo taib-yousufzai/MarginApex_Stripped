@@ -2,6 +2,7 @@ import { getAdminClient } from '@/lib/adminClient';
 import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { fetchBinanceQuote, fetchKiteQuotes, fetchSpeedQuotes } from '../datafeed/MarketDataService';
 import { calculateBufferedPrice } from './BufferCalculator';
+import { resolveEffectivePrices } from './marketPriceResolver';
 import { calculateSingleLegCharge } from './BrokerageCalculator';
 import { RiskValidation } from './RiskValidation';
 import { OrderService } from './OrderService';
@@ -560,14 +561,20 @@ export class TradeEngine {
     // 4. Execution Price Calculation (BufferCalculator)
     const isLimitType = ['LIMIT', 'SL', 'GTT'].includes(order_type);
     
-    let executionBasePrice = kiteLtp;
-    let isRealBidAsk = false;
+    let executionBasePrice: number;
 
     if (isLimitType) {
       executionBasePrice = clientPriceNum > 0 ? clientPriceNum : kiteLtp;
-      isRealBidAsk = true;
     } else {
-      // MARKET or SLM orders - Consume Order Book Depth to calculate VWAP
+      // MARKET or SLM orders - Resolve Effective Ask (for BUY) or Effective Bid (for SELL)
+      const hasRealBidAsk = Boolean(quotesMap[`${kiteInst}_bid`] && quotesMap[`${kiteInst}_ask`]);
+      const effectivePrices = resolveEffectivePrices({
+        ltp: kiteLtp,
+        rawBid: kiteBid,
+        rawAsk: kiteAsk,
+        hasRealBidAsk,
+      });
+
       const isExecutingBuy = side === 'BUY';
       const depth = isExecutingBuy ? depthSell : depthBuy;
       
@@ -592,18 +599,16 @@ export class TradeEngine {
       }
 
       if (matchedQty > 0) {
-        // If partial fill from depth, fallback remaining to Best Ask/Bid
+        // If partial fill from depth, fallback remaining to Effective Ask/Bid
         if (remainingQty > 0) {
-          const fallbackPrice = isExecutingBuy ? kiteAsk : kiteBid;
+          const fallbackPrice = isExecutingBuy ? effectivePrices.effectiveAsk : effectivePrices.effectiveBid;
           totalCost += remainingQty * fallbackPrice;
           matchedQty += remainingQty;
         }
         executionBasePrice = totalCost / matchedQty;
-        isRealBidAsk = true;
       } else {
-        // No depth available, fallback to Best Ask/Bid entirely
-        executionBasePrice = isExecutingBuy ? kiteAsk : kiteBid;
-        isRealBidAsk = true;
+        // Fallback directly to Effective Ask for BUY, Effective Bid for SELL
+        executionBasePrice = isExecutingBuy ? effectivePrices.effectiveAsk : effectivePrices.effectiveBid;
       }
     }
 
@@ -616,7 +621,7 @@ export class TradeEngine {
       sellSetting,
       brokeragePerUnit: 0,
       exitPriceMode,
-      isBasePriceRealBidAsk: isRealBidAsk,
+      isBasePriceRealBidAsk: true,
     });
 
     fillPrice = Math.max(0.01, Math.round(fillPrice * 100) / 100);

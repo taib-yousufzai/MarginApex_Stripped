@@ -64,29 +64,17 @@ export function calculateBufferedPrice({
   let bufferedPrice: number;
 
   if (side === 'BUY') {
-    if (isExit) {
-      // Exiting a short position (Buying back to close)
-      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 1.001);
-      bufferedPrice = base * (1 + sellExitBuffer);
-    } else {
-      // Fresh Long entry (Buying)
-      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 1.001);
-      bufferedPrice = base * (1 + buyEntryBuffer);
-    }
-    bufferedPrice += brokeragePerUnit;
+    const buffer = isExit ? sellExitBuffer : buyEntryBuffer;
+    bufferedPrice = basePrice * (1 + buffer) + brokeragePerUnit;
+    // Strict Execution Rule: BUY must never execute below Effective Ask (basePrice)
+    bufferedPrice = Math.max(basePrice, bufferedPrice);
   } else {
     // side === 'SELL'
-    if (isExit) {
-      // Exiting a long position (Selling to close)
-      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 0.999);
-      bufferedPrice = base * (1 - buyExitBuffer);
-    } else {
-      // Fresh Short entry (Selling)
-      const base = (mode === 'LTP' || isBasePriceRealBidAsk) ? basePrice : (basePrice * 0.999);
-      bufferedPrice = base * (1 - sellEntryBuffer);
-    }
-    bufferedPrice -= brokeragePerUnit;
+    const buffer = isExit ? buyExitBuffer : sellEntryBuffer;
+    bufferedPrice = basePrice * (1 - buffer) - brokeragePerUnit;
+    // Strict Execution Rule: SELL must never execute above Effective Bid (basePrice)
+    bufferedPrice = Math.min(basePrice, bufferedPrice);
   }
 
-  return bufferedPrice;
+  return Math.round(bufferedPrice * 10000) / 10000;
 }
