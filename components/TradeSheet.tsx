@@ -217,10 +217,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     if (currentLtp > 0) {
       const defaultBid = currentLtp * 0.9995;
       const defaultAsk = currentLtp * 1.0005;
-      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid < rawAsk;
+      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
       if (!hasValidSpread) {
-        rawBid = defaultBid;
-        rawAsk = defaultAsk;
+        if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
+        else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
+        else {
+          rawBid = defaultBid;
+          rawAsk = defaultAsk;
+        }
       }
     }
 

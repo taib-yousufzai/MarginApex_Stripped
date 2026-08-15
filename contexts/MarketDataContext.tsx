@@ -397,39 +397,53 @@ const wsManager = new MarketWSManager();
  * instruments while catching the pathological OTM-option case.
  */
 function normalizeQuote(q: any): QuoteData {
-  const close = q.ohlc?.close || q.close || 0;
-  let lastPrice = Number(q.last_price || close || 0);
+  if (!q) {
+    return { lastPrice: 0, change: 0, changePercent: 0, open: 0, high: 0, low: 0, close: 0, volume: 0, bid: 0, ask: 0 };
+  }
 
-  // Clamp lastPrice to [bid, ask] only when both look reasonable
-  const rawBid = Number(q.bid ?? 0);
-  const rawAsk = Number(q.ask ?? 0);
+  const close = Number(q.ohlc?.close ?? q.close ?? 0);
+  const rawLastPrice = Number(q.last_price ?? q.lastPrice ?? q.price ?? close ?? 0);
+  const lastPrice = rawLastPrice > 0 ? rawLastPrice : close;
 
-  // Sanity-check: depth-derived bid/ask must be within 50 % of lastPrice
+  const rawBid = Number(q.bid ?? q.bidPrice ?? 0);
+  const rawAsk = Number(q.ask ?? q.askPrice ?? 0);
+
+  // Sanity-check depth-derived bid/ask against lastPrice (within 50% deviation)
   const maxDeviation = 0.50;
   const bidOk = rawBid > 0 && lastPrice > 0 && Math.abs(rawBid - lastPrice) / lastPrice <= maxDeviation;
   const askOk = rawAsk > 0 && lastPrice > 0 && Math.abs(rawAsk - lastPrice) / lastPrice <= maxDeviation;
-  const spreadOk = bidOk && askOk && rawBid < rawAsk;
 
-  if (spreadOk) {
-    // Keep lastPrice inside [bid, ask]
-    if (lastPrice > rawAsk) lastPrice = rawAsk;
-    if (lastPrice < rawBid) lastPrice = rawBid;
+  let finalBid = 0;
+  let finalAsk = 0;
+
+  if (bidOk && askOk && rawBid <= rawAsk) {
+    finalBid = rawBid;
+    finalAsk = rawAsk;
+  } else if (bidOk && !askOk) {
+    finalBid = rawBid;
+    finalAsk = rawBid * 1.0005;
+  } else if (askOk && !bidOk) {
+    finalAsk = rawAsk;
+    finalBid = rawAsk * 0.9995;
+  } else {
+    finalBid = lastPrice > 0 ? lastPrice * 0.9995 : 0;
+    finalAsk = lastPrice > 0 ? lastPrice * 1.0005 : 0;
   }
 
-  const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : 0;
+  const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);
+  const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : Number(q.changePercent ?? 0);
 
   return {
     lastPrice: parseFloat(Number(lastPrice).toFixed(8)),
-    change: lastPrice - close,
-    changePercent: parseFloat(changePercent.toFixed(2)),
-    open: q.ohlc?.open || q.open || 0,
-    high: q.ohlc?.high || q.high || 0,
-    low: q.ohlc?.low || q.low || 0,
+    change: parseFloat(Number(change).toFixed(4)),
+    changePercent: parseFloat(Number(changePercent).toFixed(2)),
+    open: Number(q.ohlc?.open ?? q.open ?? 0),
+    high: Number(q.ohlc?.high ?? q.high ?? 0),
+    low: Number(q.ohlc?.low ?? q.low ?? 0),
     close,
-    volume: q.volume || 0,
-    // Use real bid/ask only when the sanity check passes; otherwise synthesise
-    bid: spreadOk ? rawBid : lastPrice * 0.9995,
-    ask: spreadOk ? rawAsk : lastPrice * 1.0005,
+    volume: Number(q.volume ?? 0),
+    bid: parseFloat(Number(finalBid).toFixed(8)),
+    ask: parseFloat(Number(finalAsk).toFixed(8)),
   };
 }
 
