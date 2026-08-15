@@ -1,17 +1,82 @@
 /**
- * Kite Quotes API
- * GET /api/kite/quotes?instruments=NSE:NIFTY+50,NSE:RELIANCE,...
+ * Kite & Crypto Quotes API
+ * GET / POST /api/kite/quotes
  * 
  * Target Architecture:
  * 1. Bypasses DB lookup entirely.
- * 2. Fetches from the local Ticker Daemon quote cache first.
- * 3. Falls back to Kite REST API in batches for missing/uncached instruments.
- * 4. Caches instruments structure, but never stores raw quotes/ticks in the database.
+ * 2. Fetches from local Redis Hash cache first.
+ * 3. Handles Crypto symbols directly via Binance REST API when not cached.
+ * 4. Falls back to Kite REST API in batches for missing/uncached Indian instruments.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { getAdminClient } from '@/lib/adminClient';
+
+const CRYPTO_BASES = new Set([
+  'BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC', 'LINK', 'UNI', 'SHIB'
+]);
+
+function isCryptoSymbol(sym: string): boolean {
+  if (!sym) return false;
+  const upper = sym.toUpperCase().replace(/^CRYPTO:/, '');
+  if (upper.endsWith('USDT')) return true;
+  return CRYPTO_BASES.has(upper);
+}
+
+function toBinancePair(sym: string): string {
+  const upper = sym.toUpperCase().replace(/^CRYPTO:/, '');
+  return upper.endsWith('USDT') ? upper : `${upper}USDT`;
+}
+
+async function fetchBinanceQuotesBatch(cryptoSymbols: string[]): Promise<Record<string, any>> {
+  const pairs = Array.from(new Set(cryptoSymbols.map(toBinancePair)));
+  if (pairs.length === 0) return {};
+
+  const result: Record<string, any> = {};
+  try {
+    const formattedParams = JSON.stringify(pairs);
+    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(formattedParams)}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3000)
+    });
+    if (res.ok) {
+      const array = await res.json();
+      for (const item of array) {
+        const pair = item.symbol; // e.g. BTCUSDT
+        const base = pair.replace('USDT', ''); // e.g. BTC
+        const lastPrice = parseFloat(item.lastPrice);
+        const prevClose = parseFloat(item.prevClosePrice || item.openPrice);
+        const open = parseFloat(item.openPrice);
+        const high = parseFloat(item.highPrice);
+        const low = parseFloat(item.lowPrice);
+        const volume = Math.round(parseFloat(item.volume));
+        const bid = parseFloat(item.bidPrice) || (lastPrice * 0.9995);
+        const ask = parseFloat(item.askPrice) || (lastPrice * 1.0005);
+
+        const quoteObj = {
+          timestamp: new Date(item.closeTime || Date.now()).toISOString(),
+          last_price: lastPrice,
+          volume,
+          ohlc: { open, high, low, close: prevClose },
+          net_change: lastPrice - prevClose,
+          bid,
+          ask,
+        };
+
+        result[pair] = quoteObj;
+        result[base] = quoteObj;
+        result[pair.toLowerCase()] = quoteObj;
+        result[base.toLowerCase()] = quoteObj;
+        result[`CRYPTO:${base}`] = quoteObj;
+        result[`CRYPTO:${pair}`] = quoteObj;
+      }
+    }
+  } catch (err) {
+    console.error('[Binance Quotes API] Error fetching from Binance REST API:', err);
+  }
+  return result;
+}
 
 async function fetchKiteQuotesBatch(
   kiteRequestInstruments: string[],
@@ -72,10 +137,14 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
     const realToRequestedMap: Record<string, string> = {};
     const directKiteIds: string[] = [];
     const dbRequestIds: string[] = [];
+    const cryptoRequestIds: string[] = [];
 
-    // Separate direct IDs (with colon e.g. NSE:RELIANCE) from DB ID numbers
+    // Separate Crypto symbols, direct Kite IDs (NSE:RELIANCE), and DB IDs
     for (const id of instruments) {
-      if (id.includes(':')) {
+      if (isCryptoSymbol(id)) {
+        cryptoRequestIds.push(id);
+        realToRequestedMap[id] = id;
+      } else if (id.includes(':')) {
         directKiteIds.push(id);
         realToRequestedMap[id] = id;
       } else {
@@ -83,26 +152,35 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
       }
     }
 
-    // Resolve internal DB IDs to Kite IDs
+    // Resolve internal DB IDs to Kite IDs (for stock / index / F&O instruments)
     if (dbRequestIds.length > 0) {
       const { data } = await admin
         .from('instruments')
-        .select('id, tradingsymbol, exchange')
+        .select('id, tradingsymbol, exchange, segment')
         .in('id', dbRequestIds);
 
       if (data) {
         for (const row of data) {
-          const kiteId = `${row.exchange}:${row.tradingsymbol}`;
-          realToRequestedMap[kiteId] = row.id;
-          directKiteIds.push(kiteId);
+          if (row.segment === 'CRYPTO' || isCryptoSymbol(row.tradingsymbol) || isCryptoSymbol(row.id)) {
+            cryptoRequestIds.push(row.id);
+            realToRequestedMap[row.id] = row.id;
+          } else {
+            const kiteId = `${row.exchange}:${row.tradingsymbol}`;
+            realToRequestedMap[kiteId] = row.id;
+            directKiteIds.push(kiteId);
+          }
         }
       }
       
       // Keep unresolved ones as-is as fallback
       for (const id of dbRequestIds) {
         if (!Object.values(realToRequestedMap).includes(id)) {
-          realToRequestedMap[id] = id;
-          directKiteIds.push(id);
+          if (isCryptoSymbol(id)) {
+            cryptoRequestIds.push(id);
+          } else {
+            realToRequestedMap[id] = id;
+            directKiteIds.push(id);
+          }
         }
       }
     }
@@ -114,11 +192,13 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
     try {
       const { getRedisClient } = await import('@/lib/redis');
       const redis = getRedisClient();
-      await Promise.all(directKiteIds.map(async (kiteId) => {
-        const cached = await redis.hget('market:quotes', kiteId);
+
+      const allSearchIds = [...directKiteIds, ...cryptoRequestIds];
+      await Promise.all(allSearchIds.map(async (searchId) => {
+        const cached = await redis.hget('market:quotes', searchId);
         if (cached) {
           const q = JSON.parse(cached);
-          const reqId = realToRequestedMap[kiteId];
+          const reqId = realToRequestedMap[searchId] || searchId;
           if (reqId && q) {
             const close = q.ohlc?.close || q.close || 0;
             finalMappedData[reqId] = {
@@ -135,58 +215,70 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
               bid: q.bid ?? q.depth?.buy?.[0]?.price ?? null,
               ask: q.ask ?? q.depth?.sell?.[0]?.price ?? null,
             };
-            foundKiteIds.add(kiteId);
+            foundKiteIds.add(searchId);
           }
         }
       }));
     } catch (redisErr) {
-      console.warn('[Kite Quotes API] Failed to query Redis, falling back:', redisErr);
+      console.warn('[Quotes API] Failed to query Redis, falling back:', redisErr);
     }
 
-    // 2. Fallback to Ticker Daemon in-memory quotes API for remaining symbols
+    // 2. Fetch missing Crypto symbols directly from Binance REST API
+    const missingCryptoIds = cryptoRequestIds.filter(id => !foundKiteIds.has(id));
+    if (missingCryptoIds.length > 0) {
+      const binanceQuotes = await fetchBinanceQuotesBatch(missingCryptoIds);
+      for (const reqId of missingCryptoIds) {
+        const quote = binanceQuotes[reqId] || binanceQuotes[toBinancePair(reqId)] || binanceQuotes[reqId.toUpperCase()];
+        if (quote) {
+          finalMappedData[reqId] = quote;
+          foundKiteIds.add(reqId);
+        }
+      }
+    }
+
+    // 3. Fallback to Ticker Daemon in-memory quotes API for remaining stock symbols
     const remainingKiteIds = directKiteIds.filter(id => !foundKiteIds.has(id));
     if (remainingKiteIds.length > 0) {
       try {
         const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : null);
-        const params = new URLSearchParams({ symbols: remainingKiteIds.join(',') });
-        if (!tickerUrl) throw new Error('No tickerUrl');
-        const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
-        if (resTicker.ok) {
-          const json = await resTicker.json();
-          if (json.success && json.data) {
-            for (const [kiteId, quote] of Object.entries(json.data)) {
-              const reqId = realToRequestedMap[kiteId];
-              if (!reqId || !quote) continue;
+        if (tickerUrl) {
+          const params = new URLSearchParams({ symbols: remainingKiteIds.join(',') });
+          const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
+          if (resTicker.ok) {
+            const json = await resTicker.json();
+            if (json.success && json.data) {
+              for (const [kiteId, quote] of Object.entries(json.data)) {
+                const reqId = realToRequestedMap[kiteId];
+                if (!reqId || !quote) continue;
 
-              const q = quote as any;
-              const close = q.ohlc?.close || q.close || 0;
-              finalMappedData[reqId] = {
-                timestamp: q.last_trade_time || q.timestamp || new Date().toISOString(),
-                last_price: q.last_price,
-                volume: q.volume || 0,
-                ohlc: {
-                  open: q.ohlc?.open || q.open || 0,
-                  high: q.ohlc?.high || q.high || 0,
-                  low: q.ohlc?.low || q.low || 0,
-                  close: close,
-                },
-                net_change: q.last_price - close,
-                bid: q.bid ?? q.depth?.buy?.[0]?.price ?? null,
-                ask: q.ask ?? q.depth?.sell?.[0]?.price ?? null,
-              };
-              foundKiteIds.add(kiteId);
+                const q = quote as any;
+                const close = q.ohlc?.close || q.close || 0;
+                finalMappedData[reqId] = {
+                  timestamp: q.last_trade_time || q.timestamp || new Date().toISOString(),
+                  last_price: q.last_price,
+                  volume: q.volume || 0,
+                  ohlc: {
+                    open: q.ohlc?.open || q.open || 0,
+                    high: q.ohlc?.high || q.high || 0,
+                    low: q.ohlc?.low || q.low || 0,
+                    close: close,
+                  },
+                  net_change: q.last_price - close,
+                  bid: q.bid ?? q.depth?.buy?.[0]?.price ?? null,
+                  ask: q.ask ?? q.depth?.sell?.[0]?.price ?? null,
+                };
+                foundKiteIds.add(kiteId);
+              }
             }
           }
         }
       } catch (tickerErr) {
-        console.warn('[Kite Quotes API] Failed to query Ticker Daemon, falling back to REST:', tickerErr);
+        console.warn('[Quotes API] Failed to query Ticker Daemon:', tickerErr);
       }
     }
 
-    // 3. Find missing instruments that aren't in any cache
+    // 4. Fallback: Fetch missing Indian stock instruments from Kite REST API on-demand
     const missingKiteIds = directKiteIds.filter(id => !foundKiteIds.has(id));
-
-    // 3. Fallback: Fetch missing instruments from Kite REST API on-demand
     if (missingKiteIds.length > 0) {
       let accessToken = request.cookies.get('kite_access_token')?.value;
       if (!accessToken) {
@@ -208,8 +300,6 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
         }
 
         if (activeKiteData && Object.keys(activeKiteData).length > 0) {
-          const instrumentUpserts: any[] = [];
-
           for (const [kiteId, quote] of Object.entries(activeKiteData)) {
             const reqId = realToRequestedMap[kiteId];
             if (!reqId || !quote) continue;
@@ -231,37 +321,6 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
               bid: quote.bid ?? quote.depth?.buy?.[0]?.price ?? null,
               ask: quote.ask ?? quote.depth?.sell?.[0]?.price ?? null,
             };
-
-            const parts = kiteId.split(':');
-            const exchange = parts[0] || 'NSE';
-            const tradingsymbol = parts[1] || '';
-
-            instrumentUpserts.push({
-              id: kiteId,
-              instrument_token: quote.instrument_token || 0,
-              tradingsymbol: tradingsymbol,
-              exchange: exchange,
-              instrument_type: exchange === 'NFO' || exchange === 'MCX' || exchange === 'CDS' ? 'FUTOPT' : 'EQ',
-              segment: exchange,
-              updated_at: new Date().toISOString()
-            });
-          }
-
-          // Cache on-demand fetched instruments in background (excluding quotes/ticks table)
-          if (instrumentUpserts.length > 0) {
-            (async () => {
-              try {
-                const { error: instErr } = await admin
-                  .from('instruments')
-                  .upsert(instrumentUpserts, { onConflict: 'id' });
-
-                if (instErr) {
-                  console.error('[Quotes API] Background instruments upsert error:', instErr);
-                }
-              } catch (err) {
-                console.error('[Quotes API] Background cache sync error:', err);
-              }
-            })();
           }
         }
       }

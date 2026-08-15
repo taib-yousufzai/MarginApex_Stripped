@@ -549,8 +549,6 @@ export class TradeEngine {
       brokerage = 0;
     }
 
-    }
-
     // Inline balance check (mirrors old route's explicit check before hitting the DB)
     const balance = Number(profile.balance ?? 0);
     const requiredMargin = marginPortion + brokerage;

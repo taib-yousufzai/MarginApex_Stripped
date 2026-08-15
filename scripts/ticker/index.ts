@@ -57,7 +57,8 @@ class TickerDaemon {
     try {
       const session = await getSharedKiteSession();
       if (!session || !session.accessToken) {
-        logger.warn('No active Kite session found in database. Kite ticker will retry once session is active.');
+        logger.warn('No active Kite session found in database. Triggering automatic login...');
+        this.sessionMonitor.forceRefresh();
         return;
       }
 

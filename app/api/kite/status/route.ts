@@ -60,13 +60,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  let isAutoLogged = false;
+
   if (!accessToken) {
-    return NextResponse.json({ connected: false, reason: 'no_token' });
+    console.log('[Kite Status] No access token found in cookie or DB — attempting auto-login...');
+    try {
+      const { performKiteLogin } = await import('../../../scripts/ticker/kiteAutoLogin');
+      const session = await performKiteLogin();
+      accessToken = session.accessToken;
+      isAutoLogged = true;
+    } catch (autoErr) {
+      console.error('[Kite Status] Auto-login attempt failed:', autoErr);
+      return NextResponse.json({ connected: false, reason: 'no_token' });
+    }
   }
 
   // ── 4. Verify token is still valid with Kite ─────────────────────────────
   try {
-    const response = await fetch('https://api.kite.trade/user/profile', {
+    let response = await fetch('https://api.kite.trade/user/profile', {
       headers: {
         'X-Kite-Version': '3',
         'Authorization': `token ${apiKey}:${accessToken}`,
@@ -74,9 +85,32 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       cache: 'no-store',
     });
 
+    if (!response.ok && !isAutoLogged) {
+      const errorBody = await response.text();
+      console.error('[Kite Status] Token invalid (status', response.status, ') — attempting auto-login recovery...');
+      try {
+        const { performKiteLogin } = await import('@/scripts/ticker/kiteAutoLogin');
+        const session = await performKiteLogin();
+        accessToken = session.accessToken;
+        isAutoLogged = true;
+
+        // Re-check profile with fresh token
+        response = await fetch('https://api.kite.trade/user/profile', {
+          headers: {
+            'X-Kite-Version': '3',
+            'Authorization': `token ${apiKey}:${accessToken}`,
+          },
+          cache: 'no-store',
+        });
+      } catch (autoErr) {
+        console.error('[Kite Status] Auto-login recovery failed:', autoErr);
+        return NextResponse.json({ connected: false, reason: 'token_invalid' });
+      }
+    }
+
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error('[Kite Status] Kite profile check failed:', response.status, errorBody);
+      console.error('[Kite Status] Kite profile check failed after retry:', response.status, errorBody);
       return NextResponse.json({ connected: false, reason: 'token_invalid' });
     }
 
@@ -84,12 +118,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       data?: { user_name?: string; email?: string; user_id?: string };
     };
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       connected: true,
       userName: data.data?.user_name,
       email: data.data?.email,
       kiteUserId: data.data?.user_id,
     });
+
+    if (isAutoLogged && accessToken) {
+      res.cookies.set('kite_access_token', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 24 * 60 * 60,
+      });
+    }
+
+    return res;
   } catch {
     return NextResponse.json({ connected: false, reason: 'network_error' });
   }

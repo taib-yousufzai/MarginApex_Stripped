@@ -327,10 +327,12 @@ interface InstrumentRowProps {
 function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetail, basketMode, onBasketBuy, onBasketSell, onChart }: InstrumentRowProps) {
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
-  const isCrypto = !!item.binanceSymbol;
+  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.category === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
   const isPureComex = !!item.comexSymbol && !item.kiteSymbol;
   const hasDualView = false; // Toggles removed completely
   const showComex = isPureComex;
+
+  const activeCryptoQuote = binanceQuote || quote;
 
   let ltp = 0;
   let prevClose = 0;
@@ -338,8 +340,8 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   let absoluteChange = 0;
 
   if (isCrypto) {
-    ltp = binanceQuote?.lastPrice ?? 0;
-    prevClose = binanceQuote?.close ?? 0;
+    ltp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
+    prevClose = activeCryptoQuote?.close ?? (item.close || ltp);
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else if (showComex) {
@@ -360,7 +362,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
       absoluteChange = ltp - prevClose;
     }
   }
-  const isLoading = isCrypto ? !binanceQuote : (showComex && !comexQuote);
+  const isLoading = isCrypto ? (!activeCryptoQuote && ltp === 0) : (showComex && !comexQuote);
 
   const handleLeftClick = () => {
     if (basketMode) return;

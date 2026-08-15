@@ -1,22 +1,10 @@
-name: Kite Auto Login (Emergency Backup)
-
-# ── IMPORTANT ────────────────────────────────────────────────────────────────
-# The Kite session is now managed automatically by the Ticker Daemon's
-# built-in KiteSessionMonitor (scripts/ticker/kiteAutoLogin.ts).
-#
-# The monitor proactively renews the session 90 minutes before expiry
-# and retries on failure — no external scheduler is needed.
-#
-# This workflow is kept ONLY as a manual emergency fallback for situations
-# where the ticker daemon itself cannot renew the session (e.g. it is down).
-#
-# DO NOT re-add a cron schedule here. GitHub Actions free-tier cron jobs
-# are unreliable and have been observed to delay by 4–5 hours, which causes
-# the feed to be dead during Indian market hours.
-# ─────────────────────────────────────────────────────────────────────────────
+name: Kite Auto Login
 
 on:
-  workflow_dispatch: # Manual trigger only — use the "Run workflow" button in GitHub Actions UI
+  schedule:
+    # 00:45 UTC = 06:15 IST — daily automated login right after Zerodha session expiry (06:00 IST)
+    - cron: '45 0 * * *'
+  workflow_dispatch: # Manual trigger from GitHub Actions UI or ticker API dispatch
 
 jobs:
   autologin:

@@ -53,15 +53,17 @@ function getPctClass(pct: number) {
 export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade }: InstrumentRowProps) {
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
-  const isCrypto = !!item.binanceSymbol;
+  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
   const hasDualView = !!item.kiteSymbol && !!item.comexSymbol;
   const showComex = hasDualView && priceView === 'comex';
+
+  const activeCryptoQuote = binanceQuote || quote;
 
   let ltp = 0;
   let prevClose = 0;
   if (isCrypto) {
-    ltp = binanceQuote?.lastPrice ?? 0;
-    prevClose = binanceQuote?.close ?? 0;
+    ltp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
+    prevClose = activeCryptoQuote?.close ?? item.close ?? ltp;
   } else if (showComex) {
     ltp = comexQuote?.lastPrice ?? 0;
     prevClose = comexQuote?.close ?? 0;
@@ -72,7 +74,7 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
 
   const absoluteChange = ltp - prevClose;
   const percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
-  const isLoading = isCrypto ? !binanceQuote : (showComex && !comexQuote);
+  const isLoading = isCrypto ? (!activeCryptoQuote && ltp === 0) : (showComex && !comexQuote);
 
   const handleCardClick = (e: React.MouseEvent) => {
     // If clicking a sub-button like delete or view toggle, don't trigger trade

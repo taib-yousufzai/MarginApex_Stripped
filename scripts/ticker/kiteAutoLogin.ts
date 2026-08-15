@@ -332,65 +332,61 @@ export class KiteSessionMonitor extends EventEmitter {
       const githubPat = process.env.GITHUB_PAT;
       const githubRepo = process.env.GITHUB_REPO; // format: owner/repo
 
+      let session: KiteSessionData | null = null;
+
       if (githubPat && githubRepo) {
-        logger.info('Delegating Kite login to GitHub Action (workflow_dispatch)');
-        
-        const ghRes = await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/kite-autologin.yml/dispatches`, {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/vnd.github+json',
-            'Authorization': `Bearer ${githubPat}`,
-            'X-GitHub-Api-Version': '2022-11-28',
-            'User-Agent': 'Node.js',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ ref: 'main' })
-        });
-        
-        if (!ghRes.ok) {
-          throw new Error(`Failed to trigger GitHub Action: ${ghRes.status} ${await ghRes.text()}`);
+        try {
+          logger.info('Delegating Kite login to GitHub Action (workflow_dispatch)');
+          
+          const ghRes = await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/kite-autologin.yml/dispatches`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': `Bearer ${githubPat}`,
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'Node.js',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ref: 'main' })
+          });
+          
+          if (!ghRes.ok) {
+            throw new Error(`Failed to trigger GitHub Action: ${ghRes.status} ${await ghRes.text()}`);
+          }
+          
+          logger.info('GitHub Action triggered successfully. Waiting 90s for session to update in DB...');
+          await new Promise(resolve => setTimeout(resolve, 90_000));
+          
+          invalidateSharedKiteSessionCache();
+          session = await getSharedKiteSession();
+          
+          if (!session || this.computeMinutesLeft(session.expiresAt) <= 0) {
+            throw new Error('GitHub Action completed but session in DB was not renewed.');
+          }
+
+          logger.info({ expiresAt: session.expiresAt }, '✅ Kite session renewed successfully via GitHub Action');
+        } catch (ghErr: any) {
+          logger.warn({ err: ghErr.message }, 'GitHub Action login attempt failed — falling back to direct HTTP login');
+          session = null;
         }
-        
-        logger.info('GitHub Action triggered successfully. Waiting 90s for session to update in DB...');
-        // Wait 90 seconds for GitHub Action to run and update Supabase
-        await new Promise(resolve => setTimeout(resolve, 90_000));
-        
-        // Force bypass cache then fetch fresh session using the top-level imported
-        // getSharedKiteSession — same module instance, so cache invalidation works.
-        invalidateSharedKiteSessionCache();
-        const session = await getSharedKiteSession();
-        
-        if (!session || this.computeMinutesLeft(session.expiresAt) <= 0) {
-          throw new Error('GitHub Action completed but session in DB was not renewed (still expired).');
-        }
-
-        // Success
-        this.status.sessionValid = true;
-        this.status.expiresAt = session.expiresAt;
-        this.status.minutesUntilExpiry = this.computeMinutesLeft(session.expiresAt);
-        this.status.lastSuccessfulLogin = new Date();
-        this.status.consecutiveFailures = 0;
-
-        logger.info({ expiresAt: session.expiresAt }, '✅ Kite session renewed successfully via GitHub Action');
-        this.emit('session-refreshed', session);
-
-      } else {
-        // Fallback: Attempt local headless scrape
-        const session = await performKiteLogin();
-
-        // Success
-        this.status.sessionValid = true;
-        this.status.expiresAt = session.expiresAt;
-        this.status.minutesUntilExpiry = this.computeMinutesLeft(session.expiresAt);
-        this.status.lastSuccessfulLogin = new Date();
-        this.status.consecutiveFailures = 0;
-
-        // Bust the in-process session cache so initKite() picks up the new token
-        invalidateSharedKiteSessionCache();
-
-        logger.info({ expiresAt: session.expiresAt }, '✅ Kite session renewed successfully via local scrape');
-        this.emit('session-refreshed', session);
       }
+
+      if (!session) {
+        // Fallback or Primary: Direct HTTP login
+        session = await performKiteLogin();
+        logger.info({ expiresAt: session.expiresAt }, '✅ Kite session renewed successfully via direct HTTP login');
+      }
+
+      // Success state update
+      this.status.sessionValid = true;
+      this.status.expiresAt = session.expiresAt;
+      this.status.minutesUntilExpiry = this.computeMinutesLeft(session.expiresAt);
+      this.status.lastSuccessfulLogin = new Date();
+      this.status.consecutiveFailures = 0;
+
+      // Bust the in-process session cache so initKite() picks up the new token
+      invalidateSharedKiteSessionCache();
+      this.emit('session-refreshed', session);
     } catch (err: any) {
       this.status.consecutiveFailures++;
       this.status.lastLoginFailure = new Date();

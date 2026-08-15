@@ -1,39 +1,21 @@
 /**
- * POST /api/kite/autologin
+ * POST / GET /api/kite/autologin
  *
  * Fully automated Zerodha login using stored credentials + TOTP.
- * Flow:
+ * Delegates to performKiteLogin() in scripts/ticker/kiteAutoLogin.ts
+ * which handles the complete 5-step OAuth & cookie flow:
  *   1. POST credentials to Zerodha login endpoint → get request_id
- *   2. Generate TOTP code from secret
- *   3. POST TOTP to Zerodha 2FA endpoint → get request_token
+ *   2. Generate TOTP code from secret → submit to /api/twofa
+ *   3. Follow OAuth redirect → capture request_token
  *   4. Exchange request_token for access_token via Kite Connect API
- *   5. Save access_token to DB + set cookie
+ *   5. Save access_token to Supabase + set HTTP cookie
  *
  * Protected by a shared secret (AUTOLOGIN_SECRET env var).
- * Called by the daily cron job (vercel.json) at 06:31 IST = 01:01 UTC.
+ * Called by cron jobs or manual trigger.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import * as OTPAuth from 'otpauth';
-import crypto from 'crypto';
-import { saveKiteSession, kiteTokenExpiresAt } from '@/lib/kiteSession';
-
-function generateChecksum(apiKey: string, requestToken: string, apiSecret: string): string {
-  return crypto
-    .createHash('sha256')
-    .update(apiKey + requestToken + apiSecret)
-    .digest('hex');
-}
-
-function generateTOTP(secret: string): string {
-  const totp = new OTPAuth.TOTP({
-    secret: OTPAuth.Secret.fromBase32(secret),
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-  });
-  return totp.generate();
-}
+import { performKiteLogin } from '@/scripts/ticker/kiteAutoLogin';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   return handleAutoLogin(request);
@@ -57,172 +39,27 @@ async function handleAutoLogin(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // ── Env vars ─────────────────────────────────────────────────────────────
-  const userId     = process.env.ZERODHA_USER_ID;
-  const password   = process.env.ZERODHA_PASSWORD;
-  const totpSecret = process.env.ZERODHA_TOTP_SECRET;
-  const apiKey     = process.env.KITE_API_KEY;
-  const apiSecret  = process.env.KITE_API_SECRET;
-  const supabaseUserId = process.env.ZERODHA_SUPABASE_USER_ID; // the Supabase UUID of the account
-
-  if (!userId || !password || !totpSecret || !apiKey || !apiSecret) {
-    return NextResponse.json({ error: 'Missing Zerodha credentials in env' }, { status: 500 });
-  }
-
   try {
-    // ── Step 1: Login with user ID + password ────────────────────────────
-    const loginRes = await fetch('https://kite.zerodha.com/api/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0',
-        'X-Kite-Version': '3',
-      },
-      body: new URLSearchParams({ user_id: userId, password }),
-    });
+    const session = await performKiteLogin();
 
-    if (!loginRes.ok) {
-      const body = await loginRes.text();
-      console.error('[autologin] Login step failed:', loginRes.status, body);
-      return NextResponse.json({ error: 'Login step failed', detail: body }, { status: 502 });
-    }
-
-    const loginData = await loginRes.json() as {
-      status: string;
-      data?: { request_id: string; twofa_type: string };
-    };
-
-    if (loginData.status !== 'success' || !loginData.data?.request_id) {
-      console.error('[autologin] Unexpected login response:', loginData);
-      return NextResponse.json({ error: 'Login response unexpected', detail: loginData }, { status: 502 });
-    }
-
-    const requestId = loginData.data.request_id;
-
-    // ── Step 2: Submit TOTP (with drift correction) ──────────────────────
-    const tryLogin = async (offsetSeconds: number) => {
-      const ts = Date.now() + (offsetSeconds * 1000);
-      const totp = new OTPAuth.TOTP({
-        secret: OTPAuth.Secret.fromBase32(totpSecret),
-        algorithm: 'SHA1',
-        digits: 6,
-        period: 30,
-      });
-      const totpCode = totp.generate({ timestamp: ts });
-      console.log(`[autologin] Trying TOTP window with ${offsetSeconds}s offset...`);
-
-      const res = await fetch('https://kite.zerodha.com/api/twofa', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0',
-          'X-Kite-Version': '3',
-        },
-        body: new URLSearchParams({
-          user_id: userId,
-          request_id: requestId,
-          twofa_value: totpCode,
-          twofa_type: 'totp',
-          skip_session: 'true',
-        }),
-      });
-      return res;
-    };
-
-    // Try current time, then -60s, then +60s
-    let twoFaRes = await tryLogin(0);
-    if (!twoFaRes.ok) {
-      console.log('[autologin] First TOTP failed, trying -60s drift offset...');
-      twoFaRes = await tryLogin(-60);
-    }
-    if (!twoFaRes.ok) {
-      console.log('[autologin] Second TOTP failed, trying +60s drift offset...');
-      twoFaRes = await tryLogin(60);
-    }
-
-    if (!twoFaRes.ok) {
-      const body = await twoFaRes.text();
-      console.error('[autologin] 2FA step failed after retries:', twoFaRes.status, body);
-      return NextResponse.json({ error: '2FA step failed', detail: body }, { status: 502 });
-    }
-
-    const twoFaData = await twoFaRes.json() as {
-      status: string;
-      data?: { request_token?: string };
-    };
-
-    let requestToken = twoFaData.data?.request_token;
-
-    if (!requestToken) {
-      // Some versions return it in a redirect URL — parse from Set-Cookie or Location header
-      const location = twoFaRes.headers.get('location') ?? '';
-      const match = location.match(/request_token=([^&]+)/);
-      if (match) requestToken = match[1];
-    }
-
-    if (!requestToken) {
-      console.error('[autologin] No request_token in 2FA response:', twoFaData);
-      return NextResponse.json({ error: 'No request_token after 2FA', detail: twoFaData }, { status: 502 });
-    }
-
-    // ── Step 3: Exchange request_token for access_token ──────────────────
-    const checksum = generateChecksum(apiKey, requestToken, apiSecret);
-
-    const tokenRes = await fetch('https://api.kite.trade/session/token', {
-      method: 'POST',
-      headers: {
-        'X-Kite-Version': '3',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({ api_key: apiKey, request_token: requestToken, checksum }),
-    });
-
-    if (!tokenRes.ok) {
-      const body = await tokenRes.text();
-      console.error('[autologin] Token exchange failed:', tokenRes.status, body);
-      return NextResponse.json({ error: 'Token exchange failed', detail: body }, { status: 502 });
-    }
-
-    const tokenData = await tokenRes.json() as {
-      data?: { access_token: string; user_id: string };
-    };
-
-    const accessToken = tokenData.data?.access_token;
-    if (!accessToken) {
-      return NextResponse.json({ error: 'No access_token in response', detail: tokenData }, { status: 502 });
-    }
-
-    const expiresAt = kiteTokenExpiresAt();
-
-    // ── Step 4: Save to DB ────────────────────────────────────────────────
-    if (supabaseUserId) {
-      await saveKiteSession(supabaseUserId, {
-        kiteUserId: tokenData.data?.user_id ?? userId,
-        accessToken,
-        expiresAt,
-      });
-    }
-
-    // ── Step 5: Set cookie and return ────────────────────────────────────
     const response = NextResponse.json({
       success: true,
-      expiresAt: expiresAt.toISOString(),
-      kiteUserId: tokenData.data?.user_id,
+      expiresAt: session.expiresAt.toISOString(),
+      kiteUserId: session.kiteUserId,
     });
 
-    response.cookies.set('kite_access_token', accessToken, {
+    response.cookies.set('kite_access_token', session.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      expires: expiresAt,
+      expires: session.expiresAt,
     });
 
-    console.log('[autologin] Success — token valid until', expiresAt.toISOString());
+    console.log('[autologin] Success — session renewed until', session.expiresAt.toISOString());
     return response;
-
-  } catch (err) {
-    console.error('[autologin] Unexpected error:', err);
-    return NextResponse.json({ error: 'Internal server error', detail: String(err) }, { status: 500 });
+  } catch (err: any) {
+    console.error('[autologin] Failed to perform auto login:', err);
+    return NextResponse.json({ error: 'Auto login failed', detail: err.message || String(err) }, { status: 502 });
   }
 }

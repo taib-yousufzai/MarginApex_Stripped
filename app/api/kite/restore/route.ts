@@ -55,8 +55,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if (!session) {
-      console.log('[Kite Restore] Trying shared session fallback...');
-      session = await getSharedKiteSession();
+      console.log('[Kite Restore] No active session in DB — attempting auto-login fallback...');
+      try {
+        const { performKiteLogin } = await import('@/scripts/ticker/kiteAutoLogin');
+        session = await performKiteLogin();
+        console.log('[Kite Restore] Auto-login fallback successful');
+      } catch (autoErr) {
+        console.error('[Kite Restore] Auto-login fallback failed:', autoErr);
+      }
     }
 
     if (!session) {

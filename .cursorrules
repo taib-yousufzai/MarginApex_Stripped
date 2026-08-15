@@ -1,0 +1,23 @@
+# Project Rules & Architecture Standards — MarginApex
+
+## 🔒 Kite Session & Auto-Login Invariants (DO NOT REMOVE OR DISABLE)
+
+1. **GitHub Actions Daily Cron Schedule**
+   - File: `.github/workflows/kite-autologin.yml`
+   - MUST preserve the automated daily cron schedule: `- cron: '45 0 * * *'` (06:15 IST / 00:45 UTC).
+   - DO NOT remove the `schedule:` block or reduce it to manual `workflow_dispatch` only.
+   - `workflow_dispatch` MUST remain enabled alongside the schedule.
+
+2. **Ticker Daemon Session Self-Healing**
+   - File: `scripts/ticker/index.ts`
+   - In `initKite()`, if `getSharedKiteSession()` returns `null` or an expired session, `this.sessionMonitor.forceRefresh()` MUST be called immediately to trigger auto-login.
+   - On WebSocket 403 (Forbidden / Auth Rejection), `this.sessionMonitor.forceRefresh()` MUST be called immediately to invalidate the stale token and obtain a fresh access token.
+
+3. **Session Monitor Dual-Layer Login Fallback**
+   - File: `scripts/ticker/kiteAutoLogin.ts`
+   - Primary: Trigger GitHub Action (`workflow_dispatch`) when `GITHUB_PAT` and `GITHUB_REPO` are configured.
+   - Fallback: Fall back to direct 5-step HTTP login (`performKiteLogin()`) if GitHub Action fails, times out, or if GitHub environment variables are omitted.
+
+4. **API Route Recovery Standards**
+   - Files: `app/api/kite/autologin/route.ts`, `app/api/kite/restore/route.ts`, `app/api/kite/status/route.ts`
+   - API endpoints MUST invoke `performKiteLogin()` when a session is missing or invalid so client requests automatically recover without manual user reconnection.

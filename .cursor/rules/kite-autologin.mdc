@@ -1,0 +1,23 @@
+---
+description: Rules for maintaining Kite session auto-login integrity and self-healing behaviors
+globs: scripts/ticker/**, app/api/kite/**, .github/workflows/kite-autologin.yml
+---
+
+# Kite Auto-Login & Session Management Invariants
+
+## CRITICAL RULES - NEVER REMOVE
+
+1. **GitHub Action Daily Cron (`.github/workflows/kite-autologin.yml`)**
+   - The `schedule:` trigger (`cron: '45 0 * * *'`) MUST NOT be removed.
+   - It runs daily at 06:15 IST (00:45 UTC) to generate fresh session tokens right after Zerodha's 06:00 IST daily session invalidation.
+
+2. **Ticker Daemon Immediate Self-Healing (`scripts/ticker/index.ts`)**
+   - `initKite()` MUST call `this.sessionMonitor.forceRefresh()` if no active session is found in the database.
+   - On WebSocket HTTP 403 (token rejection), `this.sessionMonitor.forceRefresh()` MUST be invoked immediately to renew the token without waiting for periodic checks.
+
+3. **Dual-Layer Auto-Login Flow (`scripts/ticker/kiteAutoLogin.ts`)**
+   - The `attemptLogin` method MUST attempt GitHub Actions dispatch when `GITHUB_PAT` and `GITHUB_REPO` are present.
+   - If GitHub Actions fails or if `GITHUB_PAT` is not set, it MUST fall back to `performKiteLogin()` direct HTTP login.
+
+4. **API Route Auto-Recovery (`app/api/kite/*`)**
+   - `/api/kite/autologin`, `/api/kite/restore`, and `/api/kite/status` MUST trigger `performKiteLogin()` if tokens are missing or expired to keep client & server sessions active.
