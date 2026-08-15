@@ -36,7 +36,7 @@ import type { SegmentSetting, ScriptSetting } from '@/lib/types/tradeConfig';
 export type { SegmentSetting, ScriptSetting };
 
 // ─── Stale TTL ───────────────────────────────────────────────────────────────
-const CACHE_TTL_MS = 30_000; // 30 seconds
+const CACHE_TTL_MS = 5_000; // 5 seconds — keep fresh so admin changes apply quickly
 
 // ─── Context shape ───────────────────────────────────────────────────────────
 

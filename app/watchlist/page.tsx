@@ -13,7 +13,7 @@ import { useBalance } from '@/hooks/useBalance';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import dynamic from 'next/dynamic';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
-import { mapSegmentToDbSegment, mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
+import { mapSegmentToDbSegment, mapSymbolToSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
@@ -789,7 +789,7 @@ function WatchlistContent() {
     return `${sym}${price.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const dbSeg = selectedItem ? mapSegmentToDbSegment(selectedItem.segment) : '';
+  const dbSeg = selectedItem ? mapSegmentWithSymbol(selectedItem.segment, selectedItem.symbol || selectedItem.name || '') : '';
   const buySetting = dbSeg ? getSegment(dbSeg, 'BUY') : undefined;
   const sellSetting = dbSeg ? getSegment(dbSeg, 'SELL') : undefined;
 
@@ -813,15 +813,35 @@ function WatchlistContent() {
   // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
   // Only fall back to a tight synthetic spread when prices are missing or crossed.
   if (currentLtp > 0) {
-    const defaultBid = currentLtp * 0.9995;
-    const defaultAsk = currentLtp * 1.0005;
-    const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-    if (!hasValidSpread) {
-      if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
-      else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
-      else {
-        rawBid = defaultBid;
-        rawAsk = defaultAsk;
+    if (isCrypto) {
+      let cryptoBidBuffer = 0.05; // default 0.05%
+      
+      console.log('[WATCHLIST DEBUG]', {
+        dbSeg,
+        buySetting,
+        sellSetting,
+        cryptoBidBuffer_before: cryptoBidBuffer,
+      });
+
+      if (buySetting?.bid_buffer !== undefined) {
+        cryptoBidBuffer = buySetting.bid_buffer;
+      } else if (sellSetting?.bid_buffer !== undefined) {
+        cryptoBidBuffer = sellSetting.bid_buffer;
+      }
+      const buffer = cryptoBidBuffer / 100;
+      rawBid = currentLtp * (1 - buffer);
+      rawAsk = currentLtp * (1 + buffer);
+    } else {
+      const defaultBid = currentLtp * 0.9995;
+      const defaultAsk = currentLtp * 1.0005;
+      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
+      if (!hasValidSpread) {
+        if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
+        else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
+        else {
+          rawBid = defaultBid;
+          rawAsk = defaultAsk;
+        }
       }
     }
   }
@@ -2173,7 +2193,7 @@ function WatchlistContent() {
                     if (isExecutingBasket) return;
                     let totalRequiredMargin = 0, intradayCharges = 0, carryCharges = 0;
                     basketLegs.forEach((leg) => {
-                      const price = getLegPrice(leg.item); const seg = mapSegmentToDbSegment(leg.item.segment); const setting = getSegment(seg, leg.side);
+                      const price = getLegPrice(leg.item); const seg = mapSegmentWithSymbol(leg.item.segment, leg.item.symbol || leg.item.name || ''); const setting = getSegment(seg, leg.side);
                       const lotSz = getLotSize(leg.item.symbol || leg.item.name || ''); const qty = leg.unit === 'lot' ? leg.qty * lotSz : leg.qty; const exposure = qty * price;
                       const isIntra = (leg.productType || 'INTRADAY') === 'INTRADAY';
                       const lev = Number(isIntra ? (setting?.intraday_leverage ?? 10) : (setting?.normal_leverage ?? 10));

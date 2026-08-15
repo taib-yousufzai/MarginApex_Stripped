@@ -63,12 +63,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const [slPrice, setSlPrice] = useState('');
   const [tpPrice, setTpPrice] = useState('');
   const [gttSubOption, setGttSubOption] = useState<string>('LIMIT');
-  // Balance comes from the global BalanceDataProvider — no local fetch needed
+  // Balance comes from the global BalanceDataProvider â€” no local fetch needed
   const { balance: availableBalance } = useBalance();
   const [toast, setToast] = useState<string | null>(null);
   const [qtyError, setQtyError] = useState<string | null>(null);
 
-  // ── Explicit order lifecycle state ──────────────────────────────────────
+  // â”€â”€ Explicit order lifecycle state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Replaces independent isSubmitting + orderError booleans/strings that could
   // simultaneously describe contradictory states (e.g. processing=true while
   // errorMsg is set). Only one state is active at a time.
@@ -79,7 +79,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   // Derived convenience aliases kept for JSX readability
   const isSubmitting = orderState === 'processing';
   const orderError   = orderState === 'error' ? orderErrorMsg : null;
-  // isBusy gates the BUY/SELL footer buttons — also checks the hook's own loading flag
+  // isBusy gates the BUY/SELL footer buttons â€” also checks the hook's own loading flag
   const isBusy = placingOrder || isSubmitting;
   const isExpired = useMemo(() => {
     if (!item?.expiry || exitMode || isModify) return false;
@@ -117,7 +117,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     : (item ? getLotSize(item.symbol || item.name || '') : 1);
 
   const dbSeg = item ? mapSegmentWithSymbol(item.segment, item.symbol) : '';
-  const isCrypto = !!item?.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].includes(item?.symbol || '');
+  const isCrypto = !!item?.binanceSymbol || 
+                   (item?.segment || '').toUpperCase() === 'CRYPTO' || 
+                   (item?.segment || '').toUpperCase() === 'CRYPTO-FUT' || 
+                   ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].includes(item?.symbol || '');
   const isComex = item && (item as any).preferredView
     ? (item as any).preferredView === 'comex'
     : (dbSeg.toUpperCase().includes('COMEX') || !!item?.comexSymbol);
@@ -201,10 +204,27 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let rawAsk = 0;
 
   if (currentLtp > 0) {
-    if (isCrypto && bSymbol && cryptoQuote) {
-      // Force 0 so it uses the synthetic 0.05% spread fallback, ignoring the tight 0.01 Binance spread
-      rawBid = 0; 
-      rawAsk = 0; 
+    // TEMP DEBUG - remove after fix
+    console.log('[TRADSHEET DEBUG]', {
+      segment: item?.segment,
+      symbol: item?.symbol,
+      binanceSymbol: item?.binanceSymbol,
+      dbSeg,
+      isCrypto,
+      bSymbol,
+      buySetting_bid_buffer: buySetting?.bid_buffer,
+      segSetting_bid_buffer: segSetting?.bid_buffer,
+    });
+
+    if (isCrypto) {
+
+      // For Crypto: use bid_buffer from admin segment settings to create synthetic spread.
+      // bid_buffer % is subtracted from LTP for Bid, and added to LTP for Ask.
+      // Use the segment setting for the current side — fallback to 0.05% if not configured.
+      const cryptoBidBuffer = segSetting?.bid_buffer !== undefined ? segSetting.bid_buffer : (buySetting?.bid_buffer !== undefined ? buySetting.bid_buffer : 0.05);
+      rawBid = currentLtp * (1 - cryptoBidBuffer / 100);
+      rawAsk = currentLtp * (1 + cryptoBidBuffer / 100);
+
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || 0;
       rawAsk = comexQuotes[item.comexSymbol].ask || 0;
@@ -213,9 +233,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       rawAsk = marketQuotes[computedKiteSymbol].ask || 0;
     }
 
-    // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
+    // Use real bid/ask from the exchange if valid (non-zero and bid <= ask).
     // Only fall back to a tight synthetic spread when prices are missing or crossed.
-    if (currentLtp > 0) {
+    if (!isCrypto && currentLtp > 0) {
       const defaultBid = currentLtp * 0.9995;
       const defaultAsk = currentLtp * 1.0005;
       const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
@@ -299,8 +319,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   ) : (orderType === 'GTT' ? computeCharge('Per Trade', 15) : 0));
 
   // Brokerage model (matches TradeEngine):
-  //   INTRADAY open: entry + exit charged upfront = rawIntradayCharge × 2
-  //   CARRY open:    entry + exit + carry conversion = rawIntradayCharge × 2 + rawCarryCharge
+  //   INTRADAY open: entry + exit charged upfront = rawIntradayCharge Ã— 2
+  //   CARRY open:    entry + exit + carry conversion = rawIntradayCharge Ã— 2 + rawCarryCharge
   //   Exit order:    0 (already collected at open)
   //   GTT:           shows both legs breakdown
 
@@ -308,7 +328,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let displayCarry = 0;
 
   if (isExitTrade) {
-    // Exit: brokerage was already collected at position open — show ₹0
+    // Exit: brokerage was already collected at position open â€” show â‚¹0
     displayIntraday = 0;
     displayCarry = 0;
   } else if (orderType === 'GTT') {
@@ -319,7 +339,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     displayIntraday = 0;
     displayCarry = rawCarryCharge;
   } else {
-    // INTRADAY open: entry+exit both charged upfront (×2)
+    // INTRADAY open: entry+exit both charged upfront (Ã—2)
     displayIntraday = rawIntradayCharge * 2;
     displayCarry = 0;
   }
@@ -355,7 +375,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const activePositionsRef = useRef(activePositions);
   useEffect(() => { activePositionsRef.current = activePositions; }, [activePositions]);
 
-  // Sync qtyInput → orderQty when input is a valid number (supports decimals in lot mode)
+  // Sync qtyInput â†’ orderQty when input is a valid number (supports decimals in lot mode)
   const handleQtyChange = (val: string) => {
     // Allow digits, a leading optional zero, and a single decimal point
     if (val !== '' && !/^\d*\.?\d*$/.test(val)) return;
@@ -449,7 +469,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         setQtyInput(String(initialExitQty));
       }
     }
-    // Intentionally exclude activePositions — only run when sheet opens or side changes,
+    // Intentionally exclude activePositions â€” only run when sheet opens or side changes,
     // never on background polls (which would stomp user-edited qty)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side, isOpen, item?.symbol, propProductType, exitMode, linkedPosId]);
@@ -482,8 +502,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   }
 
   // For SLM: the stop loss must be on the correct side of current market price
-  // BUY SLM entry → stop loss below market (protect a new long)
-  // SELL SLM entry → stop loss above market (protect a new short)
+  // BUY SLM entry â†’ stop loss below market (protect a new long)
+  // SELL SLM entry â†’ stop loss above market (protect a new short)
   if (orderType === 'SLM' && !exitMode) {
     if (side === 'BUY') {
       maxAllowedPrice = Math.min(maxAllowedPrice, currentLtp);
@@ -505,14 +525,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const priceRangeHelp = currentLtp > 0 ? (
     <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary, #6B7280)', marginTop: '6px', fontWeight: 600 }}>
-      Allowed price: {minAllowedPrice > 0 ? `₹${minAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'} to {maxAllowedPrice !== Infinity ? `₹${maxAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No Limit'}
+      Allowed price: {minAllowedPrice > 0 ? `â‚¹${minAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'â‚¹0.00'} to {maxAllowedPrice !== Infinity ? `â‚¹${maxAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No Limit'}
     </div>
   ) : null;
 
   const isExecutingRef = useRef(false);
 
   const handlePlace = async (placeSide: 'BUY' | 'SELL') => {
-    // Synchronous guard — isExecutingRef is checked before any await so no
+    // Synchronous guard â€” isExecutingRef is checked before any await so no
     // concurrent call can slip through during a React render cycle.
     // Also reject if the UI is already showing an error (user must dismiss first).
     if (isExecutingRef.current || orderState !== 'idle') return;
@@ -530,7 +550,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
       let rawQty = orderUnit === 'lot' ? parsedInputQty * lotSize : parsedInputQty;
 
-      // ── Quantity Snapping & Validation ──────────────────────────────────
+      // â”€â”€ Quantity Snapping & Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (exitMode) {
         let maxExitQty = 0;
         if (linkedPosId) {
@@ -566,7 +586,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       const placeSetting = dbSeg ? getSegment(dbSeg, placeSide) : undefined;
       const pTopLimit = placeSetting?.top_limit ?? 0;
       const pMinLimit = placeSetting?.min_limit ?? 0;
-      // ─────────────────────────────────────────────────────────────────────
+      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
       // Resolve order_type, trigger_price, stop_loss, target, client_price under the hood
       let resolvedOrderType = orderType;
@@ -757,14 +777,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           if (pTopLimit > 0) {
             const maxAllowed = currentLtp * (1 + pTopLimit / 100);
             if (parsedPrice > maxAllowed) {
-              showToast(`Maximum price allowed is ₹${maxAllowed.toFixed(2)}`);
+              showToast(`Maximum price allowed is â‚¹${maxAllowed.toFixed(2)}`);
               return;
             }
           }
           if (pMinLimit > 0) {
             const minAllowed = currentLtp * (1 - pMinLimit / 100);
             if (parsedPrice < minAllowed) {
-              showToast(`Minimum price allowed is ₹${minAllowed.toFixed(2)}`);
+              showToast(`Minimum price allowed is â‚¹${minAllowed.toFixed(2)}`);
               return;
             }
           }
@@ -772,14 +792,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           if (pTopLimit > 0) {
             const maxAllowed = currentLtp * (1 + pTopLimit / 100);
             if (parsedPrice > maxAllowed) {
-              showToast(`Maximum price allowed is ₹${maxAllowed.toFixed(2)}`);
+              showToast(`Maximum price allowed is â‚¹${maxAllowed.toFixed(2)}`);
               return;
             }
           }
           if (pMinLimit > 0) {
             const minAllowed = currentLtp * (1 - pMinLimit / 100);
             if (parsedPrice < minAllowed) {
-              showToast(`Minimum price allowed is ₹${minAllowed.toFixed(2)}`);
+              showToast(`Minimum price allowed is â‚¹${minAllowed.toFixed(2)}`);
               return;
             }
           }
@@ -938,7 +958,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       } else {
         // Buy/Sell flow: show the global loader overlay.
-        // Only fire global-loader-start now — we are confirmed in 'processing' state
+        // Only fire global-loader-start now â€” we are confirmed in 'processing' state
         // so there is no competing error modal visible.
         handedOffToOrderFlow = true;
         window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
@@ -1025,15 +1045,15 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     } catch (e) {
       console.error('[TradeSheet handlePlace] Unexpected exception:', e);
     } finally {
-      // Always release the execution lock — exactly once, whether success or failure.
+      // Always release the execution lock â€” exactly once, whether success or failure.
       isExecutingRef.current = false;
       // Error display is now owned by the central ClientShell modal, so always
-      // reset to idle here — the lock is released and the sheet can accept new taps.
+      // reset to idle here â€” the lock is released and the sheet can accept new taps.
       setOrderState('idle');
     }
   };
 
-  const currencySymbol = isCrypto || isComex ? '$' : '₹';
+  const currencySymbol = isCrypto || isComex ? '$' : 'â‚¹';
   const fmt = (n: number) =>
     n > 0 ? `${currencySymbol}${n.toLocaleString(isCrypto || isComex ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
 
@@ -1501,7 +1521,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   </div>
                 </div>
 
-                {/* LIMIT / TARGET — Price input (separate card, matches watchlist) */}
+                {/* LIMIT / TARGET â€” Price input (separate card, matches watchlist) */}
                 {(orderType === 'LIMIT' || orderType === 'TARGET') && (
                   <div className="ts2-card">
                     <div className="ts2-label">{orderType === 'TARGET' ? 'Target Price' : 'Price'} <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></div>
@@ -1516,12 +1536,12 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   </div>
                 )}
 
-                {/* SL / SLM — Price input */}
+                {/* SL / SLM â€” Price input */}
                 {(orderType === 'SL' || orderType === 'SLM') && (
                   <div className="ts2-card">
                     <div className="ts2-label">
                       {orderType === 'SLM'
-                        ? <>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol}) — order executes at market price</span></>
+                        ? <>Stop Loss <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol}) â€” order executes at market price</span></>
                         : <>Stop Loss Price <span style={{ color: '#9CA3AF', textTransform: 'none', fontWeight: 500 }}>({currencySymbol})</span></>
                       }
                     </div>
@@ -1536,7 +1556,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   </div>
                 )}
 
-                {/* GTT — Stop Loss / Target / Limit sub-options */}
+                {/* GTT â€” Stop Loss / Target / Limit sub-options */}
                 {orderType === 'GTT' && (
                   <div className="ts2-card">
                     {exitMode ? (
@@ -1651,17 +1671,17 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Available</span>
                     <span className="ts2-mv-avail">
-                      {`₹ ${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                      {`â‚¹ ${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Required Margin</span>
-                    <span className="ts2-mv">₹ {requiredMargin.toLocaleString('en-IN')}</span>
+                    <span className="ts2-mv">â‚¹ {requiredMargin.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Equity</span>
                     <span className="ts2-mv" style={{ color: 'var(--text-primary, #111827)', fontWeight: 800 }}>
-                      ₹ {baseExposure.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      â‚¹ {baseExposure.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
 
@@ -1672,10 +1692,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     onClick={() => setShowCharges(!showCharges)}
                   >
                     <span className="ts2-ml" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                      Charges Breakdown {showCharges ? '▲' : '▼'}
+                      Charges Breakdown {showCharges ? 'â–²' : 'â–¼'}
                     </span>
                     <span className="ts2-mv" style={{ color: '#15803D', fontWeight: 800 }}>
-                      ₹ {calculatedBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      â‚¹ {calculatedBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   {showCharges && (
@@ -1685,19 +1705,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                           Intraday Carry
                         </span>
                         <span className="ts2-mv" style={displayIntraday > 0 ? {} : { opacity: 0.4 }}>
-                          ₹ {(displayIntraday > 0 ? rawIntradayCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          â‚¹ {(displayIntraday > 0 ? rawIntradayCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">Carry Charges</span>
                         <span className="ts2-mv" style={targetPT === 'CARRY' && !isExitTrade ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
-                          ₹ {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          â‚¹ {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">GTT Charges</span>
                         <span className="ts2-mv" style={orderType === 'GTT' ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
-                          ₹ {(orderType === 'GTT' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          â‚¹ {(orderType === 'GTT' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </>
@@ -1764,5 +1784,5 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       <div className={`ts2-toast${toast ? ' show' : ''}`}>{toast}</div>
     </>
   );
-}
+};
 

@@ -16,7 +16,7 @@ import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
-import { mapSegmentToDbSegment } from '@/lib/trading/SymbolMapping';
+import { mapSegmentToDbSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
@@ -820,7 +820,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
         const indexOptSymbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'];
         return indexOptSymbols.some(s => name.includes(s)) ? 'INDEX-OPT' : 'STOCK-OPT';
       }
-      return mapSegmentToDbSegment(segment);
+      return mapSegmentWithSymbol(segment, symbol);
     })();
     const buySetting = getSegment(submitDbSeg, 'BUY');
     const sellSetting = getSegment(submitDbSeg, 'SELL');
@@ -1104,7 +1104,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     if (isTradeOnChartActive) {
       const posLotSize = getLotSize(pos.symbol);
       const qVal = posLotSize;
-      const dbSeg = mapSegmentToDbSegment(segment);
+      const dbSeg = mapSegmentWithSymbol(segment, symbol);
       const segSetting = getSegment(dbSeg, pos.side);
       const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
       const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
@@ -1192,7 +1192,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     // In scalp mode qtyValue is always in lots. Guard against a stale exit-qty
     // (e.g. 1500 units from a previous exit flow) being treated as lot count,
     // which would multiply by lotSize again and blow past max_order_lot.
-    const dbSeg = mapSegmentToDbSegment(segment);
+    const dbSeg = mapSegmentWithSymbol(segment, symbol);
     const segSetting = getSegment(dbSeg, side);
     const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 50;
 
@@ -1265,7 +1265,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     quickEntryLock.current = true;
 
     const addQty = pos.qty_open;
-    const dbSeg = mapSegmentToDbSegment(segment);
+    const dbSeg = mapSegmentWithSymbol(segment, symbol);
     const segSetting = getSegment(dbSeg, pos.side);
     const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
     const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
@@ -1382,16 +1382,59 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const isTargetFlow = ((isAddMoreFlow || isExitFlow) && addMoreSymbol && addMoreSymbol !== symbol);
   const addMoreQuote = isTargetFlow ? marketQuotes[addMoreSymbol!] : null;
 
-  const rawBid = isTargetFlow
+  // When a chain contract is open, the option segment must be used for settings lookup,
+  // not the chart's underlying segment (e.g. "NSE - Equity" for NIFTY 50).
+  const effectiveDbSeg = (() => {
+    if (chainContract) {
+      const name = chainContract.name.toUpperCase();
+      const stockOptSymbols = ['SENSEX', 'BANKEX'];
+      const indexOptSymbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
+      const isIndexOpt = indexOptSymbols.some(s => name.includes(s)) || !stockOptSymbols.some(s => name.includes(s));
+      return isIndexOpt ? 'INDEX-OPT' : 'STOCK-OPT';
+    }
+    // When in add-more or exit flow, use the position's segment for settings lookup
+    if ((isAddMoreFlow || isExitFlow) && addMoreSegment) {
+      return mapSegmentWithSymbol(addMoreSegment, symbol);
+    }
+    return mapSegmentWithSymbol(segment, symbol);
+  })();
+
+  const dbSeg = effectiveDbSeg;
+  const buySetting = getSegment(dbSeg, 'BUY');
+  const sellSetting = getSegment(dbSeg, 'SELL');
+  const segSetting = orderSide === 'SELL' ? sellSetting : buySetting;
+
+  let rawBid = isTargetFlow
     ? (addMoreQuote?.bid || addMoreQuote?.lastPrice || addMoreLtp || currentPrice)
     : ((!symbolIsDerivative && activeLiveQuote)
       ? (activeLiveQuote.bid || activeLiveQuote.lastPrice || currentPrice)
       : currentPrice);
-  const rawAsk = isTargetFlow
+  let rawAsk = isTargetFlow
     ? (addMoreQuote?.ask || addMoreQuote?.lastPrice || addMoreLtp || currentPrice)
     : ((!symbolIsDerivative && activeLiveQuote)
       ? (activeLiveQuote.ask || activeLiveQuote.lastPrice || currentPrice)
       : currentPrice);
+
+  if (isCrypto) {
+    const ltpToUse = isTargetFlow
+      ? (addMoreQuote?.lastPrice || addMoreLtp || currentPrice)
+      : (!symbolIsDerivative && activeLiveQuote ? (activeLiveQuote.lastPrice || currentPrice) : currentPrice);
+
+    if (ltpToUse > 0) {
+      let cryptoBidBuffer = 0.05; // 0.05% default
+      // Use the segment setting for the current side
+      if (segSetting?.bid_buffer !== undefined) {
+        cryptoBidBuffer = segSetting.bid_buffer;
+      } else if (buySetting?.bid_buffer !== undefined) {
+        cryptoBidBuffer = buySetting.bid_buffer;
+      }
+      
+      const buffer = cryptoBidBuffer / 100;
+      rawBid = ltpToUse * (1 - buffer);
+      rawAsk = ltpToUse * (1 + buffer);
+    }
+  }
+
   const underlyingPriceOfScript = orderSide === 'SELL' ? rawBid : rawAsk;
   // When a chain contract is open, use the option's bid/ask price, not the underlying index price
   const priceOfScript = chainContract
@@ -1421,28 +1464,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     : (chainContract
       ? (liveOptionQuote?.lastPrice || chainContract.ltp)
       : (!symbolIsDerivative && activeLiveQuote ? (activeLiveQuote.lastPrice || currentPrice) : currentPrice));
-
-  // When a chain contract is open, the option segment must be used for settings lookup,
-  // not the chart's underlying segment (e.g. "NSE - Equity" for NIFTY 50).
-  const effectiveDbSeg = (() => {
-    if (chainContract) {
-      const name = chainContract.name.toUpperCase();
-      const stockOptSymbols = ['SENSEX', 'BANKEX'];
-      const indexOptSymbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY'];
-      const isIndexOpt = indexOptSymbols.some(s => name.includes(s)) || !stockOptSymbols.some(s => name.includes(s));
-      return isIndexOpt ? 'INDEX-OPT' : 'STOCK-OPT';
-    }
-    // When in add-more or exit flow, use the position's segment for settings lookup
-    if ((isAddMoreFlow || isExitFlow) && addMoreSegment) {
-      return mapSegmentToDbSegment(addMoreSegment);
-    }
-    return mapSegmentToDbSegment(segment);
-  })();
-
-  const dbSeg = effectiveDbSeg;
-  const buySetting = getSegment(dbSeg, 'BUY');
-  const sellSetting = getSegment(dbSeg, 'SELL');
-  const segSetting = orderSide === 'SELL' ? sellSetting : buySetting;
 
   const intradayLeverage = segSetting?.intraday_leverage ?? 10;
   const holdingLeverage = segSetting?.holding_leverage ?? 10;

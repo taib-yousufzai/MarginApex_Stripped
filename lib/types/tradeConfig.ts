@@ -31,6 +31,7 @@ export interface SegmentSetting {
   loss_hold_sec: number;
   entry_buffer: number;
   exit_buffer: number;
+  bid_buffer?: number;
   top_limit?: number;
   min_limit?: number;
   exit_price_mode?: 'BID_ASK' | 'LTP';

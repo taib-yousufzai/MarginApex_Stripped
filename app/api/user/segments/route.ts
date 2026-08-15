@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   const { data: currentSettings, error: queryErr } = await admin
     .from(settingsTable)
     .select(
-      'id, user_id, segment, side, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, entry_buffer, holding_type, exit_buffer, trade_allowed, exit_price_mode, created_at, updated_at'
+      'id, user_id, segment, side, commission_type, commission_value, carry_commission_type, carry_commission_value, gtt_commission_type, gtt_commission_value, profit_hold_sec, loss_hold_sec, strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, entry_buffer, holding_type, bid_buffer, exit_buffer, trade_allowed, top_limit, min_limit, exit_price_mode, created_at, updated_at'
     )
     .eq('user_id', user.id);
 
@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
           holding_leverage,
           holding_type: 'Multiplier',
           entry_buffer: 0.3,
+          bid_buffer: 0.3,
           exit_buffer: 0.17,
           trade_allowed: segUpper.includes('CRYPTO') ? false : true,
         });
