@@ -188,7 +188,7 @@ class MarketWSManager {
       };
 
       this.ws.onerror = (e) => {
-        console.error('[MarketWSManager] WebSocket error details:', e);
+        console.warn('[MarketWSManager] WebSocket connection warning:', e);
         this.lastError = 'WebSocket connection failed';
         this.connectionStatus = 'disconnected';
         this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });

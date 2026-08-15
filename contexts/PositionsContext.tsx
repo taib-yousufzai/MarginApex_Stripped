@@ -336,12 +336,14 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       const avgPrice = p.avg_price || p.entry_price;
       const contractExpired = isContractExpired(p.kite_instrument || p.symbol);
 
+      let rawQuote: any = null;
       if (!contractExpired) {
         if (isCrypto) {
           const binanceKey = cached ? cached.binanceSymbol : (p.symbol || '').replace('/', '') + (p.symbol?.endsWith('USDT') ? '' : 'USDT');
           const shortSymbol = (p.symbol || '').replace('/', '').replace('USDT', '');
           const quote = binanceQuotes[binanceKey] || binanceQuotes[shortSymbol] || marketQuotes[binanceKey] || marketQuotes[shortSymbol] || marketQuotes[p.symbol] || marketQuotes[`CRYPTO:${shortSymbol}`];
           if (quote) {
+            rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
             bid = (quote as any).bid ?? (ltp * 0.9995);
             ask = (quote as any).ask ?? (ltp * 1.0005);
@@ -349,6 +351,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         } else if (isComex) {
           const quote = comexQuotes[p.symbol];
           if (quote) {
+            rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
             bid = quote.bid ?? ltp;
             ask = quote.ask ?? ltp;
@@ -357,6 +360,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           const kiteKey = cached ? cached.resolvedKiteSymbol : resolveKitePrefix(p.kite_instrument || p.symbol, p.settlement || '');
           const quote = marketQuotes[kiteKey];
           if (quote) {
+            rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
             bid = quote.bid ?? ltp;
             ask = quote.ask ?? ltp;
@@ -382,7 +386,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           ltp,
           rawBid: bid,
           rawAsk: ask,
-          hasRealBidAsk: Boolean(quote?.bid || quote?.ask),
+          hasRealBidAsk: Boolean(rawQuote?.bid || rawQuote?.ask),
           askBuffer: sideSetting?.ask_buffer ?? sideSetting?.bid_buffer ?? 0,
           bidBuffer: sideSetting?.bid_buffer ?? sideSetting?.ask_buffer ?? 0,
         });

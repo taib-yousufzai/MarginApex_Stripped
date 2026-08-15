@@ -20,7 +20,13 @@ export class ApiError extends Error {
   readonly details?: unknown;
 
   constructor(status: number, details?: unknown, code?: string) {
-    super(`ApiError ${status}`);
+    let msg = `ApiError ${status}`;
+    if (details && typeof details === 'object' && details !== null && 'error' in details && typeof (details as Record<string, unknown>).error === 'string') {
+      msg = (details as Record<string, unknown>).error as string;
+    } else if (typeof details === 'string' && details.trim()) {
+      msg = details;
+    }
+    super(msg);
     this.name = 'ApiError';
     this.status = status;
     this.details = details;
@@ -136,14 +142,15 @@ async function apiCall<T>(
     // Error path: parse body for structured error info
     let details: unknown;
     let code: string | undefined;
+    const rawText = await res.text();
     try {
-      const parsed = await res.json();
-      details = parsed;
+      const parsed = rawText ? JSON.parse(rawText) : null;
+      details = parsed ?? rawText;
       if (parsed && typeof parsed === 'object' && 'code' in parsed) {
         code = String((parsed as Record<string, unknown>).code);
       }
     } catch {
-      details = await res.text();
+      details = rawText;
     }
     throw new ApiError(res.status, details, code);
   } catch (err) {

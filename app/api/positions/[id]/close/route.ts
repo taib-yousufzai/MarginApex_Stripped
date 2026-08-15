@@ -278,7 +278,7 @@ export async function POST(
 
   if (rpcErr) {
     console.error('[POST /api/positions/[id]/close] RPC error:', rpcErr);
-    return NextResponse.json({ error: 'Failed to close position. Please try again.' }, { status: 500 });
+    return NextResponse.json({ error: rpcErr.message || 'Failed to close position. Please try again.' }, { status: 400 });
   }
 
   const response: ClosePositionResponse = {

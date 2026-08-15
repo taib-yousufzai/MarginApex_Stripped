@@ -45,11 +45,19 @@ export function useOrderEntry() {
 
       return { success: true, order: result };
     } catch (err) {
-      const message = err instanceof ApiError
-        ? ((err.details as { details?: string; error?: string } | null)?.details
-            ?? (err.details as { details?: string; error?: string } | null)?.error
-            ?? `ApiError ${err.status}`)
-        : err instanceof Error ? err.message : 'Unknown error';
+      let message = 'Unknown error';
+      if (err instanceof ApiError) {
+        if (typeof err.details === 'string' && err.details.trim()) {
+          message = err.details;
+        } else if (err.details && typeof err.details === 'object') {
+          const d = err.details as { details?: string; error?: string; message?: string };
+          message = d.error || d.details || d.message || `ApiError ${err.status}`;
+        } else {
+          message = `ApiError ${err.status}`;
+        }
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
       console.warn('[useOrderEntry] Order placement failed:', message);
       setError(message);
       return { success: false, error: message };
@@ -78,7 +86,7 @@ export function useOrderEntry() {
       return { success: true, ...result };
     } catch (err) {
       const message = err instanceof ApiError
-        ? ((err.details as { error?: string } | null)?.error ?? `ApiError ${err.status}`)
+        ? ((err.details as { error?: string } | null)?.error ?? err.message ?? `ApiError ${err.status}`)
         : err instanceof Error ? err.message : 'Unknown error';
       setError(message);
       return { success: false, error: message };
