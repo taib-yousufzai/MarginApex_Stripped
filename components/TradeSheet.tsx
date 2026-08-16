@@ -516,7 +516,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const priceRangeHelp = currentLtp > 0 ? (
     <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary, #6B7280)', marginTop: '6px', fontWeight: 600 }}>
-      Allowed price: {minAllowedPrice > 0 ? `â‚¹${minAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'â‚¹0.00'} to {maxAllowedPrice !== Infinity ? `â‚¹${maxAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No Limit'}
+      Allowed price: {minAllowedPrice > 0 ? `${currencySymbol}${minAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${currencySymbol}0.00`} to {maxAllowedPrice !== Infinity ? `${currencySymbol}${maxAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No Limit'}
     </div>
   ) : null;
 
@@ -768,14 +768,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           if (pTopLimit > 0) {
             const maxAllowed = currentLtp * (1 + pTopLimit / 100);
             if (parsedPrice > maxAllowed) {
-              showToast(`Maximum price allowed is â‚¹${maxAllowed.toFixed(2)}`);
+              showToast(`Maximum price allowed is ${currencySymbol}${maxAllowed.toFixed(2)}`);
               return;
             }
           }
           if (pMinLimit > 0) {
             const minAllowed = currentLtp * (1 - pMinLimit / 100);
             if (parsedPrice < minAllowed) {
-              showToast(`Minimum price allowed is â‚¹${minAllowed.toFixed(2)}`);
+              showToast(`Minimum price allowed is ${currencySymbol}${minAllowed.toFixed(2)}`);
               return;
             }
           }
@@ -783,14 +783,14 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           if (pTopLimit > 0) {
             const maxAllowed = currentLtp * (1 + pTopLimit / 100);
             if (parsedPrice > maxAllowed) {
-              showToast(`Maximum price allowed is â‚¹${maxAllowed.toFixed(2)}`);
+              showToast(`Maximum price allowed is ${currencySymbol}${maxAllowed.toFixed(2)}`);
               return;
             }
           }
           if (pMinLimit > 0) {
             const minAllowed = currentLtp * (1 - pMinLimit / 100);
             if (parsedPrice < minAllowed) {
-              showToast(`Minimum price allowed is â‚¹${minAllowed.toFixed(2)}`);
+              showToast(`Minimum price allowed is ${currencySymbol}${minAllowed.toFixed(2)}`);
               return;
             }
           }
@@ -1044,7 +1044,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     }
   };
 
-  const currencySymbol = isCrypto || isComex ? '$' : 'â‚¹';
+  const currencySymbol = isCrypto || isComex ? '$' : '₹';
   const fmt = (n: number) =>
     n > 0 ? `${currencySymbol}${n.toLocaleString(isCrypto || isComex ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
 
@@ -1662,17 +1662,17 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Available</span>
                     <span className="ts2-mv-avail">
-                      {`â‚¹ ${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                      {`${currencySymbol} ${availableBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Required Margin</span>
-                    <span className="ts2-mv">â‚¹ {requiredMargin.toLocaleString('en-IN')}</span>
+                    <span className="ts2-mv">{currencySymbol} {requiredMargin.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="ts2-margin-row">
                     <span className="ts2-ml">Equity</span>
                     <span className="ts2-mv" style={{ color: 'var(--text-primary, #111827)', fontWeight: 800 }}>
-                      â‚¹ {baseExposure.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {currencySymbol} {baseExposure.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
 
@@ -1683,10 +1683,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     onClick={() => setShowCharges(!showCharges)}
                   >
                     <span className="ts2-ml" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                      Charges Breakdown {showCharges ? 'â–²' : 'â–¼'}
+                      Charges Breakdown {showCharges ? '▲' : '▼'}
                     </span>
                     <span className="ts2-mv" style={{ color: '#15803D', fontWeight: 800 }}>
-                      â‚¹ {calculatedBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {currencySymbol} {calculatedBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   {showCharges && (
@@ -1696,19 +1696,19 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                           Intraday Carry
                         </span>
                         <span className="ts2-mv" style={displayIntraday > 0 ? {} : { opacity: 0.4 }}>
-                          â‚¹ {(displayIntraday > 0 ? rawIntradayCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {currencySymbol} {(displayIntraday > 0 ? rawIntradayCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">Carry Charges</span>
                         <span className="ts2-mv" style={targetPT === 'CARRY' && !isExitTrade ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
-                          â‚¹ {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {currencySymbol} {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">GTT Charges</span>
                         <span className="ts2-mv" style={orderType === 'GTT' ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
-                          â‚¹ {(orderType === 'GTT' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {currencySymbol} {(orderType === 'GTT' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                     </>
