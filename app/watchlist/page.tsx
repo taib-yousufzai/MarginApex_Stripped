@@ -814,15 +814,8 @@ function WatchlistContent() {
   // Only fall back to a tight synthetic spread when prices are missing or crossed.
   if (currentLtp > 0) {
     if (isCrypto) {
-      let cryptoBidBuffer = 0.05; // 0.05% default tight spread
-      if (buySetting?.bid_buffer !== undefined) {
-        cryptoBidBuffer = buySetting.bid_buffer;
-      } else if (sellSetting?.bid_buffer !== undefined) {
-        cryptoBidBuffer = sellSetting.bid_buffer;
-      }
-      const buffer = cryptoBidBuffer / 100;
-      rawBid = currentLtp * (1 - buffer);
-      rawAsk = currentLtp * (1 + buffer);
+      rawBid = currentLtp * 0.9901;
+      rawAsk = currentLtp * 1.01;
     } else {
       const defaultBid = currentLtp * 0.9995;
       const defaultAsk = currentLtp * 1.0005;

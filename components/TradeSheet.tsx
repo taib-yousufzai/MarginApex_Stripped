@@ -218,9 +218,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
     const cryptoQuote = (bSymbol && marketQuotes[bSymbol]) || (bSymbol && binanceQuotesAsQuoteData[bSymbol]);
     if (isCrypto) {
-      const cryptoBidBuffer = segSetting?.bid_buffer !== undefined ? segSetting.bid_buffer : (buySetting?.bid_buffer !== undefined ? buySetting.bid_buffer : 0.05);
-      rawBid = currentLtp * (1 - cryptoBidBuffer / 100);
-      rawAsk = currentLtp * (1 + cryptoBidBuffer / 100);
+      rawBid = currentLtp * 0.9901;
+      rawAsk = currentLtp * 1.01;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || 0;
       rawAsk = comexQuotes[item.comexSymbol].ask || 0;
@@ -243,13 +242,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       }
     }
 
-    if (exitMode) {
+    if (isCrypto) {
+      bidPrice = rawBid;
+      askPrice = rawAsk;
+    } else if (exitMode) {
       bidPrice = rawBid * (1 - buyExitBuffer / 100);
       askPrice = rawAsk * (1 + sellExitBuffer / 100);
     } else {
-      // Normal buffer (entry_buffer) must NOT modify the displayed ask/bid price.
-      // It only affects the fill price at execution time (handled in the backend).
-      // The raw market ask/bid is shown as-is so the user sees the real spread.
       bidPrice = rawBid;
       askPrice = rawAsk;
     }
