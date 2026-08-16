@@ -62,9 +62,9 @@ class TickerDaemon {
         return;
       }
 
-      const apiKey = process.env.KITE_API_KEY;
+      const apiKey = process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY;
       if (!apiKey) {
-        logger.error('KITE_API_KEY not configured in env.');
+        logger.error('KITE_API_KEY / NEXT_PUBLIC_KITE_API_KEY not configured in env.');
         return;
       }
 
@@ -120,8 +120,8 @@ class TickerDaemon {
           lastLoginAttempt: sessionStatus.lastLoginAttempt?.toISOString() ?? null,
           lastLoginFailure: sessionStatus.lastLoginFailure?.toISOString() ?? null,
           binanceConnected: this.binanceTicker.connected,
-          activeOrders: matchingEngine.activeOrders.size,
-          activePositions: matchingEngine.activePositions.size,
+          activeOrders: (matchingEngine as any)?.activeOrders?.size || 0,
+          activePositions: (matchingEngine as any)?.activePositions?.size || 0,
           timestamp: new Date().toISOString(),
           ...redisHealth
         });
@@ -184,29 +184,31 @@ class TickerDaemon {
     // 1. Initialize In-Memory Matching Engine cache (with retry on Supabase transient errors)
     const MAX_INIT_RETRIES = 5;
     let initSuccess = false;
-    for (let attempt = 1; attempt <= MAX_INIT_RETRIES; attempt++) {
-      try {
-        logger.info({ attempt }, 'Seeding In-Memory Matching Engine cache from database...');
-        await matchingEngine.initialize();
-        matchingEngine.setupRealtimeSync();
-        matchingEngine.startBalanceSync();
-        logger.info('In-Memory Matching Engine initialized and synced.');
-        initSuccess = true;
-        break;
-      } catch (err) {
-        const delay = Math.min(attempt * 2000, 30_000); // 2s, 4s, 8s, 16s, 30s
-        if (attempt < MAX_INIT_RETRIES) {
-          logger.warn({ err, attempt, delay }, 'Matching engine init failed — retrying...');
-          await new Promise(r => setTimeout(r, delay));
-        } else {
-          logger.fatal({ err }, 'Matching engine failed to initialize after max retries. '
-            + 'Engine will start empty. Realtime sync will populate state as DB events arrive.');
+    if (matchingEngine && typeof (matchingEngine as any).initialize === 'function') {
+      for (let attempt = 1; attempt <= MAX_INIT_RETRIES; attempt++) {
+        try {
+          logger.info({ attempt }, 'Seeding In-Memory Matching Engine cache from database...');
+          await (matchingEngine as any).initialize();
+          (matchingEngine as any).setupRealtimeSync?.();
+          (matchingEngine as any).startBalanceSync?.();
+          logger.info('In-Memory Matching Engine initialized and synced.');
+          initSuccess = true;
+          break;
+        } catch (err) {
+          const delay = Math.min(attempt * 2000, 30_000);
+          if (attempt < MAX_INIT_RETRIES) {
+            logger.warn({ err, attempt, delay }, 'Matching engine init failed — retrying...');
+            await new Promise(r => setTimeout(r, delay));
+          } else {
+            logger.fatal({ err }, 'Matching engine failed to initialize after max retries.');
+          }
         }
       }
-    }
-    if (!initSuccess) {
-      // Still set up Realtime so it can gradually rebuild state from DB change events
-      try { matchingEngine.setupRealtimeSync(); } catch (_) {}
+      if (!initSuccess) {
+        try { (matchingEngine as any).setupRealtimeSync?.(); } catch (_) {}
+      }
+    } else {
+      logger.info('Stateless order matching mode active.');
     }
 
     // 2. Start database batch writer
@@ -268,9 +270,11 @@ class TickerDaemon {
     // Setup periodic matching engine cache sync (every 60 seconds) to self-heal state if Supabase Realtime drops.
     // Run non-blocking — never await in the critical tick path.
     this.matchingEngineSyncTimer = setInterval(() => {
-      matchingEngine.initialize().catch(err => {
-        logger.error({ err }, 'Periodic matching engine cache sync failed');
-      });
+      if (matchingEngine && typeof (matchingEngine as any).initialize === 'function') {
+        (matchingEngine as any).initialize().catch((err: any) => {
+          logger.error({ err }, 'Periodic matching engine cache sync failed');
+        });
+      }
     }, 60000);
 
     // Setup realtime listener for instant subscription sync on DB change events
