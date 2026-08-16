@@ -15,6 +15,7 @@ import { ErrorModal } from '@/components/ErrorModal';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { useBalance } from '@/hooks/useBalance';
 import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
+import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 import type { TradingInstrument } from '@/lib/types/instrument';
 
 /**
