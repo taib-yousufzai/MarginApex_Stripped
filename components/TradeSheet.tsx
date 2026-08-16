@@ -218,8 +218,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
     const cryptoQuote = (bSymbol && marketQuotes[bSymbol]) || (bSymbol && binanceQuotesAsQuoteData[bSymbol]);
     if (isCrypto) {
-      rawBid = currentLtp * 0.9901;
-      rawAsk = currentLtp * 1.01;
+      rawBid = Math.max(0, currentLtp - 0.50);
+      rawAsk = currentLtp + 0.50;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || 0;
       rawAsk = comexQuotes[item.comexSymbol].ask || 0;

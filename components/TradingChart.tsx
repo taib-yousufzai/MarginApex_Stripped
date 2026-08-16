@@ -1421,8 +1421,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       : (!symbolIsDerivative && activeLiveQuote ? (activeLiveQuote.lastPrice || currentPrice) : currentPrice);
 
     if (ltpToUse > 0) {
-      rawBid = ltpToUse * 0.9901;
-      rawAsk = ltpToUse * 1.01;
+      rawBid = Math.max(0, ltpToUse - 0.50);
+      rawAsk = ltpToUse + 0.50;
     }
   }
 

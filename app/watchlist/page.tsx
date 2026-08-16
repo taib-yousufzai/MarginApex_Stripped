@@ -814,8 +814,8 @@ function WatchlistContent() {
   // Only fall back to a tight synthetic spread when prices are missing or crossed.
   if (currentLtp > 0) {
     if (isCrypto) {
-      rawBid = currentLtp * 0.9901;
-      rawAsk = currentLtp * 1.01;
+      rawBid = Math.max(0, currentLtp - 0.50);
+      rawAsk = currentLtp + 0.50;
     } else {
       const defaultBid = currentLtp * 0.9995;
       const defaultAsk = currentLtp * 1.0005;
