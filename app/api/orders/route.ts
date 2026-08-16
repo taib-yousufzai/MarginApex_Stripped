@@ -903,8 +903,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let fillPrice: number;
     const isImmediate = (order_type ?? 'MARKET') === 'MARKET' || order_type === 'SLM';
 
-    const rawBid = typeof rawQuote === 'object' ? (rawQuote?.bid ?? null) : null;
-    const rawAsk = typeof rawQuote === 'object' ? (rawQuote?.ask ?? null) : null;
+    let rawBid = typeof rawQuote === 'object' ? (rawQuote?.bid ?? null) : null;
+    let rawAsk = typeof rawQuote === 'object' ? (rawQuote?.ask ?? null) : null;
+
+    // Prefer client click-time frontend_ask / frontend_bid for market orders to eliminate sub-second network latency slippage
+    if (isImmediate && side === 'BUY' && body.frontend_ask && Number(body.frontend_ask) > 0) {
+      const fAsk = Number(body.frontend_ask);
+      if (!baseLtp || Math.abs(fAsk - baseLtp) / baseLtp < 0.05) {
+        rawAsk = fAsk;
+      }
+    }
+    if (isImmediate && side === 'SELL' && body.frontend_bid && Number(body.frontend_bid) > 0) {
+      const fBid = Number(body.frontend_bid);
+      if (!baseLtp || Math.abs(fBid - baseLtp) / baseLtp < 0.05) {
+        rawBid = fBid;
+      }
+    }
+
     const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
 
     const effective = resolveEffectivePrices({
