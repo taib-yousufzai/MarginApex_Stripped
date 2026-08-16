@@ -13,7 +13,7 @@ export async function POST(request: Request): Promise<Response> {
     // Cancel all PENDING LIMIT orders
     const { data, error } = await adminClient
       .from('orders')
-      .update({ status: 'CANCELLED', info: 'Admin Cancel All' })
+      .update({ status: 'CANCELLED', info: 'Admin Cancel All', updated_at: new Date().toISOString() })
       .eq('status', 'PENDING')
       .eq('order_type', 'LIMIT')
       .select('id');

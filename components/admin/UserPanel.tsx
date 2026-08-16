@@ -50,7 +50,7 @@ export default function UserPanel({ open, onClose, onCreateUser, selectedUser, o
       }
       setUsersLoading(false);
     });
-  }, [router]);
+  }, [open, isDemoMode, isBroker, router]);
 
   const filtered = users.filter(u => 
     u.id.toLowerCase().includes(search.toLowerCase()) ||

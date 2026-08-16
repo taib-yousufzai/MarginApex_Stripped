@@ -36,7 +36,7 @@ export async function GET(request: Request): Promise<Response> {
 
     let pQuery = adminClient
       .from('profiles')
-      .select('id, client_id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, balance, settlement_amount, created_at, scheduled_delete_at, trading_mode, mode_locked_until, template_id');
+      .select('id, client_id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, balance, settlement_amount, created_at, scheduled_delete_at, trading_mode, mode_locked_until, template_id, history_reset_at');
     
     if (isBroker) {
       pQuery = pQuery.eq('parent_id', authResult.callerUser.id);
@@ -54,10 +54,15 @@ export async function GET(request: Request): Promise<Response> {
       return Response.json([], { status: 200 });
     }
 
+    const resetMap: Record<string, string | null> = {};
+    (profiles ?? []).forEach((p: any) => {
+      resetMap[p.id] = p.history_reset_at ?? null;
+    });
+
     // 2. Fetch positions to calculate live stats (only for filtered users)
     const { data: positions, error: posError } = await adminClient
       .from('positions')
-      .select('user_id, pnl, status, entry_time, exit_time, margin_required')
+      .select('user_id, pnl, status, entry_time, exit_time, updated_at, margin_required')
       .in('user_id', targetUserIds);
 
     if (posError) throw posError;
@@ -74,6 +79,7 @@ export async function GET(request: Request): Promise<Response> {
         statsMap[pos.user_id] = { openPnl: 0, m2m: 0, weeklyPnl: 0, marginUsed: 0 };
       }
       const s = statsMap[pos.user_id];
+      const resetAt = resetMap[pos.user_id];
 
       // Open PNL: positions that are open or active
       if (pos.status === 'open' || pos.status === 'active') {
@@ -81,15 +87,22 @@ export async function GET(request: Request): Promise<Response> {
       }
 
       // M2M: All PNL from today (open + closed today)
-      const isToday = pos.entry_time >= today || (pos.exit_time && pos.exit_time >= today);
+      const exitOrUpdate = pos.exit_time || pos.updated_at || pos.entry_time;
+      const isToday = pos.entry_time >= today || (exitOrUpdate && exitOrUpdate >= today);
       if (isToday) {
-        s.m2m += Number(pos.pnl || 0);
+        if (!resetAt || (exitOrUpdate && exitOrUpdate > resetAt)) {
+          s.m2m += Number(pos.pnl || 0);
+        }
       }
 
-      // Weekly PNL: PNL from the last 7 days
-      const isThisWeek = pos.entry_time >= oneWeekAgo || (pos.exit_time && pos.exit_time >= oneWeekAgo);
-      if (isThisWeek) {
-        s.weeklyPnl += Number(pos.pnl || 0);
+      // Weekly PNL: Realized PNL from closed positions in the last 7 days after history reset
+      if (pos.status === 'closed') {
+        const closedAt = pos.exit_time || pos.updated_at;
+        const isThisWeek = closedAt && closedAt >= oneWeekAgo;
+        const isAfterReset = !resetAt || (closedAt && closedAt > resetAt);
+        if (isThisWeek && isAfterReset) {
+          s.weeklyPnl += Number(pos.pnl || 0);
+        }
       }
 
       // Margin Used — prefer locked_margin (frozen at entry) over margin_required

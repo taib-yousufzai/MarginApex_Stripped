@@ -110,7 +110,7 @@ async function handleCancelOrder(
     // Update order status if it's still PENDING
     const { data, error } = await admin
       .from('orders')
-      .update({ status: 'CANCELLED' })
+      .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
       .eq('id', id)
       .eq('user_id', user.id)
       .eq('status', 'PENDING')

@@ -28,7 +28,7 @@ export async function GET(request: Request): Promise<Response> {
 
     let profilesQuery = adminClient
       .from('profiles')
-      .select('id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, balance, settlement_amount, created_at, scheduled_delete_at')
+      .select('id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, balance, settlement_amount, created_at, scheduled_delete_at, history_reset_at')
       .not('role', 'in', '("admin","super_admin","broker")');
 
     if (!isAdmin) {
@@ -50,7 +50,7 @@ export async function GET(request: Request): Promise<Response> {
     // Fetch positions to compute PnL metrics
     const { data: positions } = await adminClient
       .from('positions')
-      .select('user_id, pnl, brokerage, settlement, open_qty, status, created_at')
+      .select('user_id, pnl, brokerage, settlement, open_qty, status, created_at, exit_time, updated_at')
       .in('user_id', userIds);
 
     // Fetch orders count per user
@@ -71,15 +71,14 @@ export async function GET(request: Request): Promise<Response> {
       ordersByUser.get(ord.user_id)!.push(ord);
     }
 
-    // Weekly boundary
+    // Weekly boundary (rolling 7 days)
     const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay());
-    weekStart.setHours(0, 0, 0, 0);
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const enriched = profiles.map((profile: any) => {
       const userPositions = positionsByUser.get(profile.id) ?? [];
       const userOrders = ordersByUser.get(profile.id) ?? [];
+      const resetAt = profile.history_reset_at ? new Date(profile.history_reset_at) : null;
 
       // Open positions (open_qty != 0 or status = 'open')
       const openPositions = userPositions.filter((p: any) => p.status === 'open' || Number(p.open_qty ?? 0) !== 0);
@@ -90,9 +89,15 @@ export async function GET(request: Request): Promise<Response> {
       // Open PnL (from open positions)
       const openPnl = openPositions.reduce((acc: number, p: any) => acc + Number(p.pnl ?? 0), 0);
 
-      // Weekly PnL
+      // Weekly PnL: Realized PnL from closed positions in the last 7 days after history reset
       const weeklyPnl = userPositions
-        .filter((p: any) => new Date(p.created_at) >= weekStart)
+        .filter((p: any) => {
+          if (p.status !== 'closed') return false;
+          const closedDate = new Date(p.exit_time || p.updated_at || p.created_at);
+          const isThisWeek = closedDate >= oneWeekAgo;
+          const isAfterReset = !resetAt || closedDate > resetAt;
+          return isThisWeek && isAfterReset;
+        })
         .reduce((acc: number, p: any) => acc + Number(p.pnl ?? 0), 0);
 
       // Brokerage (m2m proxy)

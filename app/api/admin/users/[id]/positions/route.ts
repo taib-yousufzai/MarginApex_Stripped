@@ -104,6 +104,16 @@ export async function GET(
       query = query.eq('status', 'active');
     } else if (tab === 'closed') {
       query = query.eq('status', 'closed');
+      if (id !== 'all') {
+        const { data: uProfile } = await adminClient
+          .from('profiles')
+          .select('history_reset_at')
+          .eq('id', id)
+          .maybeSingle();
+        if (uProfile?.history_reset_at) {
+          query = query.gt('updated_at', uProfile.history_reset_at);
+        }
+      }
     }
     // default (no tab) → no status filter
 

@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   balance numeric NOT NULL DEFAULT 0,
   settlement_amount numeric NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  history_reset_at timestamptz DEFAULT NULL
   -- KYC/Personal fields omitted for brevity
 );
 
@@ -26,8 +27,8 @@ CREATE TABLE IF NOT EXISTS public.orders (
   price numeric NOT NULL,
   order_type text NOT NULL CHECK (order_type in ('MARKET','LIMIT','SL','SLM')),
   buffer_fee numeric NOT NULL DEFAULT 0,
-  info text,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS public.positions (

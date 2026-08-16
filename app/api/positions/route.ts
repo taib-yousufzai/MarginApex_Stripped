@@ -22,6 +22,15 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status');
 
+    // Fetch profile for history_reset_at filter
+    const { data: userProfile } = await admin
+      .from('profiles')
+      .select('history_reset_at')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const historyResetAt = userProfile?.history_reset_at;
+
     let positionsQuery = admin.from('positions').select('*').eq('user_id', user.id);
     if (statusParam) {
       if (statusParam === 'open') {
@@ -36,6 +45,10 @@ export async function GET(request: NextRequest) {
         positionsQuery = positionsQuery
           .in('status', [lowerStatus, upperStatus])
           .order('updated_at', { ascending: false });
+
+        if (lowerStatus === 'closed' && historyResetAt) {
+          positionsQuery = positionsQuery.gt('updated_at', historyResetAt);
+        }
 
         // For closed positions, default to today-only unless 'all' param or 'from' date is passed
         if (lowerStatus === 'closed' && !searchParams.get('all') && !searchParams.get('from')) {

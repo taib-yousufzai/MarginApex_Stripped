@@ -273,12 +273,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const from  = (page - 1) * limit;
     const to    = from + limit - 1;
 
+    // Fetch profile to check history_reset_at
+    const { data: userProfile } = await admin
+      .from('profiles')
+      .select('history_reset_at')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const historyResetAt = userProfile?.history_reset_at;
+
+    let ordersQuery = admin
+      .from('orders')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (historyResetAt) {
+      ordersQuery = ordersQuery.or(`status.in.(PENDING,pending,TRIGGER_PENDING,trigger_pending,OPEN,open,ACTIVE,active),updated_at.gt.${historyResetAt},created_at.gt.${historyResetAt}`);
+    }
+
     // Fetch orders and open positions in parallel
     const [ordersRes, posRes] = await Promise.all([
-      admin
-        .from('orders')
-        .select('*')
-        .eq('user_id', user.id)
+      ordersQuery
         .order('created_at', { ascending: false })
         .range(from, to),
       admin

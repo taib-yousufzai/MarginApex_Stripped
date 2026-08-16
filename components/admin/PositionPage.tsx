@@ -5,7 +5,7 @@ import { apiCall, Toast, ToastState, ConfirmDialog, SkeletonLine, Position, Posi
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
 
-export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode }: { selectedUser: { id: string; role: string; client_id?: string }, onOpenUserPanel?: () => void, isDemoMode: boolean }) {
+export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode }: { selectedUser: { id: string; role: string; client_id?: string; full_name?: string; email?: string }, onOpenUserPanel?: () => void, isDemoMode: boolean }) {
   const [tab, setTab] = useState<'open' | 'closed'>('open');
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -29,8 +29,37 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
   const [editStatus, setEditStatus] = useState<'open' | 'active' | 'closed'>('open');
   const [editSide, setEditSide] = useState<'BUY' | 'SELL'>('BUY');
   const [weeklyPnl, setWeeklyPnl] = useState<number>(0);
+  const [showClearHistoryModal, setShowClearHistoryModal] = useState(false);
+  const [clearInputText, setClearInputText] = useState('');
+  const [clearHistoryLoading, setClearHistoryLoading] = useState(false);
 
   const uid = selectedUser.id;
+
+  const handleClearHistory = async () => {
+    if (clearInputText !== 'CLEAR') return;
+    const targetUid = uid || 'all';
+    setClearHistoryLoading(true);
+    try {
+      const { ok, data } = await apiCall(`/api/admin/users/${targetUid}/clear-history`, { method: 'POST' });
+      if (ok) {
+        setToast({
+          message: targetUid === 'all'
+            ? 'Trading history cleared for ALL users successfully'
+            : 'Trading history cleared successfully',
+          type: 'success'
+        });
+        setShowClearHistoryModal(false);
+        setClearInputText('');
+        fetchPositions();
+      } else {
+        setToast({ message: (data as any)?.error || 'Failed to clear history', type: 'error' });
+      }
+    } catch (err: any) {
+      setToast({ message: err?.message || 'Network error', type: 'error' });
+    } finally {
+      setClearHistoryLoading(false);
+    }
+  };
 
   const fetchPositions = useCallback((silent = false) => {
     const endpointId = uid || 'all';
@@ -595,7 +624,7 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
         <div className="adm-pos-stat-card">
           <div className="adm-pos-stat-label">USER</div>
           <div className="adm-pos-stat-value" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {uid ? (selectedUser.client_id || (uid.length > 12 ? uid.slice(0, 12) + '...' : uid)).toUpperCase() : 'None'}
+            {uid ? (selectedUser.full_name || selectedUser.client_id || selectedUser.email || (uid.length > 12 ? uid.slice(0, 12) + '...' : uid)).toUpperCase() : 'None'}
             {onOpenUserPanel && (
               <button 
                 onClick={onOpenUserPanel} 
@@ -607,6 +636,22 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
                 Change
               </button>
             )}
+            <button
+              onClick={() => { setShowClearHistoryModal(true); setClearInputText(''); }}
+              style={{
+                background: 'rgba(218, 54, 51, 0.15)',
+                border: '1px solid #f85149',
+                color: '#f85149',
+                fontSize: '11px',
+                cursor: 'pointer',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontWeight: 600,
+                marginLeft: 'auto'
+              }}
+            >
+              {!uid || uid === 'all' ? 'Clear History (All Users)' : 'Clear History'}
+            </button>
           </div>
         </div>
         <div className="adm-pos-stat-card">
@@ -837,6 +882,67 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
           <button className="adm-pos-page-btn active-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
         </div>
       </div>
+
+      {showClearHistoryModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            background: '#161b22', border: '1px solid #30363d', borderRadius: '12px',
+            padding: '24px', maxWidth: '480px', width: '90%', boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
+          }}>
+            <h3 style={{ color: '#f85149', marginTop: 0, marginBottom: '12px', fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fas fa-exclamation-triangle"></i> Clear Trading History
+            </h3>
+            <p style={{ color: '#c9d1d9', fontSize: '0.86rem', lineHeight: '1.5', marginBottom: '16px' }}>
+              Clear trading history for {!uid || uid === 'all' ? <strong>ALL accounts</strong> : 'this account'}? This will remove historical closed positions and historical trading records from the History view. It will <strong>NOT</strong> change wallet balance, ledger transactions, realized P&amp;L, open positions, or pending orders.
+            </p>
+            <div style={{ background: '#0d1117', border: '1px solid #21262d', borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
+              <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '0 0 8px 0' }}>
+                Type <strong>CLEAR</strong> below to confirm:
+              </p>
+              <input
+                type="text"
+                value={clearInputText}
+                onChange={e => setClearInputText(e.target.value)}
+                placeholder="CLEAR"
+                style={{
+                  width: '100%', padding: '8px 12px', background: '#161b22',
+                  border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc',
+                  fontSize: '0.9rem', outline: 'none'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button
+                onClick={() => { setShowClearHistoryModal(false); setClearInputText(''); }}
+                disabled={clearHistoryLoading}
+                style={{
+                  padding: '8px 16px', background: '#21262d', border: '1px solid #30363d',
+                  borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.85rem'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearHistory}
+                disabled={clearInputText !== 'CLEAR' || clearHistoryLoading}
+                style={{
+                  padding: '8px 16px',
+                  background: clearInputText === 'CLEAR' ? '#da3633' : '#484f58',
+                  border: 'none', borderRadius: '6px', color: '#ffffff',
+                  cursor: clearInputText === 'CLEAR' ? 'pointer' : 'not-allowed',
+                  fontSize: '0.85rem', fontWeight: 600, opacity: clearHistoryLoading ? 0.6 : 1
+                }}
+              >
+                {clearHistoryLoading ? 'Clearing...' : 'Confirm Clear History'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ height: 24 }} />
     </div>

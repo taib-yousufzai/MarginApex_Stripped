@@ -123,21 +123,31 @@ function makePositionsRequest(userId: string, tab: string): Request {
  * with .range() being the terminal call that resolves the promise.
  */
 function setupPositionsQuery(rows: PositionRow[]): void {
-  // Build a chainable mock object where every method returns itself,
-  // except .range() which returns a promise resolving to { data: rows, error: null }.
-  const chain: Record<string, unknown> = {};
+  mockFrom.mockImplementation((table: string) => {
+    if (table === 'profiles') {
+      const pChain: Record<string, unknown> = {};
+      const pChainable: any = new Proxy(pChain, {
+        get(_target, prop: string) {
+          if (prop === 'maybeSingle' || prop === 'single') {
+            return () => Promise.resolve({ data: null, error: null });
+          }
+          return () => pChainable;
+        }
+      });
+      return pChainable;
+    }
 
-  const chainable = new Proxy(chain, {
-    get(_target, prop: string) {
-      if (prop === 'range') {
-        return () => Promise.resolve({ data: rows, error: null });
-      }
-      // All other methods (select, eq, ilike, order) return the same chainable proxy
-      return () => chainable;
-    },
+    const chain: Record<string, unknown> = {};
+    const chainable: any = new Proxy(chain, {
+      get(_target, prop: string) {
+        if (prop === 'range') {
+          return () => Promise.resolve({ data: rows, error: null });
+        }
+        return () => chainable;
+      },
+    });
+    return chainable;
   });
-
-  mockFrom.mockReturnValue(chainable);
 }
 
 // ---------------------------------------------------------------------------
