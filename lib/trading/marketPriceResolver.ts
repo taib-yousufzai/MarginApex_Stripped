@@ -43,22 +43,20 @@ export function resolveEffectivePrices({
     Number(rawBid) > 0 &&
     Number(rawAsk) > 0;
 
-  let baseAsk: number;
-  let baseBid: number;
+  let effectiveAsk: number;
+  let effectiveBid: number;
 
   if (validRealSpread) {
-    baseAsk = Number(rawAsk);
-    baseBid = Number(rawBid);
+    // Real / synthetic bid and ask already contain the market spread.
+    // Do not add secondary askBuffer / bidBuffer on top of valid quotes.
+    effectiveAsk = Number(rawAsk);
+    effectiveBid = Number(rawBid);
   } else {
-    baseAsk = baseLtp;
-    baseBid = baseLtp;
+    const aBuf = Number(askBuffer) || 0;
+    const bBuf = Number(bidBuffer) || 0;
+    effectiveAsk = baseLtp + aBuf;
+    effectiveBid = baseLtp - bBuf;
   }
-
-  const aBuf = Number(askBuffer) || 0;
-  const bBuf = Number(bidBuffer) || 0;
-
-  const effectiveAsk = baseAsk + aBuf;
-  const effectiveBid = baseBid - bBuf;
 
   return {
     effectiveAsk: Math.round(effectiveAsk * 10000) / 10000,

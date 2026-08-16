@@ -37,7 +37,7 @@ describe('BufferCalculator', () => {
   });
 
   it('should NOT apply 1.001 spread when isBasePriceRealBidAsk is true (New VWAP behavior)', () => {
-    // New MARKET BUY (base 100, which is already Ask) -> uses 100 as base
+    // New MARKET BUY (base 100, which is already Ask) -> uses 100 as base directly
     const vwapBuy = calculateBufferedPrice({
       side: 'BUY',
       isExit: false,
@@ -47,10 +47,9 @@ describe('BufferCalculator', () => {
       isBasePriceRealBidAsk: true
     });
     // base = 100
-    // buffered = 100 * (1 + 0.003) = 100.3
-    expect(vwapBuy).toBeCloseTo(100.3, 4);
+    expect(vwapBuy).toBeCloseTo(100.0, 4);
     
-    // New MARKET SELL (base 100, which is already Bid) -> uses 100 as base
+    // New MARKET SELL (base 100, which is already Bid) -> uses 100 as base directly
     const vwapSell = calculateBufferedPrice({
       side: 'SELL',
       isExit: false,
@@ -60,8 +59,7 @@ describe('BufferCalculator', () => {
       isBasePriceRealBidAsk: true
     });
     // base = 100
-    // buffered = 100 * (1 - 0.003) = 99.7
-    expect(vwapSell).toBeCloseTo(99.7, 4);
+    expect(vwapSell).toBeCloseTo(100.0, 4);
   });
 });
 
@@ -186,12 +184,12 @@ describe('Admin Buffer Application (Correct Order-Type Semantics)', () => {
       sellSetting: adminSellSetting,
       isBasePriceRealBidAsk: true
     });
-    // 100.00 * (1 + 0.001) = 100.10
-    expect(finalPrice).toBeCloseTo(100.10, 4);
+    // When isBasePriceRealBidAsk is true, basePrice (Ask) is used directly = 100.00
+    expect(finalPrice).toBeCloseTo(100.00, 4);
   });
 
   it('MARKET SELL uses Best Bid and applies Admin Sell Buffer', () => {
-    // Best Bid = 99.90. Buffer = 0.20% (0.002)
+    // Best Bid = 99.90.
     const basePrice = 99.90;
     const finalPrice = calculateBufferedPrice({
       side: 'SELL',
@@ -201,8 +199,8 @@ describe('Admin Buffer Application (Correct Order-Type Semantics)', () => {
       sellSetting: adminSellSetting,
       isBasePriceRealBidAsk: true
     });
-    // 99.90 * (1 - 0.002) = 99.7002
-    expect(finalPrice).toBeCloseTo(99.7002, 4);
+    // When isBasePriceRealBidAsk is true, basePrice (Bid) is used directly = 99.90
+    expect(finalPrice).toBeCloseTo(99.90, 4);
   });
 
   it('LIMIT BUY applies Admin Buy Buffer to Limit Price', () => {
@@ -216,9 +214,7 @@ describe('Admin Buffer Application (Correct Order-Type Semantics)', () => {
       sellSetting: adminSellSetting,
       isBasePriceRealBidAsk: true
     });
-    // Assuming option 1: Buffer applies to limit.
-    // 100.00 * (1 + 0.001) = 100.10
-    expect(finalPrice).toBeCloseTo(100.10, 4);
+    expect(finalPrice).toBeCloseTo(100.00, 4);
   });
 
   it('LIMIT SELL applies Admin Sell Buffer to Limit Price', () => {
@@ -231,8 +227,7 @@ describe('Admin Buffer Application (Correct Order-Type Semantics)', () => {
       sellSetting: adminSellSetting,
       isBasePriceRealBidAsk: true
     });
-    // 100.00 * (1 - 0.002) = 99.80
-    expect(finalPrice).toBeCloseTo(99.80, 4);
+    expect(finalPrice).toBeCloseTo(100.00, 4);
   });
 
   it('Zero Buffer verifies that execution reduces to pure VWAP', () => {

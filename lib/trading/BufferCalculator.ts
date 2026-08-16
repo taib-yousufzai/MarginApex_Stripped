@@ -61,6 +61,15 @@ export function calculateBufferedPrice({
   const activeSetting = side === 'BUY' ? buySetting : sellSetting;
   const mode = exitPriceMode || activeSetting?.exit_price_mode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK';
 
+  if (isBasePriceRealBidAsk && mode === 'BID_ASK') {
+    // When basePrice is ALREADY the Effective Ask/Bid resolved from raw market quotes,
+    // it ALREADY contains the execution spread. Do NOT apply entry/exit buffer markup on top.
+    const priceWithBrokerage = side === 'BUY'
+      ? basePrice + brokeragePerUnit
+      : basePrice - brokeragePerUnit;
+    return Math.round(priceWithBrokerage * 10000) / 10000;
+  }
+
   let bufferedPrice: number;
 
   if (side === 'BUY') {
