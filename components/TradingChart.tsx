@@ -1022,6 +1022,64 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
   const exitingPosIds = useRef<Set<string>>(new Set());
   const [, setForceRender] = useState(0);
 
+  // All open/active positions (not filtered by symbol)
+  const currentSymbolPositions = positions.filter(p => (p.status === 'open' || p.status === 'active'));
+  // Sum pre-computed unrealised P&L (uses correct per-symbol LTP from useMyPositions)
+  const pnlTotal = currentSymbolPositions.reduce((acc, pos) => acc + (pos.unrealised_pnl ?? 0), 0);
+
+  // Instrument-specific position: find open position matching the currently viewed chart symbol
+  const currentInstrumentPosition = useMemo(() => {
+    const matchingPositions = positions.filter(p => {
+      if (p.status !== 'open' && p.status !== 'active') return false;
+      if (p.symbol === symbol) return true;
+      if (p.kite_instrument === symbol) return true;
+      if (p.symbol + 'USDT' === symbol) return true;
+      if (symbol + 'USDT' === p.symbol) return true;
+      return false;
+    });
+    if (matchingPositions.length === 0) return null;
+
+    // Group them like Cumulative view
+    const totalQty = matchingPositions.reduce((sum, p) => sum + p.qty_open, 0);
+    const repPos = matchingPositions[0]; // just take first for other metadata
+    return { ...repPos, qty_open: totalQty };
+  }, [positions, symbol]);
+
+  // Event-driven reconciliation for exit button loading/disabled states (Bug #1):
+  // Automatically clear exiting status for any position ID that is no longer active in positions
+  useEffect(() => {
+    if (exitingPosIds.current.size > 0) {
+      const activeIds = new Set(positions.filter(p => p.status === 'open' || p.status === 'active').map(p => p.id));
+      let changed = false;
+      for (const id of Array.from(exitingPosIds.current)) {
+        if (!activeIds.has(id)) {
+          exitingPosIds.current.delete(id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        setForceRender(prev => prev + 1);
+      }
+    }
+  }, [positions]);
+
+  // Reset transient position-derived quantity state when position count for the instrument becomes 0 (Bug #2)
+  const prevInstrumentPosExistsRef = useRef<boolean>(false);
+  useEffect(() => {
+    const hasActivePosition = currentInstrumentPosition !== null;
+
+    if (prevInstrumentPosExistsRef.current && !hasActivePosition) {
+      // Position closed / exited completely — reset transient quantity to 1 lot (default instrument quantity)
+      setQtyValue(1);
+      setUseLots(true);
+      setIsExitFlow(false);
+      setIsAddMoreFlow(false);
+      setExitPositionId(null);
+    }
+
+    prevInstrumentPosExistsRef.current = hasActivePosition;
+  }, [currentInstrumentPosition]);
+
   // Direct quick-exit (instant market close of selected lot size)
   const handleQuickExit = async (pos: EnrichedPosition) => {
     if (quickExitLock.current || exitingPosIds.current.has(pos.id)) return;
@@ -1062,16 +1120,19 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     if (res.success) {
       showToast(`Quick exit order placed`);
       refreshOrders();
-      setTimeout(() => {
-        refreshBalance();
-        refreshBalance();
-        quickExitLock.current = false;
-      }, 1000); // Give DB time to match
-      // Safety: unlock the exit button after 5s in case the position didn't actually close
-      setTimeout(() => {
-        exitingPosIds.current.delete(pos.id);
-        setForceRender(prev => prev + 1);
-      }, 5000);
+      refreshBalance();
+      refreshPositions();
+      window.dispatchEvent(new CustomEvent('position-closed'));
+      quickExitLock.current = false;
+
+      // Reset transient quantity state to 1 lot (configured default) upon exit completion
+      setQtyValue(1);
+      setUseLots(true);
+      setIsExitFlow(false);
+      setIsAddMoreFlow(false);
+
+      exitingPosIds.current.delete(pos.id);
+      setForceRender(prev => prev + 1);
     } else {
       showToast(res.error || 'Exit failed', true);
       quickExitLock.current = false;
@@ -1179,7 +1240,16 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
     setOrderSide(side);
 
-    const qVal = Number(qtyValue) || 0;
+    // Guard against stale exit/add-more quantity when placing a new order (Bug #2)
+    let qVal = Number(qtyValue) || 1;
+    if (isExitFlow || isAddMoreFlow || !currentInstrumentPosition || qVal <= 0) {
+      qVal = 1;
+      setQtyValue(1);
+      setUseLots(true);
+      setIsExitFlow(false);
+      setIsAddMoreFlow(false);
+    }
+
     if (qVal <= 0) {
       showToast("Invalid quantity", true);
       quickEntryLock.current = false;
@@ -1243,6 +1313,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       refreshOrders();
       refreshBalance();
       refreshBalance();
+      refreshPositions();
       window.dispatchEvent(new CustomEvent('position-closed'));
     } else {
       showToast(res.error || 'Failed to place quick order', true);
@@ -1256,7 +1327,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     // isSubmitting stays true on success — cleared by useEffect when positions refresh
     // Safety fallback in case positions never update
     if (res.success) {
-      submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 2500);
+      submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 1500);
     }
   };
 
@@ -1305,29 +1376,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     setTimeout(() => { quickEntryLock.current = false; }, 500);
   };
 
-  // All open/active positions (not filtered by symbol)
-  const currentSymbolPositions = positions.filter(p => (p.status === 'open' || p.status === 'active'));
-  // Sum pre-computed unrealised P&L (uses correct per-symbol LTP from useMyPositions)
-  const pnlTotal = currentSymbolPositions.reduce((acc, pos) => acc + (pos.unrealised_pnl ?? 0), 0);
-
-  // Instrument-specific position: find open position matching the currently viewed chart symbol
-  const currentInstrumentPosition = useMemo(() => {
-    const matchingPositions = positions.filter(p => {
-      if (p.status !== 'open' && p.status !== 'active') return false;
-      if (p.symbol === symbol) return true;
-      if (p.kite_instrument === symbol) return true;
-      if (p.symbol + 'USDT' === symbol) return true;
-      if (symbol + 'USDT' === p.symbol) return true;
-      return false;
-    });
-    if (matchingPositions.length === 0) return null;
-
-    // Group them like Cumulative view
-    const totalQty = matchingPositions.reduce((sum, p) => sum + p.qty_open, 0);
-    const repPos = matchingPositions[0]; // just take first for other metadata
-    return { ...repPos, qty_open: totalQty };
-  }, [positions, symbol]);
-
   // ── Watch for position changes while submitting ──
   // Keep buttons in loading state until positions actually refresh and the UI changes
   useEffect(() => {
@@ -1355,19 +1403,14 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }
 
     if (changed) {
-      // Enforce a minimum display time of 1500ms for the loading animation
-      const elapsed = Date.now() - submitStartTimeRef.current;
-      const delay = Math.max(0, 1500 - elapsed);
-      setTimeout(() => {
-        setIsSubmitting(false);
-        setAddingPosId(null);
-        positionSnapshotRef.current = null;
-        window.dispatchEvent(new Event('global-loader-end'));
-        if (submittingTimeoutRef.current) {
-          clearTimeout(submittingTimeoutRef.current);
-          submittingTimeoutRef.current = null;
-        }
-      }, delay);
+      setIsSubmitting(false);
+      setAddingPosId(null);
+      positionSnapshotRef.current = null;
+      window.dispatchEvent(new Event('global-loader-end'));
+      if (submittingTimeoutRef.current) {
+        clearTimeout(submittingTimeoutRef.current);
+        submittingTimeoutRef.current = null;
+      }
     }
   }, [positions, isSubmitting, symbol]);
 

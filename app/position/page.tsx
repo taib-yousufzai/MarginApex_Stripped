@@ -451,10 +451,7 @@ export default function PositionPage() {
     showToast('Closing position...');
 
     try {
-      const [res] = await Promise.all([
-        closePosition(posId, posToClose?.current_ltp ?? posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined),
-        new Promise(r => setTimeout(r, 800))
-      ]);
+      const res = await closePosition(posId, posToClose?.current_ltp ?? posToClose?.ltp ?? undefined, posToClose?.symbol ?? undefined, posToClose?.settlement ?? undefined, posToClose?.side ?? undefined);
       if (res.success) {
         showToast('Position closed successfully');
         refresh();
@@ -679,10 +676,7 @@ export default function PositionPage() {
       posIds.forEach(id => removePositionLocally(id));
     }
 
-    const [result] = await Promise.all([
-      closePositionsBatch(posIds),
-      new Promise(r => setTimeout(r, 800))
-    ]);
+    const result = await closePositionsBatch(posIds);
 
     if (result.success && result.results) {
       let firstError = '';
@@ -719,11 +713,7 @@ export default function PositionPage() {
       showToast(`Closed ${successCount}, failed ${failCount}. Error: ${result.error || 'Unknown'}`);
     }
     refresh();
-    // Delayed re-fetch to catch Supabase propagation delay
-    setTimeout(() => {
-      refresh();
-      window.dispatchEvent(new Event('position-closed'));
-    }, 1500);
+    window.dispatchEvent(new Event('position-closed'));
   };
 
   const handleGroupExitConfirm = async () => {
@@ -737,10 +727,7 @@ export default function PositionPage() {
       posIds.forEach(id => removePositionLocally(id));
     }
 
-    const [result] = await Promise.all([
-      closePositionsBatch(posIds),
-      new Promise(r => setTimeout(r, 800))
-    ]);
+    const result = await closePositionsBatch(posIds);
 
     if (result.success) {
       const successfulIds = new Set((result.results || []).filter((r: any) => r.success).map((r: any) => r.positionId));
