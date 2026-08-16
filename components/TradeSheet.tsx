@@ -216,7 +216,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       segSetting_bid_buffer: segSetting?.bid_buffer,
     });
 
-    const cryptoQuote = (bSymbol && marketQuotes[bSymbol]) || (bSymbol && binanceQuotesAsQuoteData[bSymbol]);
+    const cryptoQuote = bSymbol ? marketQuotes[bSymbol] : null;
     if (isCrypto) {
       rawBid = (cryptoQuote?.bid && cryptoQuote.bid > 0) ? cryptoQuote.bid : currentLtp;
       rawAsk = (cryptoQuote?.ask && cryptoQuote.ask > 0) ? cryptoQuote.ask : currentLtp;
