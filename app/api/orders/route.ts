@@ -300,7 +300,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         .from('positions')
         .select('*')
         .eq('user_id', user.id)
-        .eq('status', 'open')
+        .in('status', ['open', 'OPEN', 'active', 'ACTIVE'])
     ]);
 
     if (ordersRes.error) throw ordersRes.error;

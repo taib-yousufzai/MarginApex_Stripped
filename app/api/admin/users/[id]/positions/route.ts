@@ -98,12 +98,10 @@ export async function GET(
 
     // Step 5: Apply tab filter
     // Validates: Requirements 7.3, 7.4, 7.5
-    if (tab === 'open') {
-      query = query.eq('status', 'open');
-    } else if (tab === 'active') {
-      query = query.eq('status', 'active');
+    if (tab === 'open' || tab === 'active') {
+      query = query.in('status', ['open', 'OPEN', 'active', 'ACTIVE']);
     } else if (tab === 'closed') {
-      query = query.eq('status', 'closed');
+      query = query.in('status', ['closed', 'CLOSED']);
       if (id !== 'all') {
         const { data: uProfile } = await adminClient
           .from('profiles')
