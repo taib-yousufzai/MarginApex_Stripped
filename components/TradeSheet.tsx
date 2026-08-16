@@ -1743,6 +1743,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                 } else {
                   actionText = `${orderQty} QTY`;
                 }
+
+                const buyPriceLabel = askPrice > 0 ? ` @ ${fmt(askPrice)}` : '';
+                const sellPriceLabel = bidPrice > 0 ? ` @ ${fmt(bidPrice)}` : '';
                 
                 return (
                   <div className="ts2-btn-row">
@@ -1753,7 +1756,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         style={(isBusy || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('SELL')}
                       >
-                        {isBusy ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${actionText}`}
+                        {isBusy ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${actionText}${sellPriceLabel}`}
                       </button>
                     )}
                     {(side === 'BUY' || side === 'BOTH') && (
@@ -1763,7 +1766,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         style={(isBusy || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('BUY')}
                       >
-                        {isBusy ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${actionText}`}
+                        {isBusy ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${actionText}${buyPriceLabel}`}
                       </button>
                     )}
                   </div>
