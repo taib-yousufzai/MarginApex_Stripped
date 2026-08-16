@@ -1421,8 +1421,16 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       : (!symbolIsDerivative && activeLiveQuote ? (activeLiveQuote.lastPrice || currentPrice) : currentPrice);
 
     if (ltpToUse > 0) {
-      rawBid = ltpToUse * (1 - 0.0099);
-      rawAsk = ltpToUse * 1.01;
+      let cryptoBidBuffer = 0.05; // 0.05% default
+      if (segSetting?.bid_buffer !== undefined) {
+        cryptoBidBuffer = segSetting.bid_buffer;
+      } else if (buySetting?.bid_buffer !== undefined) {
+        cryptoBidBuffer = buySetting.bid_buffer;
+      }
+      
+      const buffer = cryptoBidBuffer / 100;
+      rawBid = ltpToUse * (1 - buffer);
+      rawAsk = ltpToUse * (1 + buffer);
     }
   }
 
