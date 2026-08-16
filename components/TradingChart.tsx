@@ -1415,24 +1415,14 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       ? (activeLiveQuote.ask || activeLiveQuote.lastPrice || currentPrice)
       : currentPrice);
 
-  const hasValidRealSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-  if (isCrypto && !hasValidRealSpread) {
+  if (isCrypto) {
     const ltpToUse = isTargetFlow
       ? (addMoreQuote?.lastPrice || addMoreLtp || currentPrice)
       : (!symbolIsDerivative && activeLiveQuote ? (activeLiveQuote.lastPrice || currentPrice) : currentPrice);
 
     if (ltpToUse > 0) {
-      let cryptoBidBuffer = 0.05; // 0.05% default
-      // Use the segment setting for the current side
-      if (segSetting?.bid_buffer !== undefined) {
-        cryptoBidBuffer = segSetting.bid_buffer;
-      } else if (buySetting?.bid_buffer !== undefined) {
-        cryptoBidBuffer = buySetting.bid_buffer;
-      }
-      
-      const buffer = cryptoBidBuffer / 100;
-      rawBid = ltpToUse * (1 - buffer);
-      rawAsk = ltpToUse * (1 + buffer);
+      rawBid = ltpToUse * (1 - 0.0099);
+      rawAsk = ltpToUse * 1.01;
     }
   }
 

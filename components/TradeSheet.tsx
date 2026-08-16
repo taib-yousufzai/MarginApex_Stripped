@@ -217,9 +217,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     });
 
     const cryptoQuote = (bSymbol && marketQuotes[bSymbol]) || (bSymbol && binanceQuotesAsQuoteData[bSymbol]);
-    if (isCrypto && cryptoQuote) {
-      rawBid = cryptoQuote.bid || 0;
-      rawAsk = cryptoQuote.ask || 0;
+    if (isCrypto) {
+      rawBid = currentLtp * (1 - 0.0099);
+      rawAsk = currentLtp * 1.01;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || 0;
       rawAsk = comexQuotes[item.comexSymbol].ask || 0;
@@ -228,15 +228,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       rawAsk = marketQuotes[computedKiteSymbol].ask || 0;
     }
 
-    // Use real bid/ask from the exchange if valid (non-zero and bid <= ask).
-    // Only fall back to a tight synthetic spread when prices are missing or crossed.
-    const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-    if (!hasValidSpread) {
-      if (isCrypto) {
-        const cryptoBidBuffer = segSetting?.bid_buffer !== undefined ? segSetting.bid_buffer : (buySetting?.bid_buffer !== undefined ? buySetting.bid_buffer : 0.05);
-        rawBid = currentLtp * (1 - cryptoBidBuffer / 100);
-        rawAsk = currentLtp * (1 + cryptoBidBuffer / 100);
-      } else {
+    if (!isCrypto) {
+      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
+      if (!hasValidSpread) {
         const defaultBid = currentLtp * 0.9995;
         const defaultAsk = currentLtp * 1.0005;
         if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;

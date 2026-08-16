@@ -813,21 +813,14 @@ function WatchlistContent() {
   // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
   // Only fall back to a tight synthetic spread when prices are missing or crossed.
   if (currentLtp > 0) {
-    const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-    if (!hasValidSpread) {
-      if (isCrypto) {
-        let cryptoBidBuffer = 0.05; // default 0.05%
-        if (buySetting?.bid_buffer !== undefined) {
-          cryptoBidBuffer = buySetting.bid_buffer;
-        } else if (sellSetting?.bid_buffer !== undefined) {
-          cryptoBidBuffer = sellSetting.bid_buffer;
-        }
-        const buffer = cryptoBidBuffer / 100;
-        rawBid = currentLtp * (1 - buffer);
-        rawAsk = currentLtp * (1 + buffer);
-      } else {
-        const defaultBid = currentLtp * 0.9995;
-        const defaultAsk = currentLtp * 1.0005;
+    if (isCrypto) {
+      rawBid = currentLtp * (1 - 0.0099);
+      rawAsk = currentLtp * 1.01;
+    } else {
+      const defaultBid = currentLtp * 0.9995;
+      const defaultAsk = currentLtp * 1.0005;
+      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
+      if (!hasValidSpread) {
         if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
         else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
         else {

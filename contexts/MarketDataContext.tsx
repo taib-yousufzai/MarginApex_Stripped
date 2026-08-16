@@ -172,8 +172,8 @@ class MarketWSManager {
           if (data && data.s) {
             const symUpper = data.s.toUpperCase();
             const lp = parseFloat(data.c || '0');
-            const bp = parseFloat(data.b || data.c || '0');
-            const ap = parseFloat(data.a || data.c || '0');
+            const bp = lp > 0 ? lp * (1 - 0.0099) : 0;
+            const ap = lp > 0 ? lp * 1.01 : 0;
             const close = parseFloat(data.x || data.o || '0');
 
             const quoteObj = {
