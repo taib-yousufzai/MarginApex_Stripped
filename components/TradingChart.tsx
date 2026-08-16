@@ -1415,7 +1415,8 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       ? (activeLiveQuote.ask || activeLiveQuote.lastPrice || currentPrice)
       : currentPrice);
 
-  if (isCrypto) {
+  const hasValidRealSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
+  if (isCrypto && !hasValidRealSpread) {
     const ltpToUse = isTargetFlow
       ? (addMoreQuote?.lastPrice || addMoreLtp || currentPrice)
       : (!symbolIsDerivative && activeLiveQuote ? (activeLiveQuote.lastPrice || currentPrice) : currentPrice);

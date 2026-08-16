@@ -216,15 +216,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       segSetting_bid_buffer: segSetting?.bid_buffer,
     });
 
-    if (isCrypto) {
-
-      // For Crypto: use bid_buffer from admin segment settings to create synthetic spread.
-      // bid_buffer % is subtracted from LTP for Bid, and added to LTP for Ask.
-      // Use the segment setting for the current side — fallback to 0.05% if not configured.
-      const cryptoBidBuffer = segSetting?.bid_buffer !== undefined ? segSetting.bid_buffer : (buySetting?.bid_buffer !== undefined ? buySetting.bid_buffer : 0.05);
-      rawBid = currentLtp * (1 - cryptoBidBuffer / 100);
-      rawAsk = currentLtp * (1 + cryptoBidBuffer / 100);
-
+    const cryptoQuote = (bSymbol && marketQuotes[bSymbol]) || (bSymbol && binanceQuotesAsQuoteData[bSymbol]);
+    if (isCrypto && cryptoQuote) {
+      rawBid = cryptoQuote.bid || 0;
+      rawAsk = cryptoQuote.ask || 0;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || 0;
       rawAsk = comexQuotes[item.comexSymbol].ask || 0;
@@ -235,11 +230,15 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
     // Use real bid/ask from the exchange if valid (non-zero and bid <= ask).
     // Only fall back to a tight synthetic spread when prices are missing or crossed.
-    if (!isCrypto && currentLtp > 0) {
-      const defaultBid = currentLtp * 0.9995;
-      const defaultAsk = currentLtp * 1.0005;
-      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-      if (!hasValidSpread) {
+    const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
+    if (!hasValidSpread) {
+      if (isCrypto) {
+        const cryptoBidBuffer = segSetting?.bid_buffer !== undefined ? segSetting.bid_buffer : (buySetting?.bid_buffer !== undefined ? buySetting.bid_buffer : 0.05);
+        rawBid = currentLtp * (1 - cryptoBidBuffer / 100);
+        rawAsk = currentLtp * (1 + cryptoBidBuffer / 100);
+      } else {
+        const defaultBid = currentLtp * 0.9995;
+        const defaultAsk = currentLtp * 1.0005;
         if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
         else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
         else {
