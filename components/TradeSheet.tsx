@@ -1044,9 +1044,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     }
   };
 
-  const currencySymbol = isCrypto || isComex ? '$' : '₹';
+  const currencySymbol = '₹';
   const fmt = (n: number) =>
-    n > 0 ? `${currencySymbol}${n.toLocaleString(isCrypto || isComex ? 'en-US' : 'en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
+    n > 0 ? `${currencySymbol}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
 
   return (
     <>

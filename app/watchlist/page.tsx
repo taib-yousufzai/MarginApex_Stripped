@@ -785,8 +785,8 @@ function WatchlistContent() {
 
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price as number)) return '--';
-    const sym = (isCrypto || isComex) ? '$' : '₹';
-    const locale = (isCrypto || isComex) ? 'en-US' : 'en-IN';
+    const sym = '₹';
+    const locale = 'en-IN';
     return `${sym}${price.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
@@ -2664,8 +2664,8 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
 
       function formatPrice(price, isCrypto) {
         var numPrice = typeof price === 'number' ? price : parseFloat(price);
-        var sym = isCrypto ? '$' : '₹';
-        var loc = isCrypto ? 'en-US' : 'en-IN';
+        var sym = '₹';
+        var loc = 'en-IN';
         return sym + numPrice.toLocaleString(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
 

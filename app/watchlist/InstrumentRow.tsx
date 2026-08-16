@@ -126,9 +126,9 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
               <div className="instr-row__ltp">
                 <TickFlash value={ltp}>
                   {isCrypto
-                    ? `$${ltp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    ? `₹${ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     : showComex
-                      ? `$${ltp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      ? `₹${ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : `LTP: ${ltp.toFixed(2)}`}
                 </TickFlash>
               </div>
