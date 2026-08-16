@@ -172,8 +172,8 @@ class MarketWSManager {
           if (data && data.s) {
             const symUpper = data.s.toUpperCase();
             const lp = parseFloat(data.c || '0');
-            const bp = lp > 0 ? Math.max(0, lp - 0.50) : 0;
-            const ap = lp > 0 ? lp + 0.50 : 0;
+            const bp = parseFloat(data.b || data.c || '0');
+            const ap = parseFloat(data.a || data.c || '0');
             const close = parseFloat(data.x || data.o || '0');
 
             const quoteObj = {
@@ -421,13 +421,13 @@ function normalizeQuote(q: any): QuoteData {
     finalAsk = rawAsk;
   } else if (bidOk && !askOk) {
     finalBid = rawBid;
-    finalAsk = rawBid * 1.0005;
+    finalAsk = rawBid;
   } else if (askOk && !bidOk) {
     finalAsk = rawAsk;
-    finalBid = rawAsk * 0.9995;
+    finalBid = rawAsk;
   } else {
-    finalBid = lastPrice > 0 ? lastPrice * 0.9995 : 0;
-    finalAsk = lastPrice > 0 ? lastPrice * 1.0005 : 0;
+    finalBid = lastPrice;
+    finalAsk = lastPrice;
   }
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);

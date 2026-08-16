@@ -124,8 +124,8 @@ export class WebSocketGateway extends EventEmitter {
                           close: parseFloat(data.prevClosePrice),
                         },
                         timestamp: new Date(data.closeTime),
-                        bid: parseFloat(data.lastPrice) * 0.9995,
-                        ask: parseFloat(data.lastPrice) * 1.0005,
+                        bid: parseFloat(data.lastPrice),
+                        ask: parseFloat(data.lastPrice),
                       };
                       initialQuotes[sym] = tick;
                       // Backfill the cache so subsequent requests are instant

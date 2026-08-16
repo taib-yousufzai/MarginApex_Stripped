@@ -345,8 +345,8 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           if (quote) {
             rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
-            bid = (quote as any).bid ?? (ltp * 0.9995);
-            ask = (quote as any).ask ?? (ltp * 1.0005);
+            bid = (quote as any).bid ?? ltp;
+            ask = (quote as any).ask ?? ltp;
           }
         } else if (isComex) {
           const quote = comexQuotes[p.symbol];

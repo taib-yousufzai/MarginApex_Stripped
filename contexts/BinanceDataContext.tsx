@@ -129,8 +129,8 @@ export const BinanceDataProvider = ({ children }: { children: React.ReactNode })
         close: parseFloat(data.x),
         volume: parseFloat(data.v),
         quoteVolume: parseFloat(data.q),
-        bid: parseFloat(data.c) * 0.9995,
-        ask: parseFloat(data.c) * 1.0005,
+        bid: parseFloat(data.c || '0'),
+        ask: parseFloat(data.c || '0'),
       };
     };
 
@@ -167,8 +167,8 @@ export const BinanceDataProvider = ({ children }: { children: React.ReactNode })
               close: parseFloat(ticker.prevClosePrice),
               volume: parseFloat(ticker.volume),
               quoteVolume: parseFloat(ticker.quoteVolume),
-              bid: parseFloat(ticker.lastPrice) * 0.9995,
-              ask: parseFloat(ticker.lastPrice) * 1.0005,
+              bid: parseFloat(ticker.lastPrice || '0'),
+              ask: parseFloat(ticker.lastPrice || '0'),
             };
           }
           setQuotes(prev => ({ ...prev, ...mapped }));

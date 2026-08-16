@@ -41,21 +41,34 @@ export function resolveEffectivePrices({
     rawAsk !== undefined &&
     rawAsk !== null &&
     Number(rawBid) > 0 &&
-    Number(rawAsk) > 0;
+    Number(rawAsk) > 0 &&
+    Number(rawBid) < Number(rawAsk);
 
   let effectiveAsk: number;
   let effectiveBid: number;
 
   if (validRealSpread) {
-    // Real / synthetic bid and ask already contain the market spread.
-    // Do not add secondary askBuffer / bidBuffer on top of valid quotes.
+    // Real orderbook spread feed
     effectiveAsk = Number(rawAsk);
     effectiveBid = Number(rawBid);
   } else {
     const aBuf = Number(askBuffer) || 0;
     const bBuf = Number(bidBuffer) || 0;
-    effectiveAsk = baseLtp + aBuf;
-    effectiveBid = baseLtp - bBuf;
+
+    const calcBufferOffset = (buf: number) => {
+      if (buf <= 0) return 0;
+      if (buf > 0.005 && buf <= 100) {
+        const decimal = buf > 1 ? buf / 100 : buf;
+        return baseLtp * decimal;
+      }
+      return buf;
+    };
+
+    const aOffset = calcBufferOffset(aBuf);
+    const bOffset = calcBufferOffset(bBuf);
+
+    effectiveAsk = baseLtp + aOffset;
+    effectiveBid = baseLtp - bOffset;
   }
 
   return {

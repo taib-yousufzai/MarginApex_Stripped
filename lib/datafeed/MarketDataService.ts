@@ -39,8 +39,8 @@ export async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, b
             if (q && q.last_price !== undefined) {
               return {
                 ltp: Number(q.last_price),
-                bid: Number(q.bid || q.last_price * 0.9995),
-                ask: Number(q.ask || q.last_price * 1.0005)
+                bid: Number(q.bid || q.last_price),
+                ask: Number(q.ask || q.last_price)
               };
             }
           }
@@ -57,8 +57,8 @@ export async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, b
               const q = json.data[cleanSym];
               return {
                 ltp: Number(q.last_price),
-                bid: Number(q.bid || q.last_price * 0.9995),
-                ask: Number(q.ask || q.last_price * 1.0005)
+                bid: Number(q.bid || q.last_price),
+                ask: Number(q.ask || q.last_price)
               };
             }
           }
@@ -71,7 +71,7 @@ export async function fetchBinanceQuote(symbol: string): Promise<{ltp: number, b
           const data = await res.json();
           if (data.price) {
             const ltp = parseFloat(data.price);
-            return { ltp, bid: ltp * 0.9995, ask: ltp * 1.0005 };
+            return { ltp, bid: ltp, ask: ltp };
           }
           return null;
         } catch (err) {

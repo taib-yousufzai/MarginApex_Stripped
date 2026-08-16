@@ -14,6 +14,7 @@ import AnimatedLoader from '@/components/AnimatedLoader';
 import dynamic from 'next/dynamic';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentToDbSegment, mapSymbolToSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
+import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
@@ -813,22 +814,8 @@ function WatchlistContent() {
   // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
   // Only fall back to a tight synthetic spread when prices are missing or crossed.
   if (currentLtp > 0) {
-    if (isCrypto) {
-      rawBid = Math.max(0, currentLtp - 0.50);
-      rawAsk = currentLtp + 0.50;
-    } else {
-      const defaultBid = currentLtp * 0.9995;
-      const defaultAsk = currentLtp * 1.0005;
-      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-      if (!hasValidSpread) {
-        if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
-        else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
-        else {
-          rawBid = defaultBid;
-          rawAsk = defaultAsk;
-        }
-      }
-    }
+    if (!rawBid || rawBid <= 0) rawBid = currentLtp;
+    if (!rawAsk || rawAsk <= 0) rawAsk = currentLtp;
   }
 
 
@@ -1767,9 +1754,20 @@ function WatchlistContent() {
             <div id="detailSheet" className={`trade-sheet detail-sheet${selectedItem ? ' open' : ''}`} style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
               <div className="sheet-handle"><div className="handle-bar"></div></div>
               {selectedItem && (() => {
+                const dbSeg = mapSegmentWithSymbol(selectedItem.segment || '', selectedItem.symbol);
+                const segSetting = segmentSettings.find((s: any) => s.segment === dbSeg || s.segment === selectedItem.segment);
+                const activeBuf = segSetting?.bid_buffer ?? 0;
+                const effective = resolveEffectivePrices({
+                  ltp: currentLtp,
+                  rawBid,
+                  rawAsk,
+                  hasRealBidAsk: Boolean(rawBid && rawAsk && rawBid < rawAsk),
+                  askBuffer: activeBuf,
+                  bidBuffer: activeBuf,
+                });
                 const ltp = currentLtp;
-                const bid = rawBid;
-                const ask = rawAsk;
+                const bid = effective.effectiveBid;
+                const ask = effective.effectiveAsk;
                 const chgPct = currentChangePercent;
                 const fmt = (v: number) => formatPrice(v);
                 return (
@@ -1867,12 +1865,12 @@ function WatchlistContent() {
                       <div style={{ background: 'var(--card-alt-bg)', border: '1px solid var(--border-card)', borderRadius: '14px', padding: '8px 12px', display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ fontSize: '0.58rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>BID</div>
-                          <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#059669' }}>{fmt(rawBid)}</div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#059669' }}>{fmt(bid)}</div>
                         </div>
                         <div style={{ width: '1px', background: 'var(--border-card)', height: '24px' }}></div>
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ fontSize: '0.58rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>ASK</div>
-                          <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#DC2626' }}>{fmt(rawAsk)}</div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#DC2626' }}>{fmt(ask)}</div>
                         </div>
                       </div>
                       <div style={{ marginBottom: '8px' }}>

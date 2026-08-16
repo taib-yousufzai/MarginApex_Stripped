@@ -218,39 +218,36 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
     const cryptoQuote = (bSymbol && marketQuotes[bSymbol]) || (bSymbol && binanceQuotesAsQuoteData[bSymbol]);
     if (isCrypto) {
-      rawBid = Math.max(0, currentLtp - 0.50);
-      rawAsk = currentLtp + 0.50;
+      rawBid = (cryptoQuote?.bid && cryptoQuote.bid > 0) ? cryptoQuote.bid : currentLtp;
+      rawAsk = (cryptoQuote?.ask && cryptoQuote.ask > 0) ? cryptoQuote.ask : currentLtp;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
-      rawBid = comexQuotes[item.comexSymbol].bid || 0;
-      rawAsk = comexQuotes[item.comexSymbol].ask || 0;
+      rawBid = comexQuotes[item.comexSymbol].bid || currentLtp;
+      rawAsk = comexQuotes[item.comexSymbol].ask || currentLtp;
     } else if (computedKiteSymbol && marketQuotes[computedKiteSymbol]) {
-      rawBid = marketQuotes[computedKiteSymbol].bid || 0;
-      rawAsk = marketQuotes[computedKiteSymbol].ask || 0;
+      rawBid = marketQuotes[computedKiteSymbol].bid || currentLtp;
+      rawAsk = marketQuotes[computedKiteSymbol].ask || currentLtp;
     }
 
-    if (!isCrypto) {
-      const hasValidSpread = rawBid > 0 && rawAsk > 0 && rawBid <= rawAsk;
-      if (!hasValidSpread) {
-        const defaultBid = currentLtp * 0.9995;
-        const defaultAsk = currentLtp * 1.0005;
-        if (rawBid > 0 && rawAsk === 0) rawAsk = rawBid * 1.0005;
-        else if (rawAsk > 0 && rawBid === 0) rawBid = rawAsk * 0.9995;
-        else {
-          rawBid = defaultBid;
-          rawAsk = defaultAsk;
-        }
-      }
-    }
+    if (!rawBid || rawBid <= 0) rawBid = currentLtp;
+    if (!rawAsk || rawAsk <= 0) rawAsk = currentLtp;
 
-    if (isCrypto) {
-      bidPrice = rawBid;
-      askPrice = rawAsk;
-    } else if (exitMode) {
-      bidPrice = rawBid * (1 - buyExitBuffer / 100);
-      askPrice = rawAsk * (1 + sellExitBuffer / 100);
+    const activeBidBuffer = segSetting?.bid_buffer ?? buySetting?.bid_buffer ?? sellSetting?.bid_buffer ?? 0;
+
+    const effective = resolveEffectivePrices({
+      ltp: currentLtp,
+      rawBid,
+      rawAsk,
+      hasRealBidAsk: Boolean(rawBid && rawAsk && rawBid < rawAsk),
+      askBuffer: activeBidBuffer,
+      bidBuffer: activeBidBuffer,
+    });
+
+    if (exitMode) {
+      bidPrice = effective.effectiveBid * (1 - buyExitBuffer / 100);
+      askPrice = effective.effectiveAsk * (1 + sellExitBuffer / 100);
     } else {
-      bidPrice = rawBid;
-      askPrice = rawAsk;
+      bidPrice = effective.effectiveBid;
+      askPrice = effective.effectiveAsk;
     }
   }
 

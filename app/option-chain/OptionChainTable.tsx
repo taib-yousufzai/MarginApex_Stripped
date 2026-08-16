@@ -83,10 +83,10 @@ const StrikeRow = React.memo(function StrikeRow({
   const ceHasSpread = !!(ceBidVal && ceAskVal && ceBidVal < ceAskVal);
   const peHasSpread = !!(peBidVal && peAskVal && peBidVal < peAskVal);
 
-  const ceBid = (ceHasSpread ? ceBidVal : ceLtpVal ? ceLtpVal * 0.9995 : null)?.toFixed(1) ?? '---';
-  const ceAsk = (ceHasSpread ? ceAskVal : ceLtpVal ? ceLtpVal * 1.0005 : null)?.toFixed(1) ?? '---';
-  const peBid = (peHasSpread ? peBidVal : peLtpVal ? peLtpVal * 0.9995 : null)?.toFixed(1) ?? '---';
-  const peAsk = (peHasSpread ? peAskVal : peLtpVal ? peLtpVal * 1.0005 : null)?.toFixed(1) ?? '---';
+  const ceBid = (ceHasSpread ? ceBidVal : ceLtpVal ? ceLtpVal : null)?.toFixed(1) ?? '---';
+  const ceAsk = (ceHasSpread ? ceAskVal : ceLtpVal ? ceLtpVal : null)?.toFixed(1) ?? '---';
+  const peBid = (peHasSpread ? peBidVal : peLtpVal ? peLtpVal : null)?.toFixed(1) ?? '---';
+  const peAsk = (peHasSpread ? peAskVal : peLtpVal ? peLtpVal : null)?.toFixed(1) ?? '---';
   const ceLtp = ceLtpVal ? `₹${ceLtpVal.toFixed(1)}` : '---';
   const peLtp = peLtpVal ? `₹${peLtpVal.toFixed(1)}` : '---';
 

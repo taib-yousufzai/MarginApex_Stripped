@@ -199,10 +199,10 @@ function InlineOptionChain({ symbol, onClose }: { symbol: string; onClose: () =>
               const ceLtp = (ceQ?.lastPrice || s.ce?.price) ?? 0;
               const peLtp = (peQ?.lastPrice || s.pe?.price) ?? 0;
 
-              const ceBid = (ceQ?.bid && ceQ.bid > 0) ? ceQ.bid : (ceLtp ? ceLtp * 0.9995 : null);
-              const ceAsk = (ceQ?.ask && ceQ.ask > 0) ? ceQ.ask : (ceLtp ? ceLtp * 1.0005 : null);
-              const peBid = (peQ?.bid && peQ.bid > 0) ? peQ.bid : (peLtp ? peLtp * 0.9995 : null);
-              const peAsk = (peQ?.ask && peQ.ask > 0) ? peQ.ask : (peLtp ? peLtp * 1.0005 : null);
+              const ceBid = (ceQ?.bid && ceQ.bid > 0) ? ceQ.bid : (ceLtp ? ceLtp : null);
+              const ceAsk = (ceQ?.ask && ceQ.ask > 0) ? ceQ.ask : (ceLtp ? ceLtp : null);
+              const peBid = (peQ?.bid && peQ.bid > 0) ? peQ.bid : (peLtp ? peLtp : null);
+              const peAsk = (peQ?.ask && peQ.ask > 0) ? peQ.ask : (peLtp ? peLtp : null);
 
               return (
                 <div

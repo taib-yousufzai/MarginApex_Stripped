@@ -58,8 +58,8 @@ async function fetchBinanceQuotesBatch(cryptoSymbols: string[]): Promise<Record<
           const high = parseFloat(item.highPrice);
           const low = parseFloat(item.lowPrice);
           const volume = Math.round(parseFloat(item.volume));
-          const bid = lastPrice > 0 ? Math.max(0, lastPrice - 0.50) : 0;
-          const ask = lastPrice > 0 ? lastPrice + 0.50 : 0;
+          const bid = lastPrice;
+          const ask = lastPrice;
 
           const quoteObj = {
             timestamp: new Date(item.closeTime || Date.now()).toISOString(),

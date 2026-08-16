@@ -45,8 +45,8 @@ export async function GET(request: NextRequest) {
               lowPrice: parseFloat(item.lowPrice || '0'),
               volume: parseFloat(item.volume || '0'),
               time: item.closeTime || Date.now(),
-              bid: lp * 0.9995,
-              ask: lp * 1.0005,
+              bid: lp,
+              ask: lp,
             };
             quotes[item.symbol] = quote;
             const shortSymbol = item.symbol.replace('USDT', '');
