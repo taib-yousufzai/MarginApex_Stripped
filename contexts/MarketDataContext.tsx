@@ -50,18 +50,42 @@ class MarketWSManager {
   public lastMessageReceivedTime = 0;
 
   constructor() {
+    // Smart URL resolution for production and development
     let url = process.env.NEXT_PUBLIC_TICKER_WS_URL;
+    
+    // Skip Vercel URLs as they don't support WebSocket
     if (url && url.includes('vercel.app')) url = '';
+    
+    // Try to derive WS URL from HTTP ticker URL
     if (!url && process.env.NEXT_PUBLIC_TICKER_URL) {
       const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL;
       if (!tickerUrl.includes('vercel.app')) {
         url = tickerUrl.replace(/^http/, 'ws');
       }
     }
+    
+    // Production fallback: Use Railway production URL
     if (!url) {
-      url = `wss://marginapexx-production.up.railway.app`;
+      // Check if we're in production by looking at window.location
+      if (typeof window !== 'undefined') {
+        const hostname = window.location.hostname;
+        // If production domain, use production ticker
+        if (hostname !== 'localhost' && !hostname.includes('127.0.0.1')) {
+          url = 'wss://marginapexx-production.up.railway.app';
+          console.log('[MarketWSManager] Using production ticker URL:', url);
+        } else {
+          // Localhost development
+          url = 'ws://localhost:3001';
+          console.log('[MarketWSManager] Using local development ticker URL:', url);
+        }
+      } else {
+        // Server-side fallback
+        url = 'wss://marginapexx-production.up.railway.app';
+      }
     }
+    
     this.wsUrl = url;
+    console.log('[MarketWSManager] Initialized with WebSocket URL:', url);
 
     if (typeof window !== 'undefined') {
       let lastHiddenTime = 0;
@@ -216,6 +240,7 @@ class MarketWSManager {
     
     // Prevent overlapping connection attempts
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      console.log('[MarketWSManager] Connection already in progress, skipping');
       return;
     }
 
@@ -224,7 +249,7 @@ class MarketWSManager {
     this.connectionStatus = this.reconnectCount > 0 ? 'reconnecting' : 'connecting';
     this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
 
-    console.log(`[MarketWSManager] Connecting to ${this.wsUrl} (attempt #${this.reconnectCount + 1})...`);
+    console.log(`[MarketWSManager] 🔌 Connecting to ${this.wsUrl} (attempt #${this.reconnectCount + 1})...`);
 
     try {
       this.ws = new WebSocket(this.wsUrl);
@@ -537,8 +562,21 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
       // Fallback 2: Direct query to Railway ticker daemon with mobile-optimized settings
       try {
         let baseUrl = process.env.NEXT_PUBLIC_TICKER_URL;
+        
+        // Smart production URL detection
         if (!baseUrl) {
-          baseUrl = 'https://marginapexx-production.up.railway.app';
+          if (typeof window !== 'undefined') {
+            const hostname = window.location.hostname;
+            if (hostname !== 'localhost' && !hostname.includes('127.0.0.1')) {
+              baseUrl = 'https://marginapexx-production.up.railway.app';
+              console.log('[MarketDataProvider] Using production ticker HTTP URL');
+            } else {
+              baseUrl = 'http://localhost:3001';
+              console.log('[MarketDataProvider] Using local ticker HTTP URL');
+            }
+          } else {
+            baseUrl = 'https://marginapexx-production.up.railway.app';
+          }
         }
         
         const controller = new AbortController();
