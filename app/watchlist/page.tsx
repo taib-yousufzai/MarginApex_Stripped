@@ -700,14 +700,7 @@ function WatchlistContent() {
   const [tpPrice, setTpPrice] = useState('');
   const openDetailSheet = (item: any) => {
     setSelectedItem(item);
-    const tradeSheet = document.getElementById('tradeSheet');
-    const tradeOverlay = document.getElementById('tradeSheetOverlay');
-    if (tradeSheet) tradeSheet.classList.remove('open');
-    if (tradeOverlay) tradeOverlay.classList.remove('active');
-    const detailSheet = document.getElementById('detailSheet');
-    const detailOverlay = document.getElementById('detailSheetOverlay');
-    if (detailSheet) detailSheet.classList.add('open');
-    if (detailOverlay) detailOverlay.classList.add('active');
+    setIsTradeSheetOpen(false); // ensure TradeSheet is closed when detail opens
   };
   const [isTradeSheetOpen, setIsTradeSheetOpen] = useState(false);
   // Tracks which detail-sheet button is in the "tapped, waiting for sheet" state.
@@ -1441,12 +1434,6 @@ function WatchlistContent() {
       setSlPrice('');
       setTpPrice('');
 
-      // Close detail sheet if open
-      const detailSheet = document.getElementById('detailSheet');
-      const detailOverlay = document.getElementById('detailSheetOverlay');
-      if (detailSheet) detailSheet.classList.remove('open');
-      if (detailOverlay) detailOverlay.classList.remove('active');
-
       setIsTradeSheetOpen(true);
       setDetailOpeningSide(null);
 
@@ -1750,8 +1737,8 @@ function WatchlistContent() {
               hideLotText={true}
             />
 
-            <div id="detailSheetOverlay" className={`trade-sheet-overlay${selectedItem ? ' active' : ''}`} onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setSelectedItem(null); }}></div>
-            <div id="detailSheet" className={`trade-sheet detail-sheet${selectedItem ? ' open' : ''}`} style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
+            <div id="detailSheetOverlay" className={`trade-sheet-overlay${(selectedItem && !isTradeSheetOpen && !chartItem) ? ' active' : ''}`} onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setSelectedItem(null); }}></div>
+            <div id="detailSheet" className={`trade-sheet detail-sheet${(selectedItem && !isTradeSheetOpen && !chartItem) ? ' open' : ''}`} style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
               <div className="sheet-handle"><div className="handle-bar"></div></div>
               {selectedItem && (() => {
                 const dbSeg = mapSegmentWithSymbol(selectedItem.segment || '', selectedItem.symbol);

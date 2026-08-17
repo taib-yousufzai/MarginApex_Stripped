@@ -514,6 +514,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     }
   }
 
+  const currencySymbol = '₹';
+
   const priceRangeHelp = currentLtp > 0 ? (
     <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary, #6B7280)', marginTop: '6px', fontWeight: 600 }}>
       Allowed price: {minAllowedPrice > 0 ? `${currencySymbol}${minAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${currencySymbol}0.00`} to {maxAllowedPrice !== Infinity ? `${currencySymbol}${maxAllowedPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'No Limit'}
@@ -1044,7 +1046,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     }
   };
 
-  const currencySymbol = '₹';
   const fmt = (n: number) =>
     n > 0 ? `${currencySymbol}${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
 
