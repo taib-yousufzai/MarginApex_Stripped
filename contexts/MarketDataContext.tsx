@@ -500,48 +500,81 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
       
+      // Mobile-optimized: Try local API route first (works better on mobile networks)
       try {
-        // Fallback 1: Local Next.js API route (bypasses iOS Safari / iCloud Private Relay CORS blocks)
+        // Fallback 1: Local Next.js API route with longer timeout for mobile
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for mobile
+        
         const res = await fetch('/api/kite/quotes', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ instruments: symbols })
+          body: JSON.stringify({ instruments: symbols }),
+          signal: controller.signal,
+          cache: 'no-store' // Prevent caching issues on mobile
         });
+        
+        clearTimeout(timeoutId);
+        
         if (res.ok) {
           const json = await res.json();
           if (json.data && Object.keys(json.data).length > 0) {
+            console.log('[MarketDataProvider] ✓ Quotes fetched via local API (mobile-friendly)');
             onMessage('quotes', json.data);
             return;
           }
         }
-      } catch (err) {
-        console.warn('[MarketDataProvider] Local HTTP fallback failed, trying direct ticker daemon:', err);
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.warn('[MarketDataProvider] Local API timeout - trying direct connection');
+        } else {
+          console.warn('[MarketDataProvider] Local HTTP fallback failed, trying direct ticker daemon:', err);
+        }
       }
 
-      // Fallback 2: Direct query to Railway ticker daemon (original path)
+      // Fallback 2: Direct query to Railway ticker daemon with mobile-optimized settings
       try {
         let baseUrl = process.env.NEXT_PUBLIC_TICKER_URL;
         if (!baseUrl) {
           baseUrl = 'https://marginapexx-production.up.railway.app';
         }
-        const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(s)).join(',')}`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+        
+        const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(s)).join(',')}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        clearTimeout(timeoutId);
+        
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.data && Object.keys(json.data).length > 0) {
+            console.log('[MarketDataProvider] ✓ Quotes fetched via direct ticker daemon');
             onMessage('quotes', json.data);
           }
         }
-      } catch (err) {
-        console.error('[MarketDataProvider] Direct HTTP fallback error:', err);
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.error('[MarketDataProvider] Direct ticker daemon timeout - slow network');
+        } else {
+          console.error('[MarketDataProvider] Direct HTTP fallback error:', err);
+        }
       }
     };
 
     fetchInitialQuotesRef.current = fetchInitialQuotes;
     fetchInitialQuotes();
 
-    const pollInterval = setInterval(fetchInitialQuotes, 3000);
+    // Mobile-optimized: More frequent polling for better UX on unstable connections
+    const pollInterval = setInterval(fetchInitialQuotes, 2000); // 2s instead of 3s
 
     return () => {
       clearInterval(pollInterval);
@@ -552,8 +585,10 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
   const subscribe = useCallback((symbols: string[]) => {
     const validSymbols = symbols.filter(Boolean);
     if (validSymbols.length > 0) {
+      console.log('[MarketDataProvider] Subscribing to symbols:', validSymbols.length, 'symbols');
       wsManager.subscribe(validSymbols);
       if (wsManager.connectionStatus !== 'connected') {
+        console.log('[MarketDataProvider] WebSocket not connected, triggering HTTP fallback');
         fetchInitialQuotesRef.current?.();
       }
     }
