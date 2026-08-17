@@ -41,6 +41,17 @@ class MarketWSManager {
   public symbolRefCount: Map<string, number> = new Map();
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private wsUrl: string;
+  
+  // Event handler references for cleanup
+  private handleVisibilityChange: (() => void) | null = null;
+  private handleWake: (() => void) | null = null;
+  private handleOnline: (() => void) | null = null;
+  
+  // Pending subscriptions to send when WebSocket connects
+  private pendingSubscriptions: string[] = [];
+  
+  // Track connection start time for timeout
+  private connectionStartTime: number = 0;
 
   public connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' = 'disconnected';
   public lastError: string | null = null;
@@ -95,7 +106,8 @@ class MarketWSManager {
     if (typeof window !== 'undefined') {
       let lastHiddenTime = 0;
       
-      const handleVisibilityChange = () => {
+      // Store handler references for cleanup
+      this.handleVisibilityChange = () => {
         if (document.visibilityState === 'hidden') {
           lastHiddenTime = Date.now();
         } else if (document.visibilityState === 'visible') {
@@ -117,7 +129,7 @@ class MarketWSManager {
         };
       };
 
-      const handleWake = () => {
+      this.handleWake = () => {
         console.log('[MarketWSManager] Lifecycle wake/focus event. Verifying socket health...');
         if (!this.ws || (this.ws.readyState !== WebSocket.OPEN && this.ws.readyState !== WebSocket.CONNECTING)) {
           if (this.symbolRefCount.size > 0) {
@@ -126,20 +138,23 @@ class MarketWSManager {
         }
       };
 
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('pageshow', handleWake);
-      window.addEventListener('focus', handleWake);
-      window.addEventListener('online', () => {
+      this.handleOnline = () => {
         console.log('[MarketWSManager] Device online event detected.');
         if ((!this.ws || this.ws.readyState !== WebSocket.OPEN) && this.symbolRefCount.size > 0) {
           this.connect();
         }
-      });
+      };
+
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+      window.addEventListener('pageshow', this.handleWake);
+      window.addEventListener('focus', this.handleWake);
+      window.addEventListener('online', this.handleOnline);
     }
   }
 
   private disconnectCleanly() {
     this.stopHeartbeat();
+    
     if (this.ws) {
       console.log('[MarketWSManager] Disconnecting current WebSocket cleanly...');
       this.ws.onopen = null;
@@ -239,7 +254,12 @@ class MarketWSManager {
   }
 
   private connect() {
-    if (this.symbolRefCount.size === 0) return;
+    console.log('[MarketWSManager] connect() called, symbolRefCount:', this.symbolRefCount.size, 'ws state:', this.ws?.readyState);
+    
+    if (this.symbolRefCount.size === 0) {
+      console.log('[MarketWSManager] No symbols to subscribe to, skipping connect');
+      return;
+    }
 
     this.connectBinance();
     
@@ -249,7 +269,11 @@ class MarketWSManager {
       return;
     }
 
+    console.log('[MarketWSManager] Starting new WebSocket connection');
     this.disconnectCleanly();
+    
+    // Set connection start time for timeout tracking
+    this.connectionStartTime = Date.now();
 
     this.connectionStatus = this.reconnectCount > 0 ? 'reconnecting' : 'connecting';
     this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
@@ -266,10 +290,17 @@ class MarketWSManager {
         this.lastMessageReceivedTime = Date.now();
         this.notifyListeners('status', { status: this.connectionStatus, error: null, reconnectCount: 0 });
 
+        // Send all active subscriptions
         const activeSymbols = Array.from(this.symbolRefCount.keys());
-        if (activeSymbols.length > 0) {
-          console.log('[MarketWSManager] Re-subscribing to instruments:', activeSymbols);
-          this.ws?.send(JSON.stringify({ action: 'subscribe', symbols: activeSymbols }));
+        
+        // Also include any pending subscriptions that were queued before connection
+        const allSymbols = [...activeSymbols, ...this.pendingSubscriptions];
+        const uniqueSymbols = Array.from(new Set(allSymbols));
+        
+        if (uniqueSymbols.length > 0) {
+          console.log('[MarketWSManager] Subscribing to instruments:', uniqueSymbols);
+          this.ws?.send(JSON.stringify({ action: 'subscribe', symbols: uniqueSymbols }));
+          this.pendingSubscriptions = []; // Clear pending subscriptions
         }
         this.startHeartbeat();
       };
@@ -378,6 +409,8 @@ class MarketWSManager {
   }
 
   public subscribe(symbols: string[]) {
+    console.log('[MarketWSManager] subscribe() called with symbols:', symbols, 'current refCount:', this.symbolRefCount.size);
+    
     const toSubscribe: string[] = [];
     for (const sym of symbols) {
       const count = this.symbolRefCount.get(sym) || 0;
@@ -385,10 +418,21 @@ class MarketWSManager {
       if (count === 0) toSubscribe.push(sym);
     }
     
+    console.log('[MarketWSManager] After increment, refCount:', this.symbolRefCount.size, 'toSubscribe:', toSubscribe);
+    
     this.connect();
     
     if (toSubscribe.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
+      console.log('[MarketWSManager] Sending subscribe message for:', toSubscribe);
       this.ws.send(JSON.stringify({ action: 'subscribe', symbols: toSubscribe }));
+    } else {
+      console.log('[MarketWSManager] Cannot send subscribe - WebSocket state:', this.ws?.readyState, 'OPEN =', WebSocket.OPEN);
+      // If WebSocket isn't open yet, queue the subscription for when it connects
+      if (toSubscribe.length > 0) {
+        console.log('[MarketWSManager] Queueing subscription for when WebSocket opens');
+        // Store pending subscriptions
+        this.pendingSubscriptions = [...(this.pendingSubscriptions || []), ...toSubscribe];
+      }
     }
   }
 
@@ -529,9 +573,14 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
     wsManager.addListener(onMessage);
 
     const fetchInitialQuotes = async () => {
-      // Only skip HTTP fallback if WebSocket is connected AND ticks are actively flowing (< 3s ago)
-      const ticksAreFlowing = wsManager.connectionStatus === 'connected' && (Date.now() - wsManager.lastMessageReceivedTime < 3000);
-      if (ticksAreFlowing) return;
+      // More aggressive HTTP fallback for page refresh scenarios
+      // Always try HTTP fallback if WebSocket isn't actively sending ticks
+      const shouldUseHttpFallback = 
+        wsManager.connectionStatus !== 'connected' || 
+        (Date.now() - wsManager.lastMessageReceivedTime > 3000);
+      
+      if (!shouldUseHttpFallback) return;
+      
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
       
