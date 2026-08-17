@@ -71,11 +71,16 @@ class MarketWSManager {
         const hostname = window.location.hostname;
         // If production domain, use production ticker
         if (hostname !== 'localhost' && !hostname.includes('127.0.0.1')) {
+          // IMPORTANT: Ticker runs on a SEPARATE service in production!
+          // This should be set via NEXT_PUBLIC_TICKER_WS_URL environment variable
+          // For now, we'll try common patterns and provide detailed error logging
           url = 'wss://marginapexx-production.up.railway.app';
-          console.log('[MarketWSManager] Using production ticker URL:', url);
+          console.error('[MarketWSManager] ⚠️ WARNING: Using main app URL for WebSocket. Ticker service might be separate!');
+          console.error('[MarketWSManager] Please set NEXT_PUBLIC_TICKER_WS_URL to the correct ticker service URL.');
+          console.error('[MarketWSManager] Current URL:', url);
         } else {
-          // Localhost development
-          url = 'ws://localhost:3001';
+          // Localhost development - ticker runs on port 8080
+          url = 'ws://localhost:8080';
           console.log('[MarketWSManager] Using local development ticker URL:', url);
         }
       } else {
@@ -285,8 +290,13 @@ class MarketWSManager {
         }
       };
 
-      this.ws.onclose = () => {
-        console.warn('[MarketWSManager] WebSocket connection closed.');
+      this.ws.onclose = (event) => {
+        console.warn('[MarketWSManager] WebSocket connection closed.', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+          url: this.wsUrl
+        });
         this.connectionStatus = 'disconnected';
         this.notifyListeners('status', { status: this.connectionStatus, error: this.lastError, reconnectCount: this.reconnectCount });
         this.stopHeartbeat();
@@ -571,8 +581,8 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
               baseUrl = 'https://marginapexx-production.up.railway.app';
               console.log('[MarketDataProvider] Using production ticker HTTP URL');
             } else {
-              baseUrl = 'http://localhost:3001';
-              console.log('[MarketDataProvider] Using local ticker HTTP URL');
+              baseUrl = 'http://localhost:8080';
+              console.log('[MarketDataProvider] Using local ticker HTTP URL (port 8080)');
             }
           } else {
             baseUrl = 'https://marginapexx-production.up.railway.app';
