@@ -44,6 +44,8 @@ class RingBuffer<T> {
 export class TickProcessor extends EventEmitter {
   // Track last seen price per token to detect actual price changes
   private lastSeenPrice: Map<number, number> = new Map();
+  private lastSeenBid: Map<number, number> = new Map();
+  private lastSeenAsk: Map<number, number> = new Map();
   private lastProcessedTimestamp: Map<number, number> = new Map();
   private slidingWindows: Map<number, RingBuffer<{ price: number; timestamp: number }>> = new Map();
   private subscriptionManager: SubscriptionManager;
@@ -107,11 +109,26 @@ export class TickProcessor extends EventEmitter {
       }
       window.push({ price: tick.last_price, timestamp: tickTime });
 
-      // Fall back to last_price if Kite doesn't include depth data (e.g. LTP-only ticks)
+      // Preserve depth-derived bid/ask across LTP-only ticks to avoid feed jitter
       const rawBid = tick.depth?.buy?.[0]?.price;
       const rawAsk = tick.depth?.sell?.[0]?.price;
-      const bid = (rawBid != null && rawBid > 0) ? rawBid : 0;
-      const ask = (rawAsk != null && rawAsk > 0) ? rawAsk : 0;
+      let bid = (rawBid != null && rawBid > 0) ? rawBid : 0;
+      let ask = (rawAsk != null && rawAsk > 0) ? rawAsk : 0;
+
+      if (bid > 0 && ask > 0 && bid < ask) {
+        this.lastSeenBid.set(token, bid);
+        this.lastSeenAsk.set(token, ask);
+      } else {
+        const prevBid = this.lastSeenBid.get(token);
+        const prevAsk = this.lastSeenAsk.get(token);
+        if (prevBid && prevAsk && lastPrice && lastPrice > 0) {
+          const delta = tick.last_price - lastPrice;
+          bid = Math.max(0.05, Math.round((prevBid + delta) * 100) / 100);
+          ask = Math.max(bid + 0.05, Math.round((prevAsk + delta) * 100) / 100);
+          this.lastSeenBid.set(token, bid);
+          this.lastSeenAsk.set(token, ask);
+        }
+      }
 
       // 4. Send to throttled database writer
       const tickData: TickData = {

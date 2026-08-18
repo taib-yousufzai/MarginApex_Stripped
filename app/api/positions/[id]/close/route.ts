@@ -234,7 +234,7 @@ export async function POST(
   const baseLtp = quoteDetails?.ltp ?? Number(pos.ltp ?? pos.entry_price);
   const rawBid = quoteDetails?.bid ?? null;
   const rawAsk = quoteDetails?.ask ?? null;
-  const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
+  const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
 
   const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
   const exitPriceMode = platformExitMode || segSetting?.exit_price_mode || 'BID_ASK';

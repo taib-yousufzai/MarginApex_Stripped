@@ -358,12 +358,14 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           }
         } else {
           const kiteKey = cached ? cached.resolvedKiteSymbol : resolveKitePrefix(p.kite_instrument || p.symbol, p.settlement || '');
-          const quote = marketQuotes[kiteKey];
+          const rawSymbol = p.kite_instrument || p.symbol || '';
+          const symbolWithoutPrefix = rawSymbol.includes(':') ? rawSymbol.split(':')[1] : rawSymbol;
+          const quote = marketQuotes[kiteKey] || marketQuotes[rawSymbol] || marketQuotes[symbolWithoutPrefix] || marketQuotes[`NFO:${symbolWithoutPrefix}`] || marketQuotes[`NSE:${symbolWithoutPrefix}`];
           if (quote) {
             rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
-            bid = quote.bid ?? ltp;
-            ask = quote.ask ?? ltp;
+            bid = (quote.bid && quote.bid > 0) ? quote.bid : ltp;
+            ask = (quote.ask && quote.ask > 0) ? quote.ask : ltp;
           }
         }
       }
@@ -382,11 +384,20 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
 
         const exitPriceMode = (sideSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
 
+        const hasRealBidAsk = Boolean(
+          rawQuote &&
+          typeof rawQuote.bid === 'number' &&
+          typeof rawQuote.ask === 'number' &&
+          rawQuote.bid > 0 &&
+          rawQuote.ask > 0 &&
+          rawQuote.bid < rawQuote.ask
+        );
+
         const effective = resolveEffectivePrices({
           ltp,
           rawBid: bid,
           rawAsk: ask,
-          hasRealBidAsk: Boolean(rawQuote?.bid || rawQuote?.ask),
+          hasRealBidAsk,
           askBuffer: sideSetting?.ask_buffer ?? sideSetting?.bid_buffer ?? 0,
           bidBuffer: sideSetting?.bid_buffer ?? sideSetting?.ask_buffer ?? 0,
         });
@@ -403,7 +414,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           basePrice,
           buySetting: sideSetting,
           sellSetting: sideSetting,
-          exitPriceModeOverride: exitPriceMode,
+          exitPriceMode,
         });
 
         if (p.side === 'BUY') {

@@ -49,26 +49,14 @@ export function resolveEffectivePrices({
 
   if (validRealSpread) {
     // Real orderbook spread feed
-    effectiveAsk = Number(rawAsk);
-    effectiveBid = Number(rawBid);
+    effectiveAsk = Number(rawAsk) + (Number(askBuffer) || 0);
+    effectiveBid = Number(rawBid) - (Number(bidBuffer) || 0);
   } else {
     const aBuf = Number(askBuffer) || 0;
     const bBuf = Number(bidBuffer) || 0;
 
-    const calcBufferOffset = (buf: number) => {
-      if (buf <= 0) return 0;
-      if (buf > 0.005 && buf <= 100) {
-        const decimal = buf > 1 ? buf / 100 : buf;
-        return baseLtp * decimal;
-      }
-      return buf;
-    };
-
-    const aOffset = calcBufferOffset(aBuf);
-    const bOffset = calcBufferOffset(bBuf);
-
-    effectiveAsk = baseLtp + aOffset;
-    effectiveBid = baseLtp - bOffset;
+    effectiveAsk = baseLtp + (Number(askBuffer) || 0);
+    effectiveBid = baseLtp - (Number(bidBuffer) || 0);
   }
 
   return {

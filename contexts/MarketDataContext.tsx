@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 
 export interface QuoteData {
   lastPrice: number;
@@ -455,12 +455,21 @@ class MarketWSManager {
     }
   }
 
+  private static instance: MarketWSManager | null = null;
+
+  public static getInstance(): MarketWSManager {
+    if (!MarketWSManager.instance) {
+      MarketWSManager.instance = new MarketWSManager();
+    }
+    return MarketWSManager.instance;
+  }
+
   public get isConnectingOrOpen(): boolean {
     return this.ws !== null && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN);
   }
 }
 
-const wsManager = new MarketWSManager();
+const wsManager = MarketWSManager.getInstance();
 
 /**
  * Single authoritative quote normalizer.
@@ -512,18 +521,15 @@ function normalizeQuote(q: any, symbolKey?: string): QuoteData {
   let finalBid = 0;
   let finalAsk = 0;
 
-  if (bidOk && askOk && rawBid <= rawAsk) {
+  if (bidOk && askOk && rawBid < rawAsk) {
     finalBid = rawBid;
     finalAsk = rawAsk;
   } else if (bidOk && !askOk) {
     finalBid = rawBid;
-    finalAsk = rawBid;
+    finalAsk = 0;
   } else if (askOk && !bidOk) {
     finalAsk = rawAsk;
-    finalBid = rawAsk;
-  } else {
-    finalBid = lastPrice;
-    finalAsk = lastPrice;
+    finalBid = 0;
   }
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);
@@ -543,18 +549,24 @@ function normalizeQuote(q: any, symbolKey?: string): QuoteData {
   };
 }
 
-export const MarketDataProvider = ({ children }: { children: React.ReactNode }) => {
+// Global provider component
+export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
-  const [statusInfo, setStatusInfo] = useState({
-    connectionStatus: wsManager.connectionStatus,
-    lastError: wsManager.lastError,
-    reconnectCount: wsManager.reconnectCount
+  const [statusInfo, setStatusInfo] = useState<{
+    connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+    lastError: string | null;
+    reconnectCount: number;
+  }>({
+    connectionStatus: 'disconnected',
+    lastError: null,
+    reconnectCount: 0
   });
-  
+
+  const wsManager = useMemo(() => MarketWSManager.getInstance(), []);
   const pendingUpdatesRef = useRef<Record<string, QuoteData>>({});
   const fetchInitialQuotesRef = useRef<() => void>(() => {});
 
-  // Periodically flush buffered updates to state at 250ms interval
+  // Flush pending updates every 250ms to reduce render count
   useEffect(() => {
     const flushQuotes = () => {
       const pending = pendingUpdatesRef.current;
@@ -658,7 +670,7 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
         
-        const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(s)).join(',')}`, {
+        const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(String(s))).join(',')}`, {
           signal: controller.signal,
           cache: 'no-store',
           headers: {
