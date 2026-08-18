@@ -62,6 +62,11 @@ export async function sendSms(
   to: string,
   body: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  if (process.env.DISABLE_SMS === 'true') {
+    console.info(`[SMS DISABLED BY ENV] Skipped sending SMS to ${to}`);
+    return { success: true, messageId: 'sms-disabled-by-env' };
+  }
+
   let formattedTo = to.trim();
   
   // Format simple 10-digit number to E.164. Assumes India code (+91) as default.
@@ -133,6 +138,11 @@ export async function sendOtpSms(
   otp: string,
   fallbackBody: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  if (process.env.DISABLE_SMS === 'true') {
+    console.info(`[SMS DISABLED BY ENV] Skipped sending OTP SMS to ${to}`);
+    return { success: true, messageId: 'sms-disabled-by-env' };
+  }
+
   let formattedTo = to.trim();
   
   if (/^\d{10}$/.test(formattedTo)) {
