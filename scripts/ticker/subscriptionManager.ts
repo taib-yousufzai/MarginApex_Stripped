@@ -37,7 +37,7 @@ export class SubscriptionManager {
         'NSE:NIFTY BANK',
         'CDS:USDINR26JULFUT',
         'MCX:CRUDEOIL26JULFUT',
-        'MCX:GOLD26AUGFUT',
+        'MCX:GOLD26OCTFUT',
         'MCX:SILVER26SEPFUT',
         'MCX:NATURALGAS26JULFUT',
         'NSE:NIFTY FIN SERVICE',
