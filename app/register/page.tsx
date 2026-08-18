@@ -91,6 +91,7 @@ function RegisterForm() {
   // Step 2 fields
   const [otp, setOtp] = useState('');
   const [deliveryStatus, setDeliveryStatus] = useState({ emailSent: false, smsSent: false });
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   // Shared state
   const [formError, setFormError] = useState('');
@@ -99,6 +100,8 @@ function RegisterForm() {
 
   // Resend cooldown
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
   useEffect(() => {
     const ref = searchParams.get('ref');
@@ -109,7 +112,28 @@ function RegisterForm() {
     if (saved === 'dark') document.body.classList.add('dark');
     else { const t = localStorage.getItem('marginApexTheme'); if (t === 'black') document.body.classList.add('black'); }
     } catch { /* noop */ }
-  }, [searchParams]);
+
+    // Load Cloudflare Turnstile script if site key exists
+    if (siteKey && typeof window !== 'undefined') {
+      const existingScript = document.getElementById('cf-turnstile-script');
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.id = 'cf-turnstile-script';
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          if ((window as any).turnstile) {
+            (window as any).turnstile.render('#cf-turnstile', {
+              sitekey: siteKey,
+              callback: (token: string) => setTurnstileToken(token),
+            });
+          }
+        };
+        document.head.appendChild(script);
+      }
+    }
+  }, [searchParams, siteKey]);
 
   // Countdown timer for resend
   useEffect(() => {
@@ -138,7 +162,7 @@ function RegisterForm() {
     try {
       const data = await api.post<{ emailSent: boolean; smsSent: boolean }>(
         '/api/register/send-otp',
-        { email: email.trim(), fullName: fullName.trim(), phone: phone.trim(), brokerRef },
+        { email: email.trim(), fullName: fullName.trim(), phone: phone.trim(), brokerRef, turnstileToken },
       );
       setDeliveryStatus({ emailSent: data.emailSent, smsSent: data.smsSent });
       setStep('otp');
@@ -314,6 +338,12 @@ function RegisterForm() {
                 </div>
                 {confirmPasswordError && <span className="login-field-error" role="alert">{confirmPasswordError}</span>}
               </div>
+
+              {siteKey && (
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
+                  <div id="cf-turnstile" />
+                </div>
+              )}
 
               {formError && (
                 <div className="login-form-error" role="alert">

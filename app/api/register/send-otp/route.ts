@@ -43,6 +43,32 @@ export async function POST(req: NextRequest) {
     const phoneClean = phone?.trim() || '';
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
 
+    // ── 0. Optional Cloudflare Turnstile Bot Verification ──────────────────────
+    const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+    if (turnstileSecret) {
+      const turnstileToken = (body as any).turnstileToken;
+      if (!turnstileToken) {
+        return Response.json({ error: 'Captcha verification required. Please refresh and try again.' }, { status: 400 });
+      }
+      try {
+        const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            secret: turnstileSecret,
+            response: turnstileToken,
+            remoteip: ip,
+          }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          return Response.json({ error: 'Captcha verification failed. Please try again.' }, { status: 400 });
+        }
+      } catch (err) {
+        console.error('[send-otp] Turnstile verification error:', err);
+      }
+    }
+
     const admin = getAdminClient();
 
     // ── 1. IP-based rate-limit (Max 3 OTP requests per IP per 10 minutes) ─────
