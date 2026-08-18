@@ -945,7 +945,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             setOrderErrorMsg(errMsg);
             setOrderState('error');
             window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
-            window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
             window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
@@ -953,7 +952,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           setOrderErrorMsg(errMsg);
           setOrderState('error');
           window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
-          window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
           window.dispatchEvent(new Event('order_failed'));
         } finally {
           window.dispatchEvent(new Event('exit-overlay-end'));
@@ -1030,7 +1028,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             setOrderErrorMsg(errMsg);
             setOrderState('error');
             window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
-            window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
             window.dispatchEvent(new Event('order_failed'));
           }
         } catch (err: any) {
@@ -1038,7 +1035,6 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           setOrderErrorMsg(errMsg);
           setOrderState('error');
           window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
-          window.dispatchEvent(new CustomEvent('toast_msg', { detail: errMsg }));
           window.dispatchEvent(new Event('order_failed'));
         } finally {
           window.dispatchEvent(new Event('global-loader-end'));
