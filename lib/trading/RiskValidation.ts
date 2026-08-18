@@ -39,6 +39,11 @@ export class RiskValidation {
    * Handles overnight sessions correctly (e.g. 22:00 to 02:00).
    */
   static validateTradingHours(marketHours: MarketHours | null | undefined): boolean {
+    // Local server pe hamesha open rakhne ke liye bypass
+    if (process.env.NODE_ENV === 'development') {
+      return true;
+    }
+
     if (!marketHours) return false; // No hours row = market is closed (fail-closed for safety)
     if (!marketHours.is_active) return false;
 
