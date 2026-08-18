@@ -89,6 +89,8 @@ const DEFAULT_CRYPTO_ITEMS: WatchlistItem[] = [
 // Update expiry month as contracts roll (format: CDS:XYZINR26MONFUT)
 
 const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
+  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: 'GBPUSDT', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: 'EURUSDT', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
@@ -237,7 +239,7 @@ export function getTabForItem(item: WatchlistItem): TabLabel {
     return 'MCX-FUT';
   }
   if (n.includes('BTC') || n.includes('ETH') || n.includes('DOGE') || n.includes('USDT') || n.includes('CRYPTO')) return 'CRYPTO';
-  if (n.includes('USDINR') || n.includes('EURINR') || n.includes('GBPINR') || n.includes('JPYINR') || n.includes('CDS')) return 'FOREX';
+  if (n.includes('USDINR') || n.includes('EURINR') || n.includes('GBPINR') || n.includes('JPYINR') || n.includes('GBPUSD') || n.includes('EURUSD') || n.includes('USDJPY') || n.includes('CDS') || n.includes('FOREX')) return 'FOREX';
   if (n.includes('RELIANCE') || n.includes('HDFC') || n.includes('TCS') || n.includes('INFY') || n.includes('STK')) {
     if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) return 'STOCK-OPT';
     return 'STOCK-FUT';
@@ -341,8 +343,15 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   let absoluteChange = 0;
 
   if (isCrypto) {
-    ltp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
-    prevClose = activeCryptoQuote?.close ?? (item.close || ltp);
+    let rawLtp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
+    let rawClose = activeCryptoQuote?.close ?? (item.close || rawLtp);
+    const isForexUsd = ['GBPUSD', 'EURUSD'].includes((item.symbol || '').toUpperCase());
+    if (isForexUsd && rawLtp > 0 && rawLtp < 20) {
+      rawLtp *= 83.85;
+      rawClose *= 83.85;
+    }
+    ltp = rawLtp;
+    prevClose = rawClose;
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else if (showComex) {
@@ -363,6 +372,16 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
       absoluteChange = ltp - prevClose;
     }
   }
+
+  const symCheck = ((item.symbol || '') + ' ' + (item.name || '') + ' ' + (item.kiteSymbol || '')).toUpperCase();
+  const isForexUsd = symCheck.includes('GBPUSD') || symCheck.includes('EURUSD') || symCheck.includes('GBP/USD') || symCheck.includes('EUR/USD');
+  if (isForexUsd && ltp > 0 && ltp < 20) {
+    ltp *= 83.85;
+    if (prevClose > 0 && prevClose < 20) prevClose *= 83.85;
+    absoluteChange = ltp - prevClose;
+    percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
+  }
+
   const isLoading = isCrypto ? (!activeCryptoQuote && ltp === 0) : (showComex && !comexQuote);
 
   const handleLeftClick = () => {
@@ -776,11 +795,22 @@ function WatchlistContent() {
       : (selectedItem?.price ?? 0);
   }
 
+  const detailSymCheck = ((selectedItem?.symbol || '') + ' ' + (selectedItem?.name || '') + ' ' + (selectedItem?.kiteSymbol || '')).toUpperCase();
+  const isDetailForexUsd = detailSymCheck.includes('GBPUSD') || detailSymCheck.includes('EURUSD') || detailSymCheck.includes('GBP/USD') || detailSymCheck.includes('EUR/USD');
+
+  if (isDetailForexUsd && currentLtp > 0 && currentLtp < 20) {
+    currentLtp *= 83.85;
+  }
+
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price as number)) return '--';
+    let p = price;
+    if (isDetailForexUsd && p > 0 && p < 20) {
+      p *= 83.85;
+    }
     const sym = '₹';
     const locale = 'en-IN';
-    return `${sym}${price.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${sym}${p.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const dbSeg = selectedItem ? mapSegmentWithSymbol(selectedItem.segment, selectedItem.symbol || selectedItem.name || '') : '';
@@ -809,6 +839,11 @@ function WatchlistContent() {
   if (currentLtp > 0) {
     if (!rawBid || rawBid <= 0) rawBid = currentLtp;
     if (!rawAsk || rawAsk <= 0) rawAsk = currentLtp;
+  }
+
+  if (isDetailForexUsd) {
+    if (rawBid > 0 && rawBid < 20) rawBid *= 83.85;
+    if (rawAsk > 0 && rawAsk < 20) rawAsk *= 83.85;
   }
 
 

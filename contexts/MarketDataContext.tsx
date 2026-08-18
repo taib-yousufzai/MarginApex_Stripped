@@ -475,17 +475,34 @@ const wsManager = new MarketWSManager();
  * This threshold is wide enough to cover legitimate wide spreads on illiquid
  * instruments while catching the pathological OTM-option case.
  */
-function normalizeQuote(q: any): QuoteData {
+function normalizeQuote(q: any, symbolKey?: string): QuoteData {
   if (!q) {
     return { lastPrice: 0, change: 0, changePercent: 0, open: 0, high: 0, low: 0, close: 0, volume: 0, bid: 0, ask: 0 };
   }
 
-  const close = Number(q.ohlc?.close ?? q.close ?? 0);
-  const rawLastPrice = Number(q.last_price ?? q.lastPrice ?? q.price ?? close ?? 0);
-  const lastPrice = rawLastPrice > 0 ? rawLastPrice : close;
+  const sym = (q.symbol || q.tradingsymbol || symbolKey || '').toUpperCase().replace(/^CRYPTO:/, '').replace('USDT', '');
+  const isForexUsd = ['GBPUSD', 'EURUSD'].includes(sym);
+  const usdInrRate = 83.85;
 
-  const rawBid = Number(q.bid ?? q.bidPrice ?? 0);
-  const rawAsk = Number(q.ask ?? q.askPrice ?? 0);
+  let close = Number(q.ohlc?.close ?? q.close ?? 0);
+  let rawLastPrice = Number(q.last_price ?? q.lastPrice ?? q.price ?? close ?? 0);
+  let lastPrice = rawLastPrice > 0 ? rawLastPrice : close;
+
+  let rawBid = Number(q.bid ?? q.bidPrice ?? 0);
+  let rawAsk = Number(q.ask ?? q.askPrice ?? 0);
+  let open = Number(q.ohlc?.open ?? q.open ?? 0);
+  let high = Number(q.ohlc?.high ?? q.high ?? 0);
+  let low = Number(q.ohlc?.low ?? q.low ?? 0);
+
+  if (isForexUsd && lastPrice > 0 && lastPrice < 20) {
+    lastPrice *= usdInrRate;
+    if (close > 0 && close < 20) close *= usdInrRate;
+    if (rawBid > 0 && rawBid < 20) rawBid *= usdInrRate;
+    if (rawAsk > 0 && rawAsk < 20) rawAsk *= usdInrRate;
+    if (open > 0 && open < 20) open *= usdInrRate;
+    if (high > 0 && high < 20) high *= usdInrRate;
+    if (low > 0 && low < 20) low *= usdInrRate;
+  }
 
   // Sanity-check depth-derived bid/ask against lastPrice (within 50% deviation)
   const maxDeviation = 0.50;
@@ -513,16 +530,16 @@ function normalizeQuote(q: any): QuoteData {
   const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : Number(q.changePercent ?? 0);
 
   return {
-    lastPrice: parseFloat(Number(lastPrice).toFixed(8)),
+    lastPrice: parseFloat(Number(lastPrice).toFixed(4)),
     change: parseFloat(Number(change).toFixed(4)),
     changePercent: parseFloat(Number(changePercent).toFixed(2)),
-    open: Number(q.ohlc?.open ?? q.open ?? 0),
-    high: Number(q.ohlc?.high ?? q.high ?? 0),
-    low: Number(q.ohlc?.low ?? q.low ?? 0),
+    open: Number(open),
+    high: Number(high),
+    low: Number(low),
     close,
     volume: Number(q.volume ?? 0),
-    bid: parseFloat(Number(finalBid).toFixed(8)),
-    ask: parseFloat(Number(finalAsk).toFixed(8)),
+    bid: parseFloat(Number(finalBid).toFixed(4)),
+    ask: parseFloat(Number(finalAsk).toFixed(4)),
   };
 }
 
@@ -561,12 +578,12 @@ export const MarketDataProvider = ({ children }: { children: React.ReactNode }) 
       } else if (type === 'quotes') {
         const mapped: Record<string, QuoteData> = {};
         for (const [key, quote] of Object.entries(data)) {
-          mapped[key] = normalizeQuote(quote as any);
+          mapped[key] = normalizeQuote(quote as any, key);
         }
         Object.assign(pendingUpdatesRef.current, mapped);
       } else if (type === 'update') {
         const { symbol, quote: q } = data;
-        pendingUpdatesRef.current[symbol] = normalizeQuote(q);
+        pendingUpdatesRef.current[symbol] = normalizeQuote(q, symbol);
       }
     };
 

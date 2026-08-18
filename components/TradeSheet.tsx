@@ -107,6 +107,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   // getLotSize and getSegment come from the shared TradeConfigProvider
   const { getLotSize, getSegment } = useTradeConfig();
+  const currencySymbol = '₹';
   const [showCharges, setShowCharges] = useState(false);
 
   const { positions: activePositions, refreshPositions } = useActivePositions();
@@ -170,6 +171,10 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     : (item?.price ?? 0);
   let currentChangePercent = parseFloat(item?.change?.replace(/[%+]/g, '') || '0') || 0;
 
+  const symCheck = ((item?.symbol || '') + ' ' + (item?.name || '') + ' ' + (item?.kiteSymbol || '')).toUpperCase();
+  const isForexUsd = symCheck.includes('GBPUSD') || symCheck.includes('EURUSD') || symCheck.includes('GBP/USD') || symCheck.includes('EUR/USD');
+  const usdInrRate = 83.85;
+
   const cryptoQuote = isCrypto && bSymbol ? (marketQuotes[bSymbol] || marketQuotes[item?.symbol?.replace('/', '') || '']) : null;
 
   if (isCrypto && bSymbol && cryptoQuote) {
@@ -182,7 +187,15 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   } else if (computedKiteSymbol && marketQuotes[computedKiteSymbol]) {
     currentLtp = marketQuotes[computedKiteSymbol].lastPrice;
     currentChangePercent = marketQuotes[computedKiteSymbol].changePercent;
+  } else if (item?.symbol && marketQuotes[item.symbol]) {
+    currentLtp = marketQuotes[item.symbol].lastPrice;
+    currentChangePercent = marketQuotes[item.symbol].changePercent;
   }
+
+  if (isForexUsd && currentLtp > 0 && currentLtp < 20) {
+    currentLtp *= usdInrRate;
+  }
+
   // Fallback: if still no price and comexSymbol exists, use COMEX USD price
   if (currentLtp === 0 && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
     currentLtp = comexQuotes[item.comexSymbol].lastPrice;
@@ -205,34 +218,30 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let rawAsk = 0;
 
   if (currentLtp > 0) {
-    // TEMP DEBUG - remove after fix
-    console.log('[TRADSHEET DEBUG]', {
-      segment: item?.segment,
-      symbol: item?.symbol,
-      binanceSymbol: item?.binanceSymbol,
-      dbSeg,
-      isCrypto,
-      bSymbol,
-      buySetting_bid_buffer: buySetting?.bid_buffer,
-      segSetting_bid_buffer: segSetting?.bid_buffer,
-    });
-
-    const cryptoQuote = bSymbol ? marketQuotes[bSymbol] : null;
-    if (isCrypto) {
-      rawBid = (cryptoQuote?.bid && cryptoQuote.bid > 0) ? cryptoQuote.bid : currentLtp;
-      rawAsk = (cryptoQuote?.ask && cryptoQuote.ask > 0) ? cryptoQuote.ask : currentLtp;
+    const activeCryptoQuote = bSymbol ? marketQuotes[bSymbol] : null;
+    if (isCrypto && activeCryptoQuote) {
+      rawBid = (activeCryptoQuote?.bid && activeCryptoQuote.bid > 0) ? activeCryptoQuote.bid : currentLtp;
+      rawAsk = (activeCryptoQuote?.ask && activeCryptoQuote.ask > 0) ? activeCryptoQuote.ask : currentLtp;
     } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
       rawBid = comexQuotes[item.comexSymbol].bid || currentLtp;
       rawAsk = comexQuotes[item.comexSymbol].ask || currentLtp;
     } else if (computedKiteSymbol && marketQuotes[computedKiteSymbol]) {
       rawBid = marketQuotes[computedKiteSymbol].bid || currentLtp;
       rawAsk = marketQuotes[computedKiteSymbol].ask || currentLtp;
+    } else if (item?.symbol && marketQuotes[item.symbol]) {
+      rawBid = marketQuotes[item.symbol].bid || currentLtp;
+      rawAsk = marketQuotes[item.symbol].ask || currentLtp;
     }
 
     if (!rawBid || rawBid <= 0) rawBid = currentLtp;
     if (!rawAsk || rawAsk <= 0) rawAsk = currentLtp;
 
-    const activeBidBuffer = segSetting?.bid_buffer ?? buySetting?.bid_buffer ?? sellSetting?.bid_buffer ?? 0;
+    if (isForexUsd) {
+      if (rawBid > 0 && rawBid < 20) rawBid *= usdInrRate;
+      if (rawAsk > 0 && rawAsk < 20) rawAsk *= usdInrRate;
+    }
+
+    const activeBidBuffer = isCrypto ? 0 : (segSetting?.bid_buffer ?? buySetting?.bid_buffer ?? sellSetting?.bid_buffer ?? 0);
 
     const effective = resolveEffectivePrices({
       ltp: currentLtp,

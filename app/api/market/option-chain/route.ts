@@ -180,12 +180,13 @@ export async function GET(request: Request) {
       atmPrice = options[Math.floor(options.length / 2)]?.strike_price || 0;
     }
 
-    // ── 6. Apply strike range filter ──────────────────────────────────────────
-    const range = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
+    // ── 6. Apply strike range filter (minimum 31 strikes buffer so 5 strikes above and below ATM are always available) ───
+    const baseRange = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
+    const fetchRange = Math.max(31, baseRange);
     const filteredOptions: any[] = atmPrice
       ? (isMcx
           ? applyMcxStrikeRangeFilter(options as Instrument[], atmPrice) as any[]
-          : applyStrikeRangeFilter(options as Instrument[], atmPrice, range) as any[])
+          : applyStrikeRangeFilter(options as Instrument[], atmPrice, fetchRange) as any[])
       : options;
 
     // ── 7. Group by strike ────────────────────────────────────────────────────

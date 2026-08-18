@@ -6,7 +6,8 @@ import { getAdminClient } from '../../lib/adminClient.ts';
 
 // Default symbols — will be expanded with dynamic subscriptions from frontend requests
 const DEFAULT_BINANCE_SYMBOLS = [
-  'btcusdt', 'ethusdt', 'bnbusdt', 'solusdt', 'xrpusdt', 'dogeusdt', 'adausdt', 'maticusdt'
+  'btcusdt', 'ethusdt', 'bnbusdt', 'solusdt', 'xrpusdt', 'dogeusdt', 'adausdt', 'maticusdt',
+  'gbpusdt', 'eurusdt'
 ];
 
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds — detect stale connections

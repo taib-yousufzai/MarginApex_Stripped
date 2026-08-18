@@ -63,18 +63,24 @@ async function fetchBinanceQuote(symbol: string): Promise<ServerQuote | null> {
       fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' }).catch(() => null),
     ]);
 
+    const isForexUsd = ['GBPUSD', 'EURUSD'].includes(cleanSym.replace('USDT', ''));
+    const usdInrRate = isForexUsd ? 83.85 : 1;
+
     if (bookRes?.ok && priceRes?.ok) {
       const bookData = await bookRes.json();
       const priceData = await priceRes.json();
-      const ltp = parseFloat(priceData.price || '0');
-      const bid = parseFloat(bookData.bidPrice || '0');
-      const ask = parseFloat(bookData.askPrice || '0');
+      const rawLtp = parseFloat(priceData.price || '0');
+      const rawBid = parseFloat(bookData.bidPrice || '0');
+      const rawAsk = parseFloat(bookData.askPrice || '0');
+      const ltp = rawLtp * usdInrRate;
+      const bid = (rawBid > 0 ? rawBid : rawLtp) * usdInrRate;
+      const ask = (rawAsk > 0 ? rawAsk : rawLtp) * usdInrRate;
       const bidQty = parseFloat(bookData.bidQty || '0');
       const askQty = parseFloat(bookData.askQty || '0');
       return {
         last_price: ltp,
-        bid: bid > 0 ? bid : ltp,
-        ask: ask > 0 ? ask : ltp,
+        bid: bid,
+        ask: ask,
         depth: {
           buy: [{ price: bid, quantity: bidQty }],
           sell: [{ price: ask, quantity: askQty }],
@@ -532,7 +538,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       // Fetch quotes — either Kite or Binance depending on segment
       (async () => {
-        if (dbSegment === 'CRYPTO') {
+        if (dbSegment === 'CRYPTO' || symbol.includes('GBPUSD') || symbol.includes('EURUSD') || symbol.includes('USDJPY')) {
           const quote = await fetchBinanceQuote(symbol);
           return quote ? { [kiteInst]: quote } : {};
         } else {

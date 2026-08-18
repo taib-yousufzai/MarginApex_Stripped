@@ -268,22 +268,19 @@ async function fetchLivePrices(
     const missingKiteIds = kiteIds.filter(id => !foundKiteIds.has(id));
 
     // 3. Fallback on-demand fetch from Kite REST API for missing instruments
-    if (missingKiteIds.length > 0) {
       const apiKey = process.env.KITE_API_KEY;
-      if (!apiKey) return quoteMap;
-
       let accessToken = request.cookies.get('kite_access_token')?.value;
       if (!accessToken) {
         const session = await getSharedKiteSession();
         accessToken = session?.accessToken;
       }
-      if (!accessToken) return quoteMap;
 
-      const batchSize = 100;
-      const batches: string[][] = [];
-      for (let i = 0; i < missingKiteIds.length; i += batchSize) {
-        batches.push(missingKiteIds.slice(i, i + batchSize));
-      }
+      if (apiKey && accessToken) {
+        const batchSize = 100;
+        const batches: string[][] = [];
+        for (let i = 0; i < missingKiteIds.length; i += batchSize) {
+          batches.push(missingKiteIds.slice(i, i + batchSize));
+        }
 
       const results = await Promise.all(
         batches.map(async (batch) => {
@@ -351,6 +348,40 @@ async function fetchLivePrices(
       }
     }
 
+    // 4. Fetch missing Binance / Forex quotes
+    const usdInrRate = 83.85;
+    for (const id of missingKiteIds) {
+      const cleanSym = id.split(':').pop() || id;
+      if (['GBPUSD', 'EURUSD', 'USDJPY', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT'].includes(cleanSym) || cleanSym.endsWith('USDT')) {
+        try {
+          const binanceSym = cleanSym.endsWith('USDT') ? cleanSym : `${cleanSym}USDT`;
+          const bRes = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSym}`, { signal: AbortSignal.timeout(2000) });
+          if (bRes.ok) {
+            const bJson = await bRes.json();
+            let lastP = parseFloat(bJson.lastPrice || '0');
+            let highP = parseFloat(bJson.highPrice || '0');
+            let lowP = parseFloat(bJson.lowPrice || '0');
+
+            if (['GBPUSD', 'EURUSD'].includes(cleanSym)) {
+              lastP *= usdInrRate;
+              highP *= usdInrRate;
+              lowP *= usdInrRate;
+            } else if (cleanSym === 'USDJPY') {
+              lastP = usdInrRate / (lastP || 1);
+              highP = usdInrRate / (highP || 1);
+              lowP = usdInrRate / (lowP || 1);
+            }
+
+            quoteMap[id] = { price: lastP, high: highP, low: lowP };
+            quoteMap[cleanSym] = { price: lastP, high: highP, low: lowP };
+            quoteMap[binanceSym] = { price: lastP, high: highP, low: lowP };
+          }
+        } catch (e) {
+          // ignore fallback error
+        }
+      }
+    }
+
     return quoteMap;
   } catch (err) {
     console.error('[fetchLivePrices] Unexpected error:', err);
@@ -412,7 +443,7 @@ export async function GET(request: NextRequest) {
       if (tab === 'MCX-OPT') return query.not('option_type', 'is', null).eq('exchange', 'MCX');
       if (tab === 'NSE-EQ') return query.eq('instrument_type', 'EQ').is('option_type', null).in('exchange', ['NSE', 'BSE']);
       if (tab === 'CRYPTO') return query.eq('segment', 'CRYPTO');
-      if (tab === 'FOREX') return query.eq('exchange', 'CDS');
+      if (tab === 'FOREX') return query.or('exchange.eq.CDS,exchange.eq.FOREX,segment.eq.FOREX');
       if (tab === 'COMEX') return query.eq('segment', 'COMEX');
       return query;
     };
@@ -535,7 +566,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Apply Filter Engine rules server-side before returning results
-    const forexRows = rows.filter((r: any) => r.exchange === 'CDS' || r.segment === 'CDS');
+    const forexRows = rows.filter((r: any) => r.exchange === 'CDS' || r.segment === 'CDS' || r.exchange === 'FOREX' || r.segment === 'FOREX');
     const cryptoRows = rows.filter((r: any) => r.segment === 'CRYPTO');
     const optionRows = rows.filter((r: any) => {
       if (r.exchange === 'CDS' || r.segment === 'CDS' || r.segment === 'CRYPTO') return false;
@@ -843,8 +874,6 @@ export async function GET(request: NextRequest) {
       }
 
       const kiteId = `${inst.exchange}:${inst.tradingsymbol}`;
-      const liveQuote = quoteMap[kiteId];
-
       const displayName = buildDisplayName(
         inst.tradingsymbol,
         inst.underlying_symbol || inst.name || inst.tradingsymbol,
@@ -853,10 +882,16 @@ export async function GET(request: NextRequest) {
         formatUIExpiry(inst.expiry) || null,
       );
 
+      const isForexPair = ['GBPUSD', 'EURUSD', 'USDJPY'].includes(inst.tradingsymbol);
+      const isCryptoPair = inst.segment === 'CRYPTO';
+      const binanceSym = isForexPair ? `${inst.tradingsymbol}T` : (isCryptoPair ? `${inst.tradingsymbol}USDT` : undefined);
+      const liveQuote = quoteMap[kiteId] || quoteMap[inst.tradingsymbol] || (binanceSym ? quoteMap[binanceSym] : undefined);
+
       return {
         name: displayName,
         symbol: inst.tradingsymbol,
-        kiteSymbol: kiteId,
+        kiteSymbol: isForexPair || isCryptoPair ? '' : kiteId,
+        binanceSymbol: binanceSym,
         price: liveQuote?.price ?? 0,
         change: '0%',
         segment: segmentLabel,

@@ -263,7 +263,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const [isOpen, setIsOpen] = useState(false);
 
   const resultIds = React.useMemo(() => {
-    return results.map(r => r.kiteSymbol).filter(Boolean);
+    return results.map(r => r.binanceSymbol || r.kiteSymbol || r.symbol).filter(Boolean);
   }, [results]);
   const { quotes } = useMarketQuotes(resultIds);
 
@@ -380,10 +380,16 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                   <div className="no-results">No instruments found for &quot;{normalizedQuery}&quot;</div>
                 )}
                 {results.map((r, i) => {
-                  const q = quotes[r.kiteSymbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
-                  const price = q?.lastPrice ?? r.price ?? 0;
-                  const high = q?.high ?? r.high ?? 0;
-                  const low = q?.low ?? r.low ?? 0;
+                  const q = (r.binanceSymbol ? quotes[r.binanceSymbol] : null) || quotes[r.kiteSymbol] || quotes[r.symbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
+                  let price = (q?.lastPrice && q.lastPrice > 0) ? q.lastPrice : (r.price || 0);
+                  let high = (q?.high && q.high > 0) ? q.high : (r.high || 0);
+                  let low = (q?.low && q.low > 0) ? q.low : (r.low || 0);
+                  const isForexUsd = ['GBPUSD', 'EURUSD'].includes((r.symbol || '').toUpperCase());
+                  if (isForexUsd && price > 0 && price < 20) {
+                    price = price * 83.85;
+                    if (high > 0 && high < 20) high = high * 83.85;
+                    if (low > 0 && low < 20) low = low * 83.85;
+                  }
                   return (
                     <div
                       key={`${r.kiteSymbol || r.symbol}-${i}`}

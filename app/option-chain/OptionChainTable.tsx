@@ -185,31 +185,30 @@ export default function OptionChainTable({
   }, [strikes, spotPrice, strikeRange]);
 
   const atmIndex = React.useMemo(() => {
-    if (spotPrice <= 0 || visibleStrikes.length === 0) return -1;
+    if (spotPrice <= 0 || strikes.length === 0) return -1;
     let best = 0, minD = Infinity;
-    visibleStrikes.forEach((s, i) => { const d = Math.abs(s.strike - spotPrice); if (d < minD) { minD = d; best = i; } });
+    strikes.forEach((s, i) => { const d = Math.abs(s.strike - spotPrice); if (d < minD) { minD = d; best = i; } });
     return best;
-  }, [visibleStrikes, spotPrice]);
-
-  const strikeInterval = React.useMemo(() => {
-    if (strikes.length < 2) return 100;
-    return strikes[1].strike - strikes[0].strike;
-  }, [strikes]);
+  }, [strikes, spotPrice]);
 
   const centeredStrikes = React.useMemo(() => {
-    if (atmIndex < 0 || visibleStrikes.length === 0) return visibleStrikes;
-    const atmStrike = visibleStrikes[atmIndex].strike;
-    const half = 5;
-    const result: StrikeData[] = [];
-    for (let i = -half; i <= half; i++) {
-      const strikeVal = atmStrike + (i * strikeInterval);
-      const existing = visibleStrikes.find(s => s.strike === strikeVal);
-      result.push(existing || { strike: strikeVal });
-    }
-    return result;
-  }, [visibleStrikes, atmIndex, strikeInterval]);
+    if (atmIndex < 0 || strikes.length === 0) return strikes;
+    const atmObj = strikes[atmIndex];
+    const below = strikes.filter(s => s.strike < atmObj.strike);
+    const above = strikes.filter(s => s.strike > atmObj.strike);
 
-  const centeredAtmIndex = atmIndex >= 0 ? 5 : -1;
+    const strikesBelow = below.slice(-5);
+    const strikesAbove = above.slice(0, 5);
+
+    return [...strikesBelow, atmObj, ...strikesAbove];
+  }, [strikes, atmIndex]);
+
+  const centeredAtmIndex = React.useMemo(() => {
+    if (spotPrice <= 0 || centeredStrikes.length === 0) return -1;
+    let best = 0, minD = Infinity;
+    centeredStrikes.forEach((s, i) => { const d = Math.abs(s.strike - spotPrice); if (d < minD) { minD = d; best = i; } });
+    return best;
+  }, [centeredStrikes, spotPrice]);
 
   // Subheader floating
   React.useEffect(() => {

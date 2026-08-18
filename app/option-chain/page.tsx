@@ -461,7 +461,7 @@ function OptionChainContent() {
                   spotPrice={spotPrice}
                   onTrade={handleTrade}
                   priceMode={priceMode}
-                  strikeRange={userStrikeRange}
+                  strikeRange={0}
                   loading={loading}
                 />
               </>
