@@ -911,12 +911,8 @@ function WatchlistContent() {
         window.history.pushState(null, '', window.location.pathname + window.location.search + '#modal');
       } else if (!isAnyModalOpen && window.location.hash === '#modal') {
         isPopping = true;
-        // Check if there is history to go back to, otherwise just replace state to remove hash
-        if (window.history.length > 1) {
-          window.history.back();
-        } else {
-          window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        }
+        // Use replaceState instead of back() to prevent popstate-mutation infinite loops
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
         setTimeout(() => { isPopping = false; }, 50);
       }
     });
@@ -1286,12 +1282,15 @@ function WatchlistContent() {
     window.__kiteQuotes = marketQuotes;
     window.__binanceQuotes = marketQuotes;
     window.__comexQuotes = comexQuotes;
+  }, [marketQuotes, comexQuotes]);
+
+  useEffect(() => {
     window.__watchlistItems = watchlistItems;
     watchlistItemsRef.current = watchlistItems;
     if (scriptMountedRef.current && typeof (window as any).attachSwipeHandlers === 'function') {
       (window as any).attachSwipeHandlers();
     }
-  }, [marketQuotes, comexQuotes, watchlistItems]);
+  }, [watchlistItems]);
 
   useEffect(() => {
     window.__addToWatchlistCallback = (item: WatchlistItem) => {
@@ -3159,13 +3158,16 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           if (card.getAttribute('data-swipe-attached')) return;
           card.setAttribute('data-swipe-attached', 'true');
           
-          var startX = 0, currentX = 0, isDragging = false;
+          var startX = 0, startY = 0, currentX = 0, isDragging = false, longPressTimer = null;
           card.addEventListener('touchstart', function(e) {
+            if (!e.touches || !e.touches[0]) return;
             startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
             currentX = startX;
             isDragging = true;
+            if (longPressTimer) clearTimeout(longPressTimer);
             longPressTimer = setTimeout(function() {
-              if (!selectionMode) {
+              if (!selectionMode && isDragging) {
                 enterSelectionMode();
                 var cb = card.querySelector('.wc-checkbox');
                 if (cb) cb.checked = true;
@@ -3175,21 +3177,42 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           }, { passive: true });
 
           card.addEventListener('touchmove', function(e) {
-            if (!isDragging) return;
-            clearTimeout(longPressTimer);
+            if (!isDragging || !e.touches || !e.touches[0]) return;
+            var currentY = e.touches[0].clientY;
             currentX = e.touches[0].clientX;
-            var diff = currentX - startX;
+            var diffX = currentX - startX;
+            var diffY = currentY - startY;
+
+            // If finger moved significantly (scrolling or swiping), cancel long-press selection mode timer
+            if (Math.abs(diffY) > 6 || Math.abs(diffX) > 6) {
+              if (longPressTimer) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+              }
+            }
+
             var content = card.querySelector('.wc-content');
             if (!content) return;
-            if (diff < -50) {
+            if (diffX < -50) {
               content.style.transform = 'translateX(-80px)';
-            } else if (diff > 0) {
+            } else if (diffX > 0) {
               content.style.transform = 'translateX(0)';
             }
           }, { passive: true });
 
           card.addEventListener('touchend', function() {
-            clearTimeout(longPressTimer);
+            if (longPressTimer) {
+              clearTimeout(longPressTimer);
+              longPressTimer = null;
+            }
+            isDragging = false;
+          });
+
+          card.addEventListener('touchcancel', function() {
+            if (longPressTimer) {
+              clearTimeout(longPressTimer);
+              longPressTimer = null;
+            }
             isDragging = false;
           });
         });
