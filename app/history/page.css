@@ -324,10 +324,12 @@
     font-size: 0.6875rem;
 }
 
-/* Summary - fixed above footer nav, outside app-container */
-/* Summary — static flow inside .history-root, sits below scrollable cards */
+/* Summary - sticky at bottom so it's always visible regardless of content height */
 .history-footer {
     flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
     background: #FFFFFF;
     padding: 0.5rem 1rem calc(0.5rem + 4.0625rem + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid #E8ECF0;
