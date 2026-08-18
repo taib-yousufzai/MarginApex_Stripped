@@ -327,8 +327,10 @@
 /* Summary - sticky at bottom so it's always visible regardless of content height */
 .history-footer {
     flex-shrink: 0;
-    position: sticky;
+    position: fixed;
     bottom: 0;
+    left: 0;
+    right: 0;
     z-index: 10;
     background: #FFFFFF;
     padding: 0.5rem 1rem calc(0.5rem + 4.0625rem + env(safe-area-inset-bottom, 0px));
