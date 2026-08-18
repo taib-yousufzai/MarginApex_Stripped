@@ -64,7 +64,7 @@ function InlineOptionChain({ symbol, onClose }: { symbol: string; onClose: () =>
           if (!selectedExpiry && json.expiry) setSelectedExpiry(json.expiry);
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [symbol, selectedExpiry]);
@@ -134,7 +134,7 @@ function InlineOptionChain({ symbol, onClose }: { symbol: string; onClose: () =>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #EFF2F8', flexShrink: 0, background: '#FAFBFE' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={onClose} style={{ background: '#F0F2F5', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, color: '#4B5563' }}>
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M9 3L3 9M3 3L9 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M9 3L3 9M3 3L9 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
           </button>
           <div>
             <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#C62E2E', letterSpacing: '-0.3px' }}>{symbol}</div>
@@ -253,7 +253,6 @@ function InlineOptionChain({ symbol, onClose }: { symbol: string; onClose: () =>
     </div>
   );
 }
-
 // ── Main WatchlistSearch ──────────────────────────────────────────────────────
 export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemove, token }: WatchlistSearchProps) {
   const localScripts = getDefaultWatchlistItems();
@@ -348,8 +347,8 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   return (
     <div className={`search-wrapper ${query ? 'has-text' : ''}`} ref={searchContainerRef} style={{ position: 'relative', width: '100%' }}>
       <svg className="search-icon" width="18" height="18" viewBox="0 0 16 16" fill="none">
-        <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M14 14.0001L11.1 11.1001" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M7.33333 12.6667C10.2789 12.6667 12.6667 10.2789 12.6667 7.33333C12.6667 4.38781 10.2789 2 7.33333 2C4.38781 2 2 4.38781 2 7.33333C2 10.2789 4.38781 12.6667 7.33333 12.6667Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M14 14.0001L11.1 11.1001" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       <input
         className="search-input"
@@ -361,78 +360,78 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
       />
       <button className="clear-search-btn" onClick={handleClear} aria-label="Clear search" style={{ opacity: query ? 1 : 0.35 }}>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M10.5 3.5L3.5 10.5M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M10.5 3.5L3.5 10.5M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
 
       {isOpen && (
         <div className="search-results-section" style={{ display: 'flex', flexDirection: 'column', position: 'absolute', top: 'calc(100% + 12px)', left: '-16px', right: '-16px', bottom: 'auto', height: 'calc(100vh - 130px)', zIndex: 1000, marginTop: 0, maxHeight: 'none', overflowY: 'hidden', boxShadow: 'none', border: 'none', borderRadius: 0, background: '#FFFFFF' }}>
           <>
-              <div className="section-subtitle" style={{ padding: '12px 16px', margin: 0, borderBottom: '1px solid #EFF2F8', display: 'flex', justifyContent: 'space-between', flexShrink: 0 }}>
-                <span><i className="fas fa-search"></i> SEARCH RESULTS</span>
-                <span id="searchResultCount" style={{ color: '#8F9BB3', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {isSearching ? <AnimatedLoader size="small" text="SEARCHING..." /> : `${results.length} MATCHES`}
-                </span>
-              </div>
+            <div className="section-subtitle" style={{ padding: '12px 16px', margin: 0, borderBottom: '1px solid #EFF2F8', display: 'flex', justifyContent: 'space-between', flexShrink: 0 }}>
+              <span><i className="fas fa-search"></i> SEARCH RESULTS</span>
+              <span id="searchResultCount" style={{ color: '#8F9BB3', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isSearching ? <AnimatedLoader size="small" text="SEARCHING..." /> : `${results.length} MATCHES`}
+              </span>
+            </div>
 
-              <div id="searchResultsList" style={{ paddingBottom: '8px', flex: 1, overflowY: 'auto' }}>
-                {results.length === 0 && !isSearching && (
-                  <div className="no-results">No instruments found for &quot;{normalizedQuery}&quot;</div>
-                )}
-                {results.map((r, i) => {
-                  const q = (r.binanceSymbol ? quotes[r.binanceSymbol] : null) || quotes[r.kiteSymbol] || quotes[r.symbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
-                  let price = (q?.lastPrice && q.lastPrice > 0) ? q.lastPrice : (r.price || 0);
-                  let high = (q?.high && q.high > 0) ? q.high : (r.high || 0);
-                  let low = (q?.low && q.low > 0) ? q.low : (r.low || 0);
-                  const isForexUsd = ['GBPUSD', 'EURUSD'].includes((r.symbol || '').toUpperCase());
-                  if (isForexUsd && price > 0 && price < 20) {
-                    price = price * 83.85;
-                    if (high > 0 && high < 20) high = high * 83.85;
-                    if (low > 0 && low < 20) low = low * 83.85;
-                  }
-                  return (
-                    <div
-                      key={`${r.kiteSymbol || r.symbol}-${i}`}
-                      className="search-result-item"
-                      style={{ cursor: 'pointer', transition: 'background 0.2s', padding: '10px 16px' }}
-                      onClick={() => handleToggleClick(r)}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#F8F9FC'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#FFFFFF'}
-                    >
-                      {/* Instrument row */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div className="sri-left" style={{ flex: 1, minWidth: 0 }}>
-                          <div className="sri-name">{r.name || r.symbol}</div>
-                          <div className="sri-symbol">{r.segment}{r.contractDate ? ` • ${r.contractDate}` : ''}</div>
-                          {/* High / Low range */}
-                          {(high > 0 || low > 0) && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#15803D', letterSpacing: 0.2 }}>
-                                H {high.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                              <span style={{ fontSize: '0.55rem', color: '#CBD5E1' }}>|</span>
-                              <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#C62E2E', letterSpacing: 0.2 }}>
-                                L {low.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="sri-right" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                          <div className="search-result-price">{(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                          <button
-                            className="add-smart-btn"
-                            onClick={(e) => { e.stopPropagation(); handleToggleClick(r); }}
-                            style={isAdded(r.symbol) ? { background: '#2C8E5A', color: 'white', border: 'none' } : undefined}
-                          >
-                            {isAdded(r.symbol) ? 'ADDED' : 'ADD'}
-                          </button>
-                        </div>
+            <div id="searchResultsList" style={{ paddingBottom: '8px', flex: 1, overflowY: 'auto' }}>
+              {results.length === 0 && !isSearching && (
+                <div className="no-results">No instruments found for &quot;{normalizedQuery}&quot;</div>
+              )}
+              {results.map((r, i) => {
+                const q = (r.binanceSymbol ? quotes[r.binanceSymbol] : null) || quotes[r.kiteSymbol] || quotes[r.symbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
+                let price = (q?.lastPrice && q.lastPrice > 0) ? q.lastPrice : (r.price || 0);
+                let high = (q?.high && q.high > 0) ? q.high : (r.high || 0);
+                let low = (q?.low && q.low > 0) ? q.low : (r.low || 0);
+                const isForexUsd = ['GBPUSD', 'EURUSD'].includes((r.symbol || '').toUpperCase());
+                if (isForexUsd && price > 0 && price < 20) {
+                  price = price * 83.85;
+                  if (high > 0 && high < 20) high = high * 83.85;
+                  if (low > 0 && low < 20) low = low * 83.85;
+                }
+                return (
+                  <div
+                    key={`${r.kiteSymbol || r.symbol}-${i}`}
+                    className="search-result-item"
+                    style={{ cursor: 'pointer', transition: 'background 0.2s', padding: '10px 16px' }}
+                    onClick={() => handleToggleClick(r)}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#F8F9FC'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#FFFFFF'}
+                  >
+                    {/* Instrument row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="sri-left" style={{ flex: 1, minWidth: 0 }}>
+                        <div className="sri-name">{r.name || r.symbol}</div>
+                        <div className="sri-symbol">{r.segment}{r.contractDate ? ` • ${r.contractDate}` : ''}</div>
+                        {/* High / Low range */}
+                        {(high > 0 || low > 0) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#15803D', letterSpacing: 0.2 }}>
+                              H {high.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span style={{ fontSize: '0.55rem', color: '#CBD5E1' }}>|</span>
+                            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: '#C62E2E', letterSpacing: 0.2 }}>
+                              L {low.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="sri-right" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <div className="search-result-price">{(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        <button
+                          className="add-smart-btn"
+                          onClick={(e) => { e.stopPropagation(); handleToggleClick(r); }}
+                          style={isAdded(r.symbol) ? { background: '#2C8E5A', color: 'white', border: 'none' } : undefined}
+                        >
+                          {isAdded(r.symbol) ? 'ADDED' : 'ADD'}
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         </div>
       )}
     </div>
