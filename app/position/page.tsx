@@ -944,7 +944,6 @@ export default function PositionPage() {
                             <div className="pos-card-left">
                               <div className="pos-card-symbol">
                                 <span className="pos-symbol-text">{group.symbol}</span>
-                                {group.hold_lock_active && <i className="fas fa-lock lock-icon-inline" />}
                               </div>
                               <div className="pos-card-details">
                                 <span>Avg: <strong>{fmtPrice(group.avg_price, group.settlement)}</strong></span>
@@ -1117,7 +1116,6 @@ export default function PositionPage() {
                               <div className="pos-detail-left-col">
                                 <div className="pos-detail-symbol">
                                   <span className="pos-symbol-text">{pos.kite_instrument ? pos.kite_instrument.split(':').pop() : pos.symbol}</span>
-                                  {pos.hold_lock_active && <i className="fas fa-lock lock-icon-inline" />}
                                 </div>
                                 <div className="pos-detail-meta">
                                   <div className="pos-detail-meta-row">
