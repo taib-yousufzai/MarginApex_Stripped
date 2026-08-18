@@ -1,0 +1,20 @@
+{
+  "manifest_schema_version": "1.0",
+  "deployment_id": "local-1787044150305",
+  "environment": "local",
+  "operator": "taib-yousufzai",
+  "timestamp": "2026-08-18T09:09:10.305Z",
+  "engine_version": "1.0.0",
+  "contract_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "governance_policy": "1.0.0",
+  "migration_hash": "2dfbd386c968179e",
+  "commit": "37071238967e6b15e11765e3db3e28c0cc5eec5a",
+  "branch": "main",
+  "author": "taib-yousufzai",
+  "verification_passed": true,
+  "warnings": 6,
+  "checks_passed": 41,
+  "checks_failed": 0,
+  "manifest_hash": "67474fc544da9490197be8d5d6e8a1f5c9a6eed5f521c6532113b48fd9b76775"
+}
