@@ -38,7 +38,7 @@ export class TradeEngine {
     
     is_exit = is_exit === true || (is_exit as any) === 'true';
     kiteInst = kiteInst || symbol || '';
-    if (side) side = side.toUpperCase();
+    if (side) side = side.toUpperCase() as 'BUY' | 'SELL';
 
     let dbSegment = mapSegmentToDbSegment(segment);
     const symUp = symbol.toUpperCase();
@@ -366,12 +366,13 @@ export class TradeEngine {
       throw new Error(`The maximum you can exit in a single order is ${segSetting.max_order_lot} lots or ${maxQty} qty. Please execute your position in multiple orders, or use the Exit All button available on the top right.`);
     }
 
-    // Cumulative Position limit check
+    // Cumulative Position limit check (Per Segment across open positions and pending orders)
     let totalOpenLots = 0;
     const ctxScriptSettings = ctx.script_settings || [];
 
     for (const pos of openPositions) {
-      if (pos.symbol === symbol) {
+      const posSegment = mapSymbolToSegment(pos.symbol);
+      if (posSegment === dbSegment) {
         const pLot = Number(
           ctxScriptSettings.find((s: any) => s.symbol === pos.symbol)?.lot_size
           || getLotSizeFallback(pos.symbol, ctxScriptSettings)
@@ -381,21 +382,24 @@ export class TradeEngine {
     }
 
     for (const po of pendingOrders) {
-      if (!po.is_exit && po.symbol === symbol) {
-        const poLot = Number(
-          ctxScriptSettings.find((s: any) => s.symbol === po.symbol)?.lot_size
-          || getLotSizeFallback(po.symbol, ctxScriptSettings)
-        );
-        if (poLot > 0) {
-          totalOpenLots += Number(po.lots) > 0
-            ? Number(po.lots)
-            : (Number(po.qty) / poLot);
+      if (!po.is_exit) {
+        const poSegment = mapSymbolToSegment(po.symbol);
+        if (poSegment === dbSegment) {
+          const poLot = Number(
+            ctxScriptSettings.find((s: any) => s.symbol === po.symbol)?.lot_size
+            || getLotSizeFallback(po.symbol, ctxScriptSettings)
+          );
+          if (poLot > 0) {
+            totalOpenLots += Number(po.lots) > 0
+              ? Number(po.lots)
+              : (Number(po.qty) / poLot);
+          }
         }
       }
     }
     const newOrderLots = qty / symbolLotSize;
     if (!is_exit && !RiskValidation.validateMaxLotLimit(totalOpenLots + newOrderLots, Number(segSetting.max_lot || 50))) {
-      throw new Error(`Order exceeds maximum position limit of ${segSetting.max_lot} lots for ${symbol}.`);
+      throw new Error(`Order exceeds maximum segment limit of ${segSetting.max_lot} lots. Current open positions: ${totalOpenLots.toFixed(2)} lots.`);
     }
 
     const activePosition = openPositions.find((p: any) => p.symbol === symbol && p.product_type === (product_type || 'INTRADAY'));

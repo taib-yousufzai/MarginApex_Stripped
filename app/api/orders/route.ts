@@ -511,7 +511,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // 4-6 + 8-9: Run all independent DB queries AND the Kite LTP fetch in parallel.
     // This is the key optimization — previously these were sequential (~4 round-trips).
-    const [profileResult, segSettingsResult, scalperSegSettingsResult, positionsResult, quotesMap, scriptSettingsResult] = await Promise.all([
+    const [profileResult, segSettingsResult, scalperSegSettingsResult, positionsResult, pendingOrdersResult, quotesMap, scriptSettingsResult] = await Promise.all([
       // Profile
       admin.from('profiles')
         .select('id, active, read_only, segments, parent_id, balance, trading_mode')
@@ -535,6 +535,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         .select('id, symbol, qty_open, status, entry_price, side, product_type, entry_time')
         .eq('user_id', user.id)
         .in('status', ['open', 'OPEN', 'active', 'ACTIVE']),
+
+      // Fetch pending orders to verify total open lot limits
+      admin.from('orders')
+        .select('symbol, qty, lots, is_exit, status')
+        .eq('user_id', user.id)
+        .in('status', ['PENDING', 'pending', 'TRIGGER_PENDING', 'trigger_pending']),
 
       // Fetch quotes — either Kite or Binance depending on segment
       (async () => {
@@ -671,7 +677,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }, { status: 400 });
     }
 
-    // Verify cumulative segment limits (max_lot)
+    // Verify cumulative segment limits (max_lot) across open positions and pending orders
     let totalOpenLots = 0;
     const openPositions = positionsResult?.data ?? [];
     if (openPositions.length > 0) {
@@ -679,13 +685,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const posSegment = mapSymbolToSegment(pos.symbol);
         if (posSegment === dbSegment) {
           const size = getLotSize(pos.symbol, dbScriptSettings);
-          totalOpenLots += Number(pos.qty_open) / size;
+          if (size > 0) totalOpenLots += Number(pos.qty_open) / size;
+        }
+      }
+    }
+
+    const pendingOrders = pendingOrdersResult?.data ?? [];
+    if (pendingOrders.length > 0) {
+      for (const po of pendingOrders) {
+        if (!po.is_exit) {
+          const poSegment = mapSymbolToSegment(po.symbol);
+          if (poSegment === dbSegment) {
+            const poSize = getLotSize(po.symbol, dbScriptSettings);
+            if (poSize > 0) {
+              totalOpenLots += Number(po.lots) > 0
+                ? Number(po.lots)
+                : (Number(po.qty) / poSize);
+            }
+          }
         }
       }
     }
 
     const newOrderLots = lots > 0 ? lots : (qty / symbolLotSize);
-    if (totalOpenLots + newOrderLots > (segSetting.max_lot as number)) {
+    if (!is_exit && (totalOpenLots + newOrderLots) > (segSetting.max_lot as number)) {
       return NextResponse.json({
         error: `Order exceeds maximum segment limit of ${segSetting.max_lot} lots. Current open positions: ${totalOpenLots.toFixed(2)} lots.`,
       }, { status: 400 });

@@ -54,7 +54,7 @@ BEGIN
     SELECT user_id, symbol, side, qty_open, avg_price, locked_margin, margin_required, settlement, product_type
     INTO v_user_id, v_symbol, v_side, v_qty_open, v_avg_price, v_locked_margin, v_margin_required, v_settlement, v_product_type
     FROM public.positions
-    WHERE id = p_position_id AND status IN ('open', 'active')
+    WHERE id = p_position_id AND LOWER(status) IN ('open', 'active')
     FOR UPDATE;
 
     IF NOT FOUND THEN

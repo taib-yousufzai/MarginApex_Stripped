@@ -281,11 +281,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     if (commType === 'Per Trade' || commType === 'Flat') return commVal;
     return chargeExposure * 0.001;
   };
-  const targetPT = propProductType || productType;
-  const existingPos = activePositions.find(p => p.symbol === item?.symbol && ((p.status as string) === 'open' || (p.status as string) === 'OPEN') && p.product_type === targetPT);
+  const anyPosForSymbol = activePositions.find(p => (p.symbol === item?.symbol || (item?.symbol && (p.symbol?.includes(item.symbol) || item.symbol.includes(p.symbol)))) && ((p.status as string) === 'open' || (p.status as string) === 'OPEN' || (p.status as string) === 'active'));
+  const effectiveProductType = propProductType || (linkedPosId ? activePositions.find(p => p.id === linkedPosId)?.product_type : undefined) || (exitMode && anyPosForSymbol ? anyPosForSymbol.product_type : undefined) || productType;
+  const targetPT = effectiveProductType as 'INTRADAY' | 'CARRY';
+  const existingPos = activePositions.find(p => (p.symbol === item?.symbol || (item?.symbol && (p.symbol?.includes(item.symbol) || item.symbol.includes(p.symbol)))) && ((p.status as string) === 'open' || (p.status as string) === 'OPEN' || (p.status as string) === 'active') && p.product_type === targetPT) || anyPosForSymbol;
   // Total qty across all open lots for this symbol+product_type (for multi-lot exit validation)
   const totalOpenQtyForSymbol = activePositions
-    .filter(p => p.symbol === item?.symbol && ((p.status as string) === 'open' || (p.status as string) === 'OPEN') && p.product_type === targetPT && p.side === existingPos?.side)
+    .filter(p => (p.symbol === item?.symbol || (item?.symbol && (p.symbol?.includes(item.symbol) || item.symbol.includes(p.symbol)))) && ((p.status as string) === 'open' || (p.status as string) === 'OPEN' || (p.status as string) === 'active') && p.product_type === targetPT && p.side === existingPos?.side)
     .reduce((sum, p) => sum + (Number(p.qty_open) || 0), 0);
   const hasSellPos = existingPos?.side === 'SELL' || false;
   const hasBuyPos = existingPos?.side === 'BUY' || false;
@@ -913,7 +915,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             qty: finalQty,
             lots: finalLots,
             order_type: resolvedOrderType as any,
-            product_type: propProductType || 'INTRADAY',
+            product_type: ((linkedPosId ? activePositions.find(p => p.id === linkedPosId)?.product_type : undefined) || existingPos?.product_type || targetPT || 'INTRADAY') as 'INTRADAY' | 'CARRY',
             client_price: resolvedClientPrice,
             trigger_price: resolvedTriggerPrice,
             stop_loss: resolvedStopLoss,
