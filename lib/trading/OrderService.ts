@@ -152,7 +152,8 @@ export class OrderService {
   /**
    * Validates Strike Range check
    */
-  static validateStrikeRange(symbol: string, isOption: boolean, strikeRange: number, underlyingLtp: number | undefined): string | null {
+  static validateStrikeRange(symbol: string, isOption: boolean, strikeRange: number, underlyingLtp: number | undefined, isExit?: boolean): string | null {
+    if (isExit) return null;
     if (isOption && strikeRange > 0 && underlyingLtp !== undefined) {
       const parsedOption = parseOptionSymbol(symbol);
       const strikePrice = parsedOption ? parsedOption.strike : 0;

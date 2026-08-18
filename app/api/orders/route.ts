@@ -504,7 +504,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Identify all instruments needed for this order to batch the Kite API call
     const instrumentsToFetch = [kiteInst];
     const isOption = dbSegment.includes('OPT');
-    const underlyingId = dbSegment.includes('BANK') ? 'NSE:NIFTY BANK' : 'NSE:NIFTY 50';
+    const parsedOption = isOption ? parseOptionSymbol(symbol) : null;
+    let underlyingId = 'NSE:NIFTY 50';
+    if (parsedOption) {
+      const und = parsedOption.underlying.toUpperCase();
+      if (und === 'BANKNIFTY') underlyingId = 'NSE:NIFTY BANK';
+      else if (und === 'FINNIFTY') underlyingId = 'NSE:NIFTY FIN SERVICE';
+      else if (und === 'SENSEX') underlyingId = 'BSE:SENSEX';
+      else if (und === 'BANKEX') underlyingId = 'BSE:BANKEX';
+      else if (und === 'MIDCPNIFTY') underlyingId = 'NSE:NIFTY MID SELECT';
+      else if (und === 'NIFTY') underlyingId = 'NSE:NIFTY 50';
+      else if (dbSegment.includes('MCX')) underlyingId = `MCX:${und}`;
+      else underlyingId = `NSE:${und}`;
+    }
+
     if (isOption && underlyingId !== kiteInst) {
       instrumentsToFetch.push(underlyingId);
     }
@@ -714,18 +727,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }, { status: 400 });
     }
 
-    // Strike Range check — reuse the already-fetched quotes (no second Kite call)
-    if (isOption && segSetting.strike_range > 0 && kiteLtp) {
-      const strikePrice = parseFloat(symbol.match(/\d+/)?.[0] || '0');
-      if (strikePrice > 0) {
+    // Strike Range check — STRICTLY enforced for fresh entry/add-more (!is_exit). Exits (is_exit === true) bypass.
+    if (isOption && !is_exit) {
+      const orderStrike = parsedOption ? parsedOption.strike : 0;
+      if (orderStrike > 0) {
         const spotQuote = quotesMap[underlyingId];
-        const spot = typeof spotQuote === 'number' ? spotQuote : spotQuote?.last_price;
-        if (typeof spot === 'number' && !isNaN(spot)) {
-          const diff = Math.abs(strikePrice - spot);
-          if (diff > segSetting.strike_range) {
-            return NextResponse.json({
-              error: `Strike price ${strikePrice} is outside the allowed range of ${segSetting.strike_range} from spot (${spot.toFixed(2)})`,
-            }, { status: 403 });
+        const spot = typeof spotQuote === 'number'
+          ? spotQuote
+          : (spotQuote?.last_price ?? spotQuote?.lastPrice);
+        if (typeof spot === 'number' && spot > 0 && !isNaN(spot)) {
+          const strikeRange = Number(segSetting.strike_range || 0);
+          if (strikeRange > 0) {
+            const diff = Math.abs(orderStrike - spot);
+            if (diff > strikeRange) {
+              const minAllowed = Math.round(spot - strikeRange);
+              const maxAllowed = Math.round(spot + strikeRange);
+              return NextResponse.json({
+                error: `Strike price ${orderStrike} is outside the allowed range of ${strikeRange} from spot (${spot.toFixed(2)}). Allowed range: ${minAllowed} to ${maxAllowed}.`,
+              }, { status: 403 });
+            }
           }
         }
       }

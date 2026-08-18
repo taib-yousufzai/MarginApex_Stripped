@@ -657,6 +657,30 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
       const isExitOrder = exitMode || (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos);
 
+      // Pre-check strike range for fresh entry/add-more orders on options
+      if (!isExitOrder && item?.symbol && (item.symbol.endsWith('CE') || item.symbol.endsWith('PE'))) {
+        try {
+          const token = (window as any).__accessToken || '';
+          const checkRes = await fetch(
+            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}`,
+            { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+          );
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.allowed === false) {
+              const errMsg = `Strike price ${checkData.strike} is outside the allowed range (${checkData.min} to ${checkData.max}).`;
+              showToast(errMsg);
+              setOrderErrorMsg(errMsg);
+              setOrderState('error');
+              isExecutingRef.current = false;
+              return;
+            }
+          }
+        } catch {
+          // Fail open to let backend API enforce
+        }
+      }
+
       if (resolvedOrderType === 'SL' || resolvedOrderType === 'SLM') {
         const trigPrice = resolvedTriggerPrice;
         if (trigPrice !== undefined && !isNaN(trigPrice)) {
