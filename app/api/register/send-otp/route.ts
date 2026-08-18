@@ -40,24 +40,65 @@ export async function POST(req: NextRequest) {
     }
 
     const emailLower = email.trim().toLowerCase();
+    const phoneClean = phone?.trim() || '';
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+
     const admin = getAdminClient();
 
-    // ── Rate-limit: block if an OTP was sent within the last 60 seconds ──────
-    const { data: existing } = await admin
+    // ── 1. IP-based rate-limit (Max 3 OTP requests per IP per 10 minutes) ─────
+    if (ip !== 'unknown') {
+      const { getRedisClient } = await import('@/lib/redis');
+      const redis = getRedisClient();
+      const ipKey = `rate_limit:send_otp:ip:${ip}`;
+      const count = await redis.incr(ipKey);
+      if (count === 1) {
+        await redis.expire(ipKey, 600); // 10 minutes TTL
+      }
+      if (count > 3) {
+        return Response.json(
+          { error: 'Too many registration requests from this IP. Please try again in 10 minutes.' },
+          { status: 429 },
+        );
+      }
+    }
+
+    // ── 2. Rate-limit by Email (60s cooldown) ──────────────────────────────────
+    const { data: existingEmail } = await admin
       .from('otp_verifications')
       .select('created_at')
       .eq('email', emailLower)
-      .single();
+      .maybeSingle();
 
-    if (existing) {
+    if (existingEmail) {
       const secondsSinceLast =
-        (Date.now() - new Date(existing.created_at).getTime()) / 1000;
+        (Date.now() - new Date(existingEmail.created_at).getTime()) / 1000;
       if (secondsSinceLast < RESEND_COOLDOWN_SECONDS) {
         const waitSeconds = Math.ceil(RESEND_COOLDOWN_SECONDS - secondsSinceLast);
         return Response.json(
           { error: `Please wait ${waitSeconds}s before requesting another code.` },
           { status: 429 },
         );
+      }
+    }
+
+    // ── 3. Rate-limit by Phone Number (60s cooldown) ───────────────────────────
+    if (phoneClean) {
+      const { data: existingPhone } = await admin
+        .from('otp_verifications')
+        .select('created_at')
+        .eq('phone', phoneClean)
+        .maybeSingle();
+
+      if (existingPhone) {
+        const secondsSinceLast =
+          (Date.now() - new Date(existingPhone.created_at).getTime()) / 1000;
+        if (secondsSinceLast < RESEND_COOLDOWN_SECONDS) {
+          const waitSeconds = Math.ceil(RESEND_COOLDOWN_SECONDS - secondsSinceLast);
+          return Response.json(
+            { error: `Please wait ${waitSeconds}s before requesting another code.` },
+            { status: 429 },
+          );
+        }
       }
     }
 
