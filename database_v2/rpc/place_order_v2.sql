@@ -125,7 +125,7 @@ BEGIN
                 INTO v_pos_side, v_pos_qty_open
                 FROM public.positions
                 WHERE user_id = p_user_id 
-                  AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE '%' || p_symbol || '%')
+                  AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
                   AND LOWER(status) IN ('open', 'active')
                   AND product_type = p_product_type
                   AND side <> p_side
@@ -138,7 +138,7 @@ BEGIN
                     INTO v_pos_side, v_pos_qty_open, p_product_type
                     FROM public.positions
                     WHERE user_id = p_user_id 
-                      AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE '%' || p_symbol || '%')
+                      AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
                       AND LOWER(status) IN ('open', 'active')
                       AND side <> p_side
                     GROUP BY side, product_type
@@ -164,7 +164,7 @@ BEGIN
         INTO v_position_id, v_pos_qty_open, v_pos_side
         FROM public.positions
         WHERE user_id = p_user_id 
-          AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE '%' || p_symbol || '%')
+          AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
           AND LOWER(status) IN ('open', 'active')
           AND product_type = p_product_type
         ORDER BY entry_time DESC
@@ -230,7 +230,7 @@ BEGIN
                     SELECT id, qty_open 
                     FROM public.positions
                     WHERE user_id = p_user_id 
-                      AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE '%' || p_symbol || '%')
+                      AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
                       AND LOWER(status) IN ('open', 'active')
                       AND side = v_pos_side AND product_type = p_product_type
                       AND (p_linked_position_id IS NULL OR id != p_linked_position_id)
