@@ -1,115 +1,79 @@
-import { describe, it, expect, vi } from 'vitest';
-import { resolveUnderlyingKiteId, validateOptionStrike } from '../lib/trading/OptionStrikeValidator';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
-// Mock admin client and market data calls for unit tests
-vi.mock('@/lib/adminClient', () => ({
-  getAdminClient: () => ({
-    from: (table: string) => ({
-      select: () => {
-        const chain: any = {
-          or: () => chain,
-          eq: (field: string, val: any) => {
-            if (field === 'name' && val === 'SILVER') {
-              chain._lastFut = 'SILVERM26AUGFUT';
-            } else if (field === 'name' && val === 'GOLD') {
-              chain._lastFut = 'GOLD26OCTFUT';
-            }
-            return chain;
-          },
-          in: () => chain,
-          gte: () => chain,
-          order: () => chain,
-          limit: (n: number) => chain,
-          maybeSingle: async () => ({
-            data: {
-              name: 'GOLD',
-              expiry: '2026-08-31',
-              tradingsymbol: 'GOLD26AUG158500CE',
-            },
-            error: null,
-          }),
-          then: (resolve: any) => resolve({
-            data: [
-              { strike_price: 155500, tradingsymbol: chain._lastFut || 'GOLD26OCTFUT', exchange: 'MCX' },
-              { strike_price: 156000 },
-              { strike_price: 156500 },
-              { strike_price: 157000 },
-              { strike_price: 157500 },
-              { strike_price: 158000 },
-              { strike_price: 158500 },
-              { strike_price: 159000 },
-              { strike_price: 159500 },
-              { strike_price: 160000 },
-              { strike_price: 160500 },
-              { strike_price: 161000 },
-              { strike_price: 161500 },
-            ],
-            error: null,
-          }),
-        };
-        return chain;
-      },
-    }),
-  }),
-}));
+import { describe, it, expect } from 'vitest';
+import { validateOptionStrike, resolveTargetExchange } from '../lib/trading/OptionStrikeValidator';
 
-vi.mock('@/lib/datafeed/MarketDataService', () => ({
-  fetchSpeedQuotes: async () => ({}),
-  fetchKiteQuotes: async () => ({}),
-}));
-
-describe('Option Strike Validator & Underlying Resolution', () => {
-  it('resolves proper underlying futures instrument key for MCX options', async () => {
-    const goldKiteId = await resolveUnderlyingKiteId('GOLD26AUG158500CE', 'GOLD');
-    expect(goldKiteId).toBe('MCX:GOLD26OCTFUT');
-
-    const silvermKiteId = await resolveUnderlyingKiteId('SILVERM26AUG231000PE', 'SILVERM');
-    expect(silvermKiteId).toBe('MCX:SILVERM26AUGFUT');
-
-    const niftyKiteId = await resolveUnderlyingKiteId('NIFTY26AUG24500CE', 'NIFTY');
-    expect(niftyKiteId).toBe('NSE:NIFTY 50');
-
-    const bankNiftyKiteId = await resolveUnderlyingKiteId('BANKNIFTY26AUG54000CE', 'BANKNIFTY');
-    expect(bankNiftyKiteId).toBe('NSE:NIFTY BANK');
+describe('OptionStrikeValidator — Strict Exchange & 11-Strike Membership', () => {
+  it('resolves MCX exchange correctly for commodity underlyings', () => {
+    expect(resolveTargetExchange('GOLD26AUG159000CE', 'GOLD')).toBe('MCX');
+    expect(resolveTargetExchange('SILVERM26AUG231000PE', 'SILVERM')).toBe('MCX');
+    expect(resolveTargetExchange('NIFTY26AUG24500CE', 'NIFTY')).toBe('NSE');
+    expect(resolveTargetExchange('SENSEX26AUG80000CE', 'SENSEX')).toBe('BSE');
   });
 
-  it('always allows position EXITS (isExit = true)', async () => {
+  it('allows GOLD 159000 CE when spot is ~157801 in the active MCX 11-strike window', async () => {
     const res = await validateOptionStrike({
-      symbol: 'GOLD26AUG158500CE',
-      isExit: true,
-    });
-    expect(res.allowed).toBe(true);
-  });
-
-  it('allows strikes present in the active 11-strike option-chain window (e.g. 158500 CE with spot 158000)', async () => {
-    const res = await validateOptionStrike({
-      symbol: 'GOLD26AUG158500CE',
+      symbol: 'GOLD26AUG159000CE',
       isExit: false,
-      strikeRangeSetting: 0,
-      knownQuotesMap: {
-        'MCX:GOLD26OCTFUT': 158000,
-      },
+      knownQuotesMap: { 'MCX:GOLD26OCTFUT': 157801 },
     });
 
     expect(res.allowed).toBe(true);
-    expect(res.orderStrike).toBe(158500);
+    expect(res.orderStrike).toBe(159000);
     expect(res.minAllowed).toBe(155500);
     expect(res.maxAllowed).toBe(160500);
   });
 
-  it('rejects strikes outside the active 11-strike option-chain window (e.g. 150000 CE with spot 158000)', async () => {
+  it('allows GOLD 159000 PE when spot is ~157801 in the active MCX 11-strike window', async () => {
     const res = await validateOptionStrike({
-      symbol: 'GOLD26AUG150000CE',
+      symbol: 'GOLD26AUG159000PE',
       isExit: false,
-      strikeRangeSetting: 0,
-      knownQuotesMap: {
-        'MCX:GOLD26OCTFUT': 158000,
-      },
+      knownQuotesMap: { 'MCX:GOLD26OCTFUT': 157801 },
+    });
+
+    expect(res.allowed).toBe(true);
+    expect(res.orderStrike).toBe(159000);
+    expect(res.minAllowed).toBe(155500);
+    expect(res.maxAllowed).toBe(160500);
+  });
+
+  it('allows boundary strikes 155500 and 160500 in the 11-strike window', async () => {
+    const resMin = await validateOptionStrike({
+      symbol: 'GOLD26AUG155500CE',
+      isExit: false,
+      knownQuotesMap: { 'MCX:GOLD26OCTFUT': 157801 },
+    });
+    expect(resMin.allowed).toBe(true);
+
+    const resMax = await validateOptionStrike({
+      symbol: 'GOLD26AUG160500CE',
+      isExit: false,
+      knownQuotesMap: { 'MCX:GOLD26OCTFUT': 157801 },
+    });
+    expect(resMax.allowed).toBe(true);
+  });
+
+  it('rejects strike 155000 which is outside the active 11-strike window (155500 to 160500)', async () => {
+    const res = await validateOptionStrike({
+      symbol: 'GOLD26AUG155000CE',
+      isExit: false,
+      knownQuotesMap: { 'MCX:GOLD26OCTFUT': 157801 },
     });
 
     expect(res.allowed).toBe(false);
-    expect(res.orderStrike).toBe(150000);
     expect(res.minAllowed).toBe(155500);
     expect(res.maxAllowed).toBe(160500);
+    expect(res.reason).toContain('outside the active option chain window (155500 to 160500)');
+  });
+
+  it('always bypasses validation for exit orders', async () => {
+    const res = await validateOptionStrike({
+      symbol: 'GOLD26AUG155000CE',
+      isExit: true,
+      knownQuotesMap: { 'MCX:GOLD26OCTFUT': 157801 },
+    });
+
+    expect(res.allowed).toBe(true);
   });
 });

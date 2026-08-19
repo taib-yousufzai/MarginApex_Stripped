@@ -11,7 +11,7 @@ export interface StrikeValidationResult {
   reason?: string;
 }
 
-const MCX_UNDERLYINGS = new Set([
+export const MCX_UNDERLYINGS = new Set([
   'GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'SILVERMIC',
   'CRUDEOIL', 'CRUDEOILM', 'NATURALGAS', 'NATGASMINI',
   'COPPER', 'ZINC', 'ZINCMINI', 'LEAD', 'LEADMINI',
@@ -23,6 +23,23 @@ const MCX_BASE_MAP: Record<string, string> = {
   'CRUDEOILM': 'CRUDEOIL', 'NATGASMINI': 'NATURALGAS',
   'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
 };
+
+const INDEX_UNDERLYINGS = new Set(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']);
+const BSE_INDEX_UNDERLYINGS = new Set(['SENSEX', 'BANKEX']);
+
+/**
+ * Resolves the target exchange for a given option symbol or underlying name.
+ */
+export function resolveTargetExchange(symbol: string, underlying: string): string {
+  if (symbol.includes(':')) {
+    return symbol.split(':')[0].toUpperCase();
+  }
+  const undUpper = underlying.toUpperCase();
+  if (MCX_UNDERLYINGS.has(undUpper)) return 'MCX';
+  if (BSE_INDEX_UNDERLYINGS.has(undUpper)) return 'BSE';
+  if (INDEX_UNDERLYINGS.has(undUpper)) return 'NSE';
+  return 'NSE';
+}
 
 /**
  * Resolves the underlying Kite instrument key for an option symbol.
@@ -61,16 +78,15 @@ export async function resolveUnderlyingKiteId(symbol: string, underlying: string
 }
 
 /**
- * Validates an option order strike price against the active 11-strike option-chain window
- * and any configured per-user strike_range.
+ * Validates an option order strike price strictly against exact membership in the active 11-strike option-chain window.
  */
 export async function validateOptionStrike(params: {
   symbol: string;
   isExit?: boolean;
-  strikeRangeSetting?: number;
+  exchange?: string;
   knownQuotesMap?: Record<string, any>;
 }): Promise<StrikeValidationResult> {
-  const { symbol, isExit, strikeRangeSetting = 0, knownQuotesMap } = params;
+  const { symbol, isExit, exchange: paramExchange, knownQuotesMap } = params;
 
   // Exit orders always bypass strike range validation
   if (isExit) {
@@ -85,16 +101,22 @@ export async function validateOptionStrike(params: {
   const { underlying, strike: orderStrike } = parsed;
   const admin = getAdminClient();
   const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+  const targetExchange = paramExchange || resolveTargetExchange(symbol, underlying);
 
-  // 1. Fetch contract instrument row to get exact name, expiry, and exchange
-  const { data: instrRow } = await admin
+  // 1. Fetch contract instrument row filtering by exact exchange to prevent NCO/MCX collision
+  let query = admin
     .from('instruments')
     .select('name, expiry, exchange')
-    .or(`tradingsymbol.eq.${cleanSymbol},tradingsymbol.eq.${symbol}`)
-    .limit(1)
-    .maybeSingle();
+    .or(`tradingsymbol.eq.${cleanSymbol},tradingsymbol.eq.${symbol},tradingsymbol.eq.${targetExchange}:${cleanSymbol}`);
+
+  if (targetExchange) {
+    query = query.eq('exchange', targetExchange);
+  }
+
+  const { data: instrRow } = await query.limit(1).maybeSingle();
 
   if (!instrRow?.expiry) {
+    // Fail open if instrument details cannot be found
     return { allowed: true, orderStrike, minAllowed: 0, maxAllowed: 0 };
   }
 
@@ -104,7 +126,7 @@ export async function validateOptionStrike(params: {
     .select('strike_price')
     .eq('name', instrRow.name || underlying)
     .eq('expiry', instrRow.expiry)
-    .eq('exchange', instrRow.exchange || 'MCX')
+    .eq('exchange', instrRow.exchange || targetExchange)
     .in('option_type', ['CE', 'PE']);
 
   if (!siblingRows || siblingRows.length === 0) {
@@ -155,7 +177,7 @@ export async function validateOptionStrike(params: {
   }
 
   // FAIL OPEN: If live spot price cannot be retrieved (> 0), or if resolved price differs from order strike by > 35%
-  // (which indicates a quote/symbol scale mismatch, e.g. option premium passed as spot), do not block orders!
+  // (e.g. quote mismatch), do not block valid trades
   const priceDevRatio = underlyingPrice > 0 ? Math.abs(orderStrike - underlyingPrice) / orderStrike : 1;
 
   if (!underlyingPrice || underlyingPrice <= 0 || isNaN(underlyingPrice) || priceDevRatio > 0.35) {
@@ -169,29 +191,22 @@ export async function validateOptionStrike(params: {
     return { allowed: true, orderStrike, minAllowed: 0, maxAllowed: 0 };
   }
 
-  const minVisible = centeredStrikes[0].strike;
-  const maxVisible = centeredStrikes[centeredStrikes.length - 1].strike;
-  const isVisibleInChain = centeredStrikes.some(s => s.strike === orderStrike);
+  const allowedStrikeValues = centeredStrikes.map(s => s.strike);
+  const minVisible = allowedStrikeValues[0];
+  const maxVisible = allowedStrikeValues[allowedStrikeValues.length - 1];
 
-  // If visible in the active option chain window, ALWAYS ALLOW
-  if (isVisibleInChain) {
+  // 5. Membership validation (STRICT SET INCLUSION)
+  const isAllowed = allowedStrikeValues.includes(orderStrike);
+
+  if (isAllowed) {
     return { allowed: true, orderStrike, minAllowed: minVisible, maxAllowed: maxVisible };
   }
 
-  // If user has a configured distance-based strike_range (> 0), check distance from spot
-  if (strikeRangeSetting > 0) {
-    const diff = Math.abs(orderStrike - underlyingPrice);
-    if (diff <= strikeRangeSetting) {
-      return { allowed: true, orderStrike, minAllowed: minVisible, maxAllowed: maxVisible };
-    }
-  }
-
-  // Strike is outside both the visible 11-strike option-chain window and the configured range
   return {
     allowed: false,
     orderStrike,
     minAllowed: minVisible,
     maxAllowed: maxVisible,
-    reason: `Strike price ${orderStrike} is outside the allowed active option chain window (${minVisible} to ${maxVisible}).`,
+    reason: `Strike price ${orderStrike} is outside the active option chain window (${minVisible} to ${maxVisible}).`,
   };
 }

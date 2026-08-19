@@ -150,20 +150,10 @@ export class OrderService {
   }
 
   /**
-   * Validates Strike Range check
+   * Validates Strike Range check (Deprecated: all strike range validation is canonically handled by OptionStrikeValidator)
    */
-  static validateStrikeRange(symbol: string, isOption: boolean, strikeRange: number, underlyingLtp: number | undefined, isExit?: boolean): string | null {
-    if (isExit) return null;
-    if (isOption && strikeRange > 0 && underlyingLtp !== undefined) {
-      const parsedOption = parseOptionSymbol(symbol);
-      const strikePrice = parsedOption ? parsedOption.strike : 0;
-      if (strikePrice > 0) {
-        const diff = Math.abs(strikePrice - underlyingLtp);
-        if (diff > strikeRange) {
-          return `Strike price ${strikePrice} is outside the allowed range of ${strikeRange} from spot (${underlyingLtp.toFixed(2)})`;
-        }
-      }
-    }
+  static validateStrikeRange(_symbol: string, _isOption: boolean, _strikeRange: number, _underlyingLtp: number | undefined, _isExit?: boolean): string | null {
+    // Legacy numeric range validation is disabled in favor of canonical OptionStrikeValidator 11-strike membership validation.
     return null;
   }
 

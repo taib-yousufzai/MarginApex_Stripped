@@ -476,7 +476,6 @@ export class TradeEngine {
       const valRes = await validateOptionStrike({
         symbol,
         isExit: false,
-        strikeRangeSetting: Number(segSetting.strike_range || 0),
         knownQuotesMap: quotesMap,
       });
       if (!valRes.allowed) {

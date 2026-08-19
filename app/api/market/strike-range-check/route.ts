@@ -77,7 +77,6 @@ export async function GET(request: NextRequest) {
     const valResult = await validateOptionStrike({
       symbol,
       isExit: false,
-      strikeRangeSetting,
       knownQuotesMap: spotPrice > 0 ? { [symbol]: spotPrice, spotPrice } : undefined,
     });
 
@@ -87,6 +86,7 @@ export async function GET(request: NextRequest) {
         strike: valResult.orderStrike,
         min: valResult.minAllowed,
         max: valResult.maxAllowed,
+        reason: valResult.reason,
       });
     }
 
