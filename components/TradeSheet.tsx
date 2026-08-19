@@ -661,9 +661,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       if (!isExitOrder && item?.symbol && (item.symbol.endsWith('CE') || item.symbol.endsWith('PE'))) {
         try {
           const token = (window as any).__accessToken || '';
-          const spotQuery = currentLtp ? `&spotPrice=${currentLtp}` : '';
           const checkRes = await fetch(
-            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}${spotQuery}`,
+            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}`,
             { headers: token ? { Authorization: `Bearer ${token}` } : {} }
           );
           if (checkRes.ok) {

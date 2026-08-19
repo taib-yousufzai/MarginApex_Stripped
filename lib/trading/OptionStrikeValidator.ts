@@ -127,7 +127,7 @@ export async function validateOptionStrike(params: {
 
   let underlyingPrice = 0;
   if (knownQuotesMap) {
-    const candidates = [underlyingKiteId, `MCX:${mcxBase}`, `MCX:${baseSymbol}`, baseSymbol, symbol];
+    const candidates = [underlyingKiteId, `MCX:${mcxBase}`, `MCX:${baseSymbol}`, baseSymbol];
     for (const key of candidates) {
       const raw = knownQuotesMap[key];
       if (raw !== undefined) {
@@ -154,8 +154,11 @@ export async function validateOptionStrike(params: {
     } catch { /* ignore */ }
   }
 
-  // FAIL OPEN: If live spot price cannot be retrieved (> 0), never block orders
-  if (!underlyingPrice || underlyingPrice <= 0 || isNaN(underlyingPrice)) {
+  // FAIL OPEN: If live spot price cannot be retrieved (> 0), or if resolved price differs from order strike by > 35%
+  // (which indicates a quote/symbol scale mismatch, e.g. option premium passed as spot), do not block orders!
+  const priceDevRatio = underlyingPrice > 0 ? Math.abs(orderStrike - underlyingPrice) / orderStrike : 1;
+
+  if (!underlyingPrice || underlyingPrice <= 0 || isNaN(underlyingPrice) || priceDevRatio > 0.35) {
     return { allowed: true, orderStrike, minAllowed: 0, maxAllowed: 0 };
   }
 
