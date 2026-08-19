@@ -19,10 +19,14 @@ function getOcSymbol(item: WatchlistItem): string | null {
   if (!seg.includes('future') && !seg.includes('option') && !seg.includes('fut') && !seg.includes('opt')) return null;
 
   const name = (item.name || item.symbol || '').toUpperCase().replace(/\s+/g, '');
-  // MCX commodities
+  // MCX commodities — check mini/variant contracts before standard base contracts
+  if (name.includes('GOLDM')) return 'GOLDM';
   if (name.includes('GOLD')) return 'GOLD';
+  if (name.includes('SILVERM') || name.includes('SILVERMIC')) return 'SILVERM';
   if (name.includes('SILVER')) return 'SILVER';
+  if (name.includes('CRUDEOILM')) return 'CRUDEOILM';
   if (name.includes('CRUDEOIL') || name.includes('CRUDE')) return 'CRUDEOIL';
+  if (name.includes('NATGASMINI')) return 'NATGASMINI';
   if (name.includes('NATURALGAS') || name.includes('NATGAS')) return 'NATURALGAS';
   // Indices
   if (name.includes('BANKNIFTY') || name.includes('BANKN')) return 'BANKNIFTY';

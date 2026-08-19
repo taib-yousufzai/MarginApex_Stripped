@@ -1597,6 +1597,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
       return (
         <div className="tc-chain-container" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
           <OptionChainTable
+            symbol={selectedSymbol}
             strikes={mappedStrikes}
             quotes={marketQuotes}
             spotPrice={chainData?.underlyingPrice || currentPrice || 71.00}

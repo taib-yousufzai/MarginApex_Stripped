@@ -13,12 +13,66 @@ interface OptionChainTableProps {
   strikes: StrikeData[];
   quotes: Record<string, QuoteData>;
   spotPrice: number;
+  symbol?: string;
   onTrade: (symbol: string, side: 'BUY' | 'SELL') => void;
   priceMode?: 'BA' | 'LTP';
   stickyTop?: number;
   hideMainHeader?: boolean;
   strikeRange?: number;
   loading?: boolean;
+}
+
+// ─── Centered Strike Window Selector (Uses 100% Actual Available Contract Strikes) ───
+export function getCenteredStrikeWindow<T extends { strike: number }>(
+  strikes: T[],
+  spotPrice: number
+): { centeredStrikes: T[]; atmIndex: number } {
+  if (!strikes || strikes.length === 0) {
+    return { centeredStrikes: [], atmIndex: -1 };
+  }
+
+  // 1. Deduplicate by strike and sort ascending
+  const strikeMap = new Map<number, T>();
+  strikes.forEach(s => strikeMap.set(s.strike, s));
+  const sortedStrikes = Array.from(strikeMap.values()).sort((a, b) => a.strike - b.strike);
+
+  if (sortedStrikes.length === 0) {
+    return { centeredStrikes: [], atmIndex: -1 };
+  }
+
+  // 2. Determine ATM strike index from actual available strikes
+  let atmIdx = 0;
+  if (spotPrice > 0) {
+    let minDiff = Math.abs(sortedStrikes[0].strike - spotPrice);
+    for (let i = 1; i < sortedStrikes.length; i++) {
+      const diff = Math.abs(sortedStrikes[i].strike - spotPrice);
+      if (diff < minDiff) {
+        minDiff = diff;
+        atmIdx = i;
+      }
+    }
+  } else {
+    atmIdx = Math.floor(sortedStrikes.length / 2);
+  }
+
+  // 3. Slice 11 actual strikes around ATM
+  const targetCount = 11;
+  if (sortedStrikes.length <= targetCount) {
+    return { centeredStrikes: sortedStrikes, atmIndex: atmIdx };
+  }
+
+  // Clamp window so it always contains exactly 11 items
+  let startIdx = atmIdx - 5;
+  if (startIdx < 0) {
+    startIdx = 0;
+  } else if (startIdx + targetCount > sortedStrikes.length) {
+    startIdx = sortedStrikes.length - targetCount;
+  }
+
+  const centeredStrikes = sortedStrikes.slice(startIdx, startIdx + targetCount);
+  const centeredAtmIndex = atmIdx - startIdx;
+
+  return { centeredStrikes, atmIndex: centeredAtmIndex };
 }
 
 // ─── Skeleton row ─────────────────────────────────────────────────────────────
@@ -62,7 +116,7 @@ interface StrikeRowProps {
   ceSymbol?: string; ceStaticPrice?: number; ceQuote: QuoteData | null;
   peSymbol?: string; peStaticPrice?: number; peQuote: QuoteData | null;
   isAtm: boolean;
-  atmRef: React.RefObject<HTMLDivElement>;
+  atmRef: React.RefObject<HTMLDivElement | null>;
   priceMode: 'BA' | 'LTP';
   onTrade: (symbol: string, side: 'BUY' | 'SELL') => void;
 }
@@ -170,7 +224,7 @@ const StrikeRow = React.memo(function StrikeRow({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function OptionChainTable({
-  strikes, quotes, spotPrice, onTrade,
+  strikes, quotes, spotPrice, symbol = '', onTrade,
   priceMode = 'LTP', stickyTop = 58, hideMainHeader = false,
   strikeRange = 0, loading = false,
 }: OptionChainTableProps) {
@@ -179,36 +233,9 @@ export default function OptionChainTable({
   const tableBodyRef = React.useRef<HTMLDivElement>(null);
   const [subheadFloating, setSubheadFloating] = React.useState(false);
 
-  const visibleStrikes = React.useMemo(() => {
-    if (strikeRange <= 0 || spotPrice <= 0) return strikes;
-    return strikes.filter(s => Math.abs(s.strike - spotPrice) <= strikeRange);
-  }, [strikes, spotPrice, strikeRange]);
-
-  const atmIndex = React.useMemo(() => {
-    if (spotPrice <= 0 || strikes.length === 0) return -1;
-    let best = 0, minD = Infinity;
-    strikes.forEach((s, i) => { const d = Math.abs(s.strike - spotPrice); if (d < minD) { minD = d; best = i; } });
-    return best;
+  const { centeredStrikes, atmIndex: centeredAtmIndex } = React.useMemo(() => {
+    return getCenteredStrikeWindow(strikes, spotPrice);
   }, [strikes, spotPrice]);
-
-  const centeredStrikes = React.useMemo(() => {
-    if (atmIndex < 0 || strikes.length === 0) return strikes;
-    const atmObj = strikes[atmIndex];
-    const below = strikes.filter(s => s.strike < atmObj.strike);
-    const above = strikes.filter(s => s.strike > atmObj.strike);
-
-    const strikesBelow = below.slice(-5);
-    const strikesAbove = above.slice(0, 5);
-
-    return [...strikesBelow, atmObj, ...strikesAbove];
-  }, [strikes, atmIndex]);
-
-  const centeredAtmIndex = React.useMemo(() => {
-    if (spotPrice <= 0 || centeredStrikes.length === 0) return -1;
-    let best = 0, minD = Infinity;
-    centeredStrikes.forEach((s, i) => { const d = Math.abs(s.strike - spotPrice); if (d < minD) { minD = d; best = i; } });
-    return best;
-  }, [centeredStrikes, spotPrice]);
 
   // Subheader floating
   React.useEffect(() => {

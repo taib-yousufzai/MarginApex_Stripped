@@ -260,9 +260,7 @@ export function applyMcxStrikeRangeFilter(
   instruments: Instrument[],
   atmPrice: number,
 ): Instrument[] {
-  // Use the unified filtering algorithm with an assumed range of 11 (5 above, 1 ATM, 5 below)
-  // if this is called directly without a range parameter.
-  return applyStrikeRangeFilter(instruments, atmPrice, 11);
+  return applyStrikeRangeFilter(instruments, atmPrice, 31);
 }
 
 // ---------------------------------------------------------------------------

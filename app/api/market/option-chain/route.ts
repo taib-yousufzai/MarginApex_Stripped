@@ -184,9 +184,7 @@ export async function GET(request: Request) {
     const baseRange = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
     const fetchRange = Math.max(31, baseRange);
     const filteredOptions: any[] = atmPrice
-      ? (isMcx
-          ? applyMcxStrikeRangeFilter(options as Instrument[], atmPrice) as any[]
-          : applyStrikeRangeFilter(options as Instrument[], atmPrice, fetchRange) as any[])
+      ? applyStrikeRangeFilter(options as Instrument[], atmPrice, fetchRange) as any[]
       : options;
 
     // ── 7. Group by strike ────────────────────────────────────────────────────

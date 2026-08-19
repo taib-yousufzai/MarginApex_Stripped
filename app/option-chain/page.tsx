@@ -456,6 +456,7 @@ function OptionChainContent() {
                   <div className={`toast-msg${toast.isError ? ' error' : ''}`}>{toast.msg}</div>
                 )}
                 <OptionChainTable
+                  symbol={symbol}
                   strikes={data?.strikes || []}
                   quotes={quotes}
                   spotPrice={spotPrice}

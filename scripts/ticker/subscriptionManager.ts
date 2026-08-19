@@ -188,6 +188,10 @@ export class SubscriptionManager {
           mappings.push({ token, symbolKey });
           this.tokenToSymbol.set(token, symbolKey);
           this.symbolToToken.set(symbolKey, token);
+
+          if (symbolKey.includes('SILVER')) {
+            logger.info({ symbolKey, token, tradingsymbol: row.tradingsymbol }, '[MCX DIAGNOSTIC] Mapped SILVER instrument token');
+          }
         });
       }
 
