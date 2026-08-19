@@ -400,6 +400,24 @@ function OptionChainContent() {
               </div>
               {/* Divider */}
               <div className="expiry-divider"></div>
+              {/* Chart Button */}
+              <button
+                className="oc-chart-btn"
+                onClick={() => {
+                  setChartItem({
+                    symbol: symbol,
+                    kiteSymbol: data?.underlyingSymbol || symbol,
+                    segment: symbol.includes('SENSEX') || symbol.includes('BANKEX') ? 'BFO' : 'NFO'
+                  });
+                  const chartSheet = document.getElementById('chartSheet');
+                  const chartOverlay = document.getElementById('chartSheetOverlay');
+                  if (chartSheet) chartSheet.classList.add('open');
+                  if (chartOverlay) chartOverlay.classList.add('active');
+                }}
+                title="Open Chart"
+              >
+                <i className="fas fa-chart-line"></i>
+              </button>
               {/* Date pills — inner capsule like B/A toggle */}
               <div className="expiry-dates-inner-capsule">
                 <div className="expiry-dates-scroll">

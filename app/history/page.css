@@ -208,13 +208,14 @@
     overflow-y: auto;
     background: #F5F7FB;
     min-height: 0;
-    padding: 0.75rem 1rem;
+    padding: 0.75rem 1rem 0; /* Only top/side padding */
 }
 
 .history-root .history-list {
     display: flex;
     flex-direction: column;
     gap: 0.625rem;
+    padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px)); /* Padding added to inner element ensures scroll area expands */
 }
 
 .history-root .history-card {
@@ -430,7 +431,7 @@ body.dark .history-root .header-btn {
 
 body.dark .history-root .header-btn.active {
     background: #C62E2E !important;
-    border-color: #C62E2E !important;   11
+    border-color: #C62E2E !important;
     color: white !important;
 }
 

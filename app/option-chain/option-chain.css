@@ -428,17 +428,35 @@ body.dark .expiry-spot-val   { color: #C62E2E; }
 .expiry-divider {
   width: 1px;
   height: 1.75rem;
-  background: #e8eaf0;
-  margin: 0 0.5rem;
+  background: #E8ECF0;
+  margin: 0 0.25rem;
   flex-shrink: 0;
 }
-body.dark .expiry-divider { background: #333; }
+body.dark .expiry-divider { background: #374151; }
+
+.oc-chart-btn {
+  background: transparent;
+  border: none;
+  color: #2C8E5A;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 0.25rem;
+}
+.oc-chart-btn:hover {
+  color: #1a7144;
+}
 
 .expiry-dates-inner-capsule {
   width: fit-content;
   max-width: 100%;
   min-width: 0;
-  margin-left: auto;
+  margin-left: 0;
   background: #f0f2f5;
   border: 1px solid #e8eaf0;
   border-radius: 624.9375rem;
