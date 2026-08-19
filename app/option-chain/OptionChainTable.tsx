@@ -310,6 +310,7 @@ export default function OptionChainTable({
           display: flex; flex-direction: column;
           height: 462px; overflow-y: auto;
           scrollbar-width: none; -ms-overflow-style: none;
+          padding-top: 8px;
         }
         .oct-body::-webkit-scrollbar { display: none; }
       `}</style>
