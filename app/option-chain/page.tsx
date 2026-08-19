@@ -657,17 +657,22 @@ function OptionChainContent() {
         }
       `}</style>
 
-      {/* Contract Order Sheet Overlay */}
       <div
         className={`trade-sheet-overlay${selectedContract ? ' active' : ''}`}
         id={sheetView === 'ORDER' ? 'tradeSheetOverlay' : 'detailSheetOverlay'}
-        onClick={() => setSelectedContract(null)}
+        onClick={() => {
+          const sheet = document.getElementById(sheetView === 'ORDER' ? 'tradeSheet' : 'detailSheet');
+          const overlay = document.getElementById(sheetView === 'ORDER' ? 'tradeSheetOverlay' : 'detailSheetOverlay');
+          if (sheet) sheet.classList.remove('open');
+          if (overlay) overlay.classList.remove('active');
+          setTimeout(() => setSelectedContract(null), 380);
+        }}
       ></div>
 
       <div
         className={`trade-sheet${selectedContract ? ' open' : ''}${sheetView === 'DETAILS' ? ' detail-sheet' : ''} ts-sheet--${sheetSide.toLowerCase()}`}
         id={sheetView === 'ORDER' ? 'tradeSheet' : 'detailSheet'}
-        style={sheetView === 'DETAILS' ? { height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' } : undefined}
+        style={sheetView === 'DETAILS' ? { height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' } : { transition: 'none', background: 'transparent', pointerEvents: 'none' }}
       >
         {selectedContract && (() => {
           const kiteId = data?.strikes.find(s => s.ce?.symbol === selectedContract.symbol || s.pe?.symbol === selectedContract.symbol)?.[selectedContract.type.toLowerCase()]?.id;
