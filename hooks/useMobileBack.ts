@@ -29,9 +29,12 @@ export function useMobileBack(isOpen: boolean, onClose: () => void, hash: string
       }
 
       const handlePopState = (e: PopStateEvent) => {
-        // The user pressed the hardware back button
-        closedByPopState.current = true;
-        onCloseRef.current();
+        // Only close if the URL no longer contains our hash.
+        // This prevents multiple modals from closing simultaneously on a single back press.
+        if (window.location.hash !== '#' + hash) {
+          closedByPopState.current = true;
+          onCloseRef.current();
+        }
       };
 
       window.addEventListener('popstate', handlePopState);

@@ -855,22 +855,28 @@ function WatchlistContent() {
     const overlay = document.getElementById('detailSheetOverlay');
     if (sheet) sheet.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
-    setSelectedItem(null);
+    setTimeout(() => {
+      setSelectedItem(null);
+    }, 380);
   }, 'details');
   useMobileBack(isTradeSheetOpen, () => {
     const sheet = document.getElementById('tradeSheet');
     const overlay = document.getElementById('tradeSheetOverlay');
     if (sheet) sheet.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
-    setIsTradeSheetOpen(false);
+    setTimeout(() => {
+      setIsTradeSheetOpen(false);
+    }, 380);
   }, 'trade');
   useMobileBack(!!chartItem, () => {
     const sheet = document.getElementById('chartSheet');
     const overlay = document.getElementById('chartSheetOverlay');
     if (sheet) sheet.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
-    setChartItem(null);
-    setIsBenchmarkChart(false);
+    setTimeout(() => {
+      setChartItem(null);
+      setIsBenchmarkChart(false);
+    }, 380);
   }, 'chart');
 
   // --- Global Modal History Manager ---
