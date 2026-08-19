@@ -1271,8 +1271,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           box-shadow: 0 2px 8px rgba(21,128,61,0.25);
         }
         .ts2-sheet--sell .ts2-pill.active {
-          background: #B91C1C; color: #fff; border-color: #B91C1C;
-          box-shadow: 0 2px 8px rgba(185,28,28,0.25);
+          background: #C62E2E; color: #fff; border-color: #C62E2E;
+          box-shadow: 0 2px 8px rgba(198,46,46,0.25);
         }
 
         .ts2-price-input {
@@ -1295,9 +1295,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
           transition: border-color 0.2s;
           font-family: inherit;
         }
-        .ts2-field-input:focus {
-          border-color: #006400;
-          box-shadow: 0 0 0 2px rgba(0,100,0,0.1);
+        .ts2-sheet--buy .ts2-field-input:focus {
+          border-color: #15803D;
+          box-shadow: 0 0 0 2px rgba(21,128,61,0.1);
+        }
+        .ts2-sheet--sell .ts2-field-input:focus {
+          border-color: #C62E2E;
+          box-shadow: 0 0 0 2px rgba(198,46,46,0.1);
         }
 
         .ts2-margin-card {
@@ -1366,7 +1370,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
       <div id="tradeSheetOverlay" className={`ts2-overlay${(isOpen && !isClosing) ? ' active' : ''}`} onClick={handleCloseAnimation} />
 
-      <div id="tradeSheet" className={`ts2-sheet${(isOpen && !isClosing) ? ' open' : ''}${exitMode ? ' ts2-exit-mode' : ''} ts2-sheet--${activeSide.toLowerCase()}`}>
+      <div id="tradeSheet" className={`ts2-sheet${(isOpen && !isClosing) ? ' open' : ''}${exitMode ? ' ts2-exit-mode' : ''} ts2-sheet--${(activeSide === 'SELL' || exitMode) ? 'sell' : 'buy'}`}>
         {item && (
           <>
             {/* Header */}
@@ -1715,7 +1719,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                     <span className="ts2-ml" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
                       Charges Breakdown {showCharges ? '▲' : '▼'}
                     </span>
-                    <span className="ts2-mv" style={{ color: '#15803D', fontWeight: 800 }}>
+                    <span className="ts2-mv" style={{ color: (activeSide === 'SELL' || exitMode) ? '#C62E2E' : '#15803D', fontWeight: 800 }}>
                       {currencySymbol} {calculatedBrokerage.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
@@ -1731,13 +1735,13 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">Carry Charges</span>
-                        <span className="ts2-mv" style={targetPT === 'CARRY' && !isExitTrade ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
+                        <span className="ts2-mv" style={targetPT === 'CARRY' && !isExitTrade ? { color: (activeSide === 'SELL' || exitMode) ? '#C62E2E' : '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
                           {currencySymbol} {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">GTT Charges</span>
-                        <span className="ts2-mv" style={orderType === 'GTT' ? { color: '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
+                        <span className="ts2-mv" style={orderType === 'GTT' ? { color: (activeSide === 'SELL' || exitMode) ? '#C62E2E' : '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
                           {currencySymbol} {(orderType === 'GTT' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>

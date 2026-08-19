@@ -11,6 +11,7 @@ interface WatchlistSearchProps {
   onAdd: (item: WatchlistItem) => void;
   onRemove?: (item: WatchlistItem) => void;
   token?: string;
+  side?: 'BUY' | 'SELL';
 }
 
 // Map a watchlist item to an option chain root symbol (null if not eligible)
@@ -258,7 +259,7 @@ function InlineOptionChain({ symbol, onClose }: { symbol: string; onClose: () =>
   );
 }
 // ── Main WatchlistSearch ──────────────────────────────────────────────────────
-export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemove, token }: WatchlistSearchProps) {
+export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemove, token, side }: WatchlistSearchProps) {
   const localScripts = getDefaultWatchlistItems();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<WatchlistItem[]>([]);
@@ -423,10 +424,10 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                       <div className="sri-right" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
                         <div className="search-result-price" style={{ marginRight: 0 }}>{(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         <button
-                          className="add-smart-btn"
+                          className={`add-smart-btn${side === 'SELL' ? ' sell-mode' : ''}`}
                           onClick={(e) => { e.stopPropagation(); handleToggleClick(r); }}
                           style={{
-                            ...(isAdded(r.symbol) ? { background: '#2C8E5A', color: 'white', border: 'none' } : {}),
+                            ...(isAdded(r.symbol) ? { background: side === 'SELL' ? '#C62E2E' : '#2C8E5A', color: 'white', border: 'none' } : {}),
                             marginLeft: 'auto',
                             flexShrink: 0,
                           }}

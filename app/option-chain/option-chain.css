@@ -1024,10 +1024,10 @@ body.dark .index-price-chg.pos { color: #4ade80; }
 }
 
 .ts-sheet--sell .ts-pill.active {
-    background: #B91C1C;
+    background: #C62E2E;
     color: #FFFFFF;
-    border-color: #B91C1C;
-    box-shadow: 0 2px 0.5rem rgba(185, 28, 28, 0.25);
+    border-color: #C62E2E;
+    box-shadow: 0 2px 0.5rem rgba(198, 46, 46, 0.25);
 }
 
 .ts-margin-card {
