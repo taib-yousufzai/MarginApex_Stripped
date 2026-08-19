@@ -102,6 +102,7 @@ export async function GET() {
         .select('tradingsymbol, name, exchange, instrument_type, strike_price, option_type, expiry, underlying_symbol')
         .eq('name', idx)
         .eq('expiry', nearestExpiry)
+        .in('option_type', ['CE', 'PE'])
         .order('strike_price', { ascending: true });
 
       if (!opts || opts.length === 0) return null;
@@ -171,7 +172,7 @@ export async function GET() {
         if (activeExpiries.length === 0) return;
         const nearestExpiry = activeExpiries[0];
 
-        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', cmd).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
+        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', cmd).eq('expiry', nearestExpiry).in('option_type', ['CE', 'PE']).order('strike_price', { ascending: true });
         if (opts && opts.length > 0) {
           let selectedOpts: Instrument[] = opts as Instrument[];
           try {
@@ -237,7 +238,7 @@ export async function GET() {
       const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: stk, p_min_date: today });
       if (expData && expData.length > 0) {
         const nearestExpiry = expData[0].expiry;
-        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', stk).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
+        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', stk).eq('expiry', nearestExpiry).in('option_type', ['CE', 'PE']).order('strike_price', { ascending: true });
         if (opts && opts.length > 0) {
           let selectedOpts: Instrument[] = opts as Instrument[];
           try {
