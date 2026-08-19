@@ -107,6 +107,12 @@ async function executeRawKiteQuotes(instruments: string[]): Promise<Record<strin
           try {
             const q = JSON.parse(raw);
             if (q && q.last_price !== undefined) {
+              const quoteTime = q.timestamp ? new Date(q.timestamp).getTime() : 0;
+              const ageMs = Date.now() - quoteTime;
+              if (quoteTime > 0 && ageMs > 15000) {
+                // Stale quote, skip
+                return;
+              }
               result[inst] = q.last_price;
               result[`${inst}_bid`] = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? q.last_price);
               result[`${inst}_ask`] = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? q.last_price);

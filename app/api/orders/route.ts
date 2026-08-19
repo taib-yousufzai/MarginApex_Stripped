@@ -25,6 +25,7 @@ import { calculateSingleLegCharge } from '@/lib/trading/BrokerageCalculator';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 import { mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
 import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
+import { resolveUnderlyingKiteId, validateOptionStrike } from '@/lib/trading/OptionStrikeValidator';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -493,15 +494,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const parsedOption = isOption ? parseOptionSymbol(symbol) : null;
     let underlyingId = 'NSE:NIFTY 50';
     if (parsedOption) {
-      const und = parsedOption.underlying.toUpperCase();
-      if (und === 'BANKNIFTY') underlyingId = 'NSE:NIFTY BANK';
-      else if (und === 'FINNIFTY') underlyingId = 'NSE:NIFTY FIN SERVICE';
-      else if (und === 'SENSEX') underlyingId = 'BSE:SENSEX';
-      else if (und === 'BANKEX') underlyingId = 'BSE:BANKEX';
-      else if (und === 'MIDCPNIFTY') underlyingId = 'NSE:NIFTY MID SELECT';
-      else if (und === 'NIFTY') underlyingId = 'NSE:NIFTY 50';
-      else if (dbSegment.includes('MCX')) underlyingId = `MCX:${und}`;
-      else underlyingId = `NSE:${und}`;
+      underlyingId = await resolveUnderlyingKiteId(symbol, parsedOption.underlying);
     }
 
     if (isOption && underlyingId !== kiteInst) {
@@ -715,25 +708,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Strike Range check — STRICTLY enforced for fresh entry/add-more (!is_exit). Exits (is_exit === true) bypass.
     if (isOption && !is_exit) {
-      const orderStrike = parsedOption ? parsedOption.strike : 0;
-      if (orderStrike > 0) {
-        const spotQuote = quotesMap[underlyingId];
-        const spot = typeof spotQuote === 'number'
-          ? spotQuote
-          : (spotQuote?.last_price ?? spotQuote?.lastPrice);
-        if (typeof spot === 'number' && spot > 0 && !isNaN(spot)) {
-          const strikeRange = Number(segSetting.strike_range || 0);
-          if (strikeRange > 0) {
-            const diff = Math.abs(orderStrike - spot);
-            if (diff > strikeRange) {
-              const minAllowed = Math.round(spot - strikeRange);
-              const maxAllowed = Math.round(spot + strikeRange);
-              return NextResponse.json({
-                error: `Strike price ${orderStrike} is outside the allowed range of ${strikeRange} from spot (${spot.toFixed(2)}). Allowed range: ${minAllowed} to ${maxAllowed}.`,
-              }, { status: 403 });
-            }
-          }
-        }
+      const valRes = await validateOptionStrike({
+        symbol,
+        isExit: false,
+        strikeRangeSetting: Number(segSetting.strike_range || 0),
+        knownQuotesMap: quotesMap,
+      });
+      if (!valRes.allowed) {
+        return NextResponse.json({
+          error: valRes.reason || `Strike price ${valRes.orderStrike} is outside the allowed range (${valRes.minAllowed} to ${valRes.maxAllowed}).`,
+        }, { status: 403 });
       }
     }
 

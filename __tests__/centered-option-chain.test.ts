@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCenteredStrikeWindow } from '../app/option-chain/OptionChainTable';
+import { getCenteredStrikeWindow } from '../lib/trading/optionStrikeWindow';
 
 describe('Option Chain Centered 11-Strike Window Engine (Strict Exchange Master Dataset)', () => {
   // Test 1 — Irregular strike dataset: Zero synthetic strikes created
