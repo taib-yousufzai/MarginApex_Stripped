@@ -201,10 +201,12 @@
     flex-shrink: 0;
 }
 
-.clear-search-btn:hover {
-    background: #F5D0D0;
-    color: #C62E2E;
-    transform: translateY(-50%) scale(1.1);
+@media (hover: hover) {
+    .clear-search-btn:hover {
+        background: #F5D0D0;
+        color: #C62E2E;
+        transform: translateY(-50%) scale(1.1);
+    }
 }
 
 .clear-search-btn:active {
@@ -261,10 +263,12 @@
     color: #787B86;
 }
 
-.dark .clear-search-btn:hover,
-.black .clear-search-btn:hover {
-    background: rgba(198, 46, 46, 0.2);
-    color: #C62E2E;
+@media (hover: hover) {
+    .dark .clear-search-btn:hover,
+    .black .clear-search-btn:hover {
+        background: rgba(198, 46, 46, 0.2);
+        color: #C62E2E;
+    }
 }
 
 .dark .mobile-app .search-wrapper:focus-within::after,
@@ -3574,10 +3578,12 @@ body.black #basketClearBtn {
     color: #787B86;
 }
 
-.dark .clear-search-btn:hover,
-.blue .clear-search-btn:hover {
-    background: rgba(198, 46, 46, 0.2);
-    color: #C62E2E;
+@media (hover: hover) {
+    .dark .clear-search-btn:hover,
+    .blue .clear-search-btn:hover {
+        background: rgba(198, 46, 46, 0.2);
+        color: #C62E2E;
+    }
 }
 
 .dark .mobile-app .search-wrapper:focus-within::after,

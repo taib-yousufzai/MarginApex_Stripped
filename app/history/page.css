@@ -430,7 +430,7 @@ body.dark .history-root .header-btn {
 
 body.dark .history-root .header-btn.active {
     background: #C62E2E !important;
-    border-color: #C62E2E !important;
+    border-color: #C62E2E !important;   11
     color: white !important;
 }
 
