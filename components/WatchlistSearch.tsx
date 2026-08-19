@@ -403,7 +403,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                     onMouseLeave={(e) => e.currentTarget.style.background = '#FFFFFF'}
                   >
                     {/* Instrument row */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 8 }}>
                       <div className="sri-left" style={{ flex: 1, minWidth: 0 }}>
                         <div className="sri-name">{r.name || r.symbol}</div>
                         <div className="sri-symbol">{r.segment}{r.contractDate ? ` • ${r.contractDate}` : ''}</div>
@@ -420,12 +420,16 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                           </div>
                         )}
                       </div>
-                      <div className="sri-right" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                        <div className="search-result-price">{(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="sri-right" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
+                        <div className="search-result-price" style={{ marginRight: 0 }}>{(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         <button
                           className="add-smart-btn"
                           onClick={(e) => { e.stopPropagation(); handleToggleClick(r); }}
-                          style={isAdded(r.symbol) ? { background: '#2C8E5A', color: 'white', border: 'none' } : undefined}
+                          style={{
+                            ...(isAdded(r.symbol) ? { background: '#2C8E5A', color: 'white', border: 'none' } : {}),
+                            marginLeft: 'auto',
+                            flexShrink: 0,
+                          }}
                         >
                           {isAdded(r.symbol) ? 'ADDED' : 'ADD'}
                         </button>

@@ -300,7 +300,7 @@ export default function HistoryPage() {
                       />
                     </div>
                   </div>
-                  <div className="filter-buttons">
+                  <div className="filter-buttons" style={{ marginLeft: 'auto' }}>
                     <button className="filter-btn apply" onClick={handleApplyFilter}>Apply</button>
                     <button className="filter-btn clear" onClick={handleClearFilter}>Clear</button>
                   </div>

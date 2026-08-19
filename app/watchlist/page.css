@@ -378,7 +378,7 @@
 .search-result-price {
     font-weight: 600;
     font-size: 0.85rem;
-    margin-right: 0.75rem;
+    margin-right: 0;
     color: #2C313F;
 }
 
@@ -391,6 +391,8 @@
     font-size: 0.7rem;
     font-weight: 600;
     cursor: pointer;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .no-results {
