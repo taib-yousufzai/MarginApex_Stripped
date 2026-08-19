@@ -982,11 +982,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         }
       } else {
         // Buy/Sell flow: show the global loader overlay.
-        // Only fire global-loader-start now â€” we are confirmed in 'processing' state
-        // so there is no competing error modal visible.
         handedOffToOrderFlow = true;
         window.dispatchEvent(new CustomEvent('global-loader-start', { detail: 'Processing Order...' }));
-
+        
         // Modify flow: cancel the original order first, then re-place with new params
         if (isModify && modifyingOrderId && !modifyingOrderId.startsWith('pos-')) {
           try {
@@ -1788,7 +1786,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         style={(isBusy || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('SELL')}
                       >
-                        {isBusy ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${actionText}${sellPriceLabel}`}
+                        {isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'SELL' : `SELL ${actionText}${sellPriceLabel}`}
                       </button>
                     )}
                     {(side === 'BUY' || side === 'BOTH') && (
@@ -1798,7 +1796,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                         style={(isBusy || isExpired) ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                         onClick={() => handlePlace('BUY')}
                       >
-                        {isBusy ? <AnimatedLoader size="small" /> : isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${actionText}${buyPriceLabel}`}
+                        {isModify ? 'MODIFY' : exitMode ? 'EXIT POSITION' : hideLotText ? 'BUY' : `BUY ${actionText}${buyPriceLabel}`}
                       </button>
                     )}
                   </div>
