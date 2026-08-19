@@ -517,14 +517,30 @@ function WatchlistContent() {
       tradingSegmentsRef.current = (window as any).__initialTradingSegments;
     }
 
-    api.get<{ segments: TradingSegment[] }>('/api/market/instruments/library')
-      .then(data => {
-        if (data.segments) {
-          setTradingSegments(data.segments);
-          tradingSegmentsRef.current = data.segments;
-        }
-      })
-      .catch(err => console.error('Failed to load library segments:', err));
+    const fetchSegments = () => {
+      const qs = new URLSearchParams();
+      if (typeof window !== 'undefined' && (window as any).__marketQuotes) {
+        const mq = (window as any).__marketQuotes;
+        const nifty = mq['NSE:NIFTY 50']?.lastPrice || mq['NIFTY 50']?.lastPrice;
+        if (nifty) qs.set('nifty', String(nifty));
+        const banknifty = mq['NSE:NIFTY BANK']?.lastPrice || mq['NIFTY BANK']?.lastPrice;
+        if (banknifty) qs.set('banknifty', String(banknifty));
+      }
+
+      api.get<{ segments: TradingSegment[] }>(`/api/market/instruments/library?${qs.toString()}`)
+        .then(data => {
+          if (data.segments) {
+            setTradingSegments(data.segments);
+            tradingSegmentsRef.current = data.segments;
+          }
+        })
+        .catch(err => console.error('Failed to load library segments:', err));
+    };
+
+    fetchSegments(); // Initial fetch
+    const interval = setInterval(fetchSegments, 60000); // Re-fetch every 60s to auto-update strikes
+
+    return () => clearInterval(interval);
   }, []);
 
   const router = useRouter();

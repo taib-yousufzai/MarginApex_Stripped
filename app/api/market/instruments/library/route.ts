@@ -30,10 +30,16 @@ function getSupabase() {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const qsAtm: Record<string, number> = {
+      'NIFTY': Number(url.searchParams.get('nifty')) || 0,
+      'BANKNIFTY': Number(url.searchParams.get('banknifty')) || 0,
+    };
+
     const redis = getRedisClient();
-    const cacheKey = 'market:library:segments';
+    const cacheKey = 'market:library:segments:v4';
     try {
       const cached = await redis.get(cacheKey);
       if (cached) {
@@ -125,6 +131,9 @@ export async function GET() {
               const q = JSON.parse(altCached);
               atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
             }
+          }
+          if (!atmPrice && qsAtm[idx]) {
+            atmPrice = qsAtm[idx];
           }
           if (!atmPrice && opts.length > 0) {
             console.warn(`[library] Redis ATM price unavailable for ${idx}, falling back to median strike`);
@@ -399,8 +408,8 @@ export async function GET() {
     if (forexInstruments.length > 0) segments.push({ name: 'FOREX', icon: 'fa-coins', instruments: forexInstruments });
 
     try {
-      // Cache for 15 mins when ATM prices were live; 2 mins when using fallback prices
-      const ttl = usedFallback ? 120 : 900;
+      // Cache for 60 seconds so that strikes auto-update with spot price movements
+      const ttl = usedFallback ? 60 : 60;
       await redis.set(cacheKey, JSON.stringify({ segments }), 'EX', ttl);
     } catch (e) {
       console.error('[library] Redis set cache error:', e);

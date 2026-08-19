@@ -94,10 +94,8 @@ export async function loadStrikeConfig(supabase: SupabaseClient): Promise<Strike
     const indexRaw = rowMap['index_options_strike_range'];
     const mcxRaw = rowMap['mcx_options_strike_range'];
 
-    const indexOptionsRange =
-      indexRaw !== undefined
-        ? (parseInt(indexRaw, 10) || DEFAULT_STRIKE_CONFIG.indexOptionsRange)
-        : DEFAULT_STRIKE_CONFIG.indexOptionsRange;
+    // Force index options range to 11 (5 up, 5 down, 1 ATM) as per user request
+    const indexOptionsRange = 11;
 
     const mcxOptionsRange =
       mcxRaw !== undefined
