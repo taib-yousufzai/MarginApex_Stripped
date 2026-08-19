@@ -51,7 +51,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     setTimeout(() => {
       setIsClosing(false);
       onClose();
-    }, 150); // match CSS transition time
+    }, 380); // match CSS transition time exactly to prevent blank white page sliding down
   };
 
   const [orderUnit, setOrderUnit] = useState<'qty' | 'lot'>('qty');
