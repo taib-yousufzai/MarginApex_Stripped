@@ -23,6 +23,7 @@ import type {
 } from '@/lib/types/order';
 import { calculateSingleLegCharge } from '@/lib/trading/BrokerageCalculator';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
 import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -246,22 +247,7 @@ function getLotSize(symbol: string, dbSettings?: { symbol: string; lot_size: num
   return 1;
 }
 
-function mapSymbolToSegment(symbol: string): string {
-  const n = symbol.toUpperCase();
-  if (n.includes('FUT') || n.includes('FUTURES')) {
-    if (n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP')) {
-      return 'INDEX-FUT';
-    }
-    return 'STOCK-FUT';
-  }
-  if (n.includes('CE') || n.includes('PE')) {
-    if (n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP')) {
-      return 'INDEX-OPT';
-    }
-    return 'STOCK-OPT';
-  }
-  return 'NSE-EQ'; // fallback default
-}
+
 
 // ─── GET /api/orders ──────────────────────────────────────────────────────────
 

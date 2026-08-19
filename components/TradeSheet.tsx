@@ -669,9 +669,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             const checkData = await checkRes.json();
             if (checkData.allowed === false) {
               const errMsg = `Strike price ${checkData.strike} is outside the allowed range (${checkData.min} to ${checkData.max}).`;
-              showToast(errMsg);
               setOrderErrorMsg(errMsg);
               setOrderState('error');
+              window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
               isExecutingRef.current = false;
               return;
             }

@@ -458,7 +458,6 @@ export default function PositionPage() {
         window.dispatchEvent(new CustomEvent('position-closed'));
       } else {
         const errMsg = res.error || 'Failed to exit position';
-        showToast(`Error: ${errMsg}`);
         setErrorModalMsg(errMsg);
         if (posToClose && restorePositionLocally) {
           restorePositionLocally(posId);
@@ -466,7 +465,6 @@ export default function PositionPage() {
       }
     } catch (err: any) {
       const errMsg = err.message || 'Failed to exit position';
-      showToast(`Error: ${errMsg}`);
       setErrorModalMsg(errMsg);
       if (posToClose && restorePositionLocally) {
         restorePositionLocally(posId);
@@ -749,7 +747,6 @@ export default function PositionPage() {
 
       if (hadFailures) {
         const msg = `Closed some, but failed for others. Error: ${firstError || 'Unknown'}`;
-        showToast(msg);
         setErrorModalMsg(msg);
       } else {
         showToast(`Successfully closed ${group.symbol} position(s).`);
@@ -759,7 +756,6 @@ export default function PositionPage() {
         posIds.forEach(id => restorePositionLocally(id));
       }
       const msg = `Error closing ${group.symbol}: ${result.error || 'Unknown'}`;
-      showToast(msg);
       setErrorModalMsg(msg);
     }
     setIsExitingAll(false);

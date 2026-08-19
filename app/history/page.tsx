@@ -357,6 +357,42 @@ export default function HistoryPage() {
                     <button className="filter-btn clear" onClick={handleClearFilter} style={{ padding: '8px 16px' }}>Reset</button>
                   </div>
                 </div>
+
+                {/* ── Desktop Performance KPI Cards ── */}
+                <div className="desktop-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginTop: 16 }}>
+                  <div className="summary-card" style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <i className="fas fa-chart-bar"></i> Gross P&L
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 6 }} className={summary.gp - summary.gl >= 0 ? 'pnl positive' : 'pnl negative'}>
+                      {formatPrice(summary.gp - summary.gl)}
+                    </div>
+                  </div>
+                  <div className="summary-card" style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <i className="fas fa-receipt"></i> Total Brokerage
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 6, color: 'var(--text-primary)' }}>
+                      {formatPrice(summary.b)}
+                    </div>
+                  </div>
+                  <div className="summary-card" style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <i className="fas fa-chart-line"></i> Net P&L
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 6 }} className={summary.n >= 0 ? 'pnl positive' : 'pnl negative'}>
+                      {formatPrice(summary.n)}
+                    </div>
+                  </div>
+                  <div className="summary-card" style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <i className="fas fa-handshake"></i> Settlement
+                    </div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: 6, color: summary.s > 0 ? '#C62E2E' : 'var(--text-primary)' }}>
+                      {summary.s > 0 ? `-₹${summary.s.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="main-content" ref={scrollResetRef}>
