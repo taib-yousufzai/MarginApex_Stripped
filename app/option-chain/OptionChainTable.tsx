@@ -207,7 +207,15 @@ export default function OptionChainTable({
     if (!id && !token) return null;
     if (id && quotes[id]) return quotes[id];
     if (token && quotes[String(token)]) return quotes[String(token)];
-    if (id) { const s = id.split(':').pop(); if (s && quotes[s]) return quotes[s]; }
+    if (id) {
+      const s = id.split(':').pop();
+      if (s) {
+        if (quotes[s]) return quotes[s];
+        if (quotes[`NCO:${s}`]) return quotes[`NCO:${s}`];
+        if (quotes[`MCX:${s}`]) return quotes[`MCX:${s}`];
+        if (quotes[`NFO:${s}`]) return quotes[`NFO:${s}`];
+      }
+    }
     return null;
   }, [quotes]);
 
