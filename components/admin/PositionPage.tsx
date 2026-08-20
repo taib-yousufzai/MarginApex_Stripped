@@ -121,6 +121,7 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
       prefix = 'BFO:';
     } else if (
       seg.includes('MCX') ||
+      seg.includes('NCO') ||
       baseKey.startsWith('CRUDEOIL') ||
       baseKey.startsWith('NATGAS') ||
       baseKey.startsWith('SILVER') ||
@@ -132,8 +133,6 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
       baseKey.startsWith('MENTHAOIL')
     ) {
       prefix = 'MCX:';
-    } else if (seg.includes('NCO')) {
-      prefix = 'NCO:';
     } else if (
       seg.includes('CDS') ||
       seg.includes('FOREX') ||

@@ -67,6 +67,7 @@ const resolveKitePrefix = (key: string, settlement: string) => {
     prefix = 'BFO:';
   } else if (
     seg.includes('MCX') ||
+    seg.includes('NCO') ||
     baseKey.startsWith('CRUDEOIL') ||
     baseKey.startsWith('NATGAS') ||
     baseKey.startsWith('SILVER') ||
@@ -77,13 +78,7 @@ const resolveKitePrefix = (key: string, settlement: string) => {
     baseKey.startsWith('LEAD') ||
     baseKey.startsWith('MENTHAOIL')
   ) {
-    if (baseKey.endsWith('CE') || baseKey.endsWith('PE')) {
-      prefix = 'NCO:';
-    } else {
-      prefix = 'MCX:';
-    }
-  } else if (seg.includes('NCO')) {
-    prefix = 'NCO:';
+    prefix = 'MCX:';
   } else if (
     seg.includes('CDS') ||
     seg.includes('FOREX') ||
