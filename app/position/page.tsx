@@ -12,12 +12,12 @@ import { useMobileBack } from '@/hooks/useMobileBack';
 import { useBalance } from '@/hooks/useBalance';
 import { api, ApiError } from '@/lib/api';
 import type { TradeSheetItem } from '@/components/TradeSheet';
-import HoldLockCountdown from '@/components/HoldLockCountdown';
-const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
-import { ErrorModal } from '@/components/ErrorModal';
 import dynamic from 'next/dynamic';
+import PullToRefresh from '@/components/PullToRefresh';
+import { ErrorModal } from '@/components/ErrorModal';
 import './page.css';
 
+const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 
 
@@ -905,7 +905,7 @@ export default function PositionPage() {
               </div>
 
               {/* ── Content ── */}
-              <div className="pos-content">
+              <PullToRefresh className="pos-content" onRefresh={async () => { await refresh(); await fetchClosed(); }}>
 
                 {posLoading && (
                   <div className="w-full flex flex-col gap-3">
@@ -1249,7 +1249,7 @@ export default function PositionPage() {
                     )
                   )
                 )}
-              </div>
+              </PullToRefresh>
 
             </div>
 
