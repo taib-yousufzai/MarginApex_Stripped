@@ -330,9 +330,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   let displayCarry = 0;
 
   if (isExitTrade) {
-    // Exit: brokerage was already collected at position open â€” show â‚¹0
-    displayIntraday = 0;
-    displayCarry = 0;
+    // Exit: show single leg exit brokerage for UI reference (already collected upfront at open)
+    displayIntraday = targetPT === 'CARRY' ? 0 : rawIntradayCharge;
+    displayCarry = targetPT === 'CARRY' ? rawCarryCharge : 0;
   } else if (orderType === 'GTT') {
     displayIntraday = rawIntradayCharge;
     displayCarry = rawCarryCharge;
@@ -1733,7 +1733,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
                       </div>
                       <div className="ts2-margin-row">
                         <span className="ts2-ml">Carry Charges</span>
-                        <span className="ts2-mv" style={targetPT === 'CARRY' && !isExitTrade ? { color: (activeSide === 'SELL' || exitMode) ? '#C62E2E' : '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
+                        <span className="ts2-mv" style={displayCarry > 0 ? { color: (activeSide === 'SELL' || exitMode) ? '#C62E2E' : '#15803D', fontWeight: 700 } : { opacity: 0.4 }}>
                           {currencySymbol} {displayCarry.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </div>
