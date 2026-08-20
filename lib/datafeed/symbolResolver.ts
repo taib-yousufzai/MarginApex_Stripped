@@ -109,3 +109,12 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
     format: 'price',
   };
 }
+
+export function getCanonicalSymbol(symbolInfoOrName: any): string {
+  if (!symbolInfoOrName) return '';
+  if (typeof symbolInfoOrName === 'string') {
+    return symbolInfoOrName;
+  }
+  return symbolInfoOrName.ticker || symbolInfoOrName.name || '';
+}
+

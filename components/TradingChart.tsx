@@ -359,7 +359,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   const [segment, setSegment] = useState(propSegment);
   const [loadId, setLoadId] = useState(() => Math.random().toString(36).substring(2, 8));
 
-  console.log(`[CHART TRACE ${loadId}] +0.0ms [1] TradingChart render #${tradingChartRenderCount}: propSymbol=${propSymbol}, propSegment=${propSegment}`);
+  console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${loadId} symbol=${propSymbol} event=TRADING_CHART_RENDER renderCount=${tradingChartRenderCount}`);
 
   useEffect(() => {
     if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.unlock) {

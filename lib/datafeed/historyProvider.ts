@@ -3,6 +3,7 @@ type LibrarySymbolInfo = any;
 type PeriodParams = any;
 type ResolutionString = any;
 import { resolutionToBinanceInterval, resolutionToKiteInterval } from './resolutionUtils';
+import { getCanonicalSymbol } from './symbolResolver';
 
 type BinanceKline = any[];
 
@@ -24,14 +25,15 @@ export async function fetchBars(
   loadStartTime: number = performance.now()
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   try {
+    const canonicalSymbol = getCanonicalSymbol(symbolInfo);
     const isCrypto =
       segment.toUpperCase() === 'CRYPTO' ||
-      (symbolInfo.ticker ?? symbolInfo.name).endsWith('USDT');
+      canonicalSymbol.endsWith('USDT');
 
     if (isCrypto) {
-      return fetchBinanceBars(symbolInfo.name, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
+      return fetchBinanceBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     } else {
-      return fetchKiteBars(symbolInfo.ticker ?? symbolInfo.name, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
+      return fetchKiteBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     }
   } catch (err) {
     throw err;

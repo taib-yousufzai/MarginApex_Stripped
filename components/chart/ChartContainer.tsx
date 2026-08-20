@@ -118,18 +118,47 @@ export default function ChartContainer({
     globalMountCount++;
     const startTime = performance.now();
     loadStartTimeRef.current = startTime;
-    console.log(`[CHART TRACE ${activeLoadId}] +0.0ms [2] ChartContainer mount (mountCount=${globalMountCount}, unmountCount=${globalUnmountCount}): symbol=${symbol}, segment=${segment}`);
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=CHART_CONTAINER_MOUNT elapsed=0.0ms mountCount=${globalMountCount} unmountCount=${globalUnmountCount}`);
+
+    const armWatchdog = (ms = 20000) => {
+      if (initTimerRef.current) clearTimeout(initTimerRef.current);
+      initTimerRef.current = setTimeout(() => {
+        const elapsed = (performance.now() - startTime).toFixed(1);
+        console.warn(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=WATCHDOG_TIMEOUT_FIRED elapsed=${elapsed}ms CHART_FAILED_TO_INITIALIZE`);
+        setChartStatus('error');
+        setChartError('Chart initialization timed out. Please click Retry.');
+      }, ms);
+    };
 
     const initWidget = () => {
       if (!containerRef.current || tvWidgetRef.current) return;
 
       globalWidgetCreateCount++;
       const initStart = performance.now();
-      console.log(`[CHART TRACE ${activeLoadId}] +${(initStart - startTime).toFixed(1)}ms [3] TradingView widget creation START (widgetCreateCount=${globalWidgetCreateCount})`);
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=WIDGET_CREATION_START elapsed=${(initStart - startTime).toFixed(1)}ms widgetCreateCount=${globalWidgetCreateCount} containerSize=${width}x${height}`);
       
       datafeedRef.current = new Datafeed(segment, activeLoadId, startTime);
+      if (typeof window !== 'undefined') {
+        (window as any).__reactDatafeedInstance = datafeedRef.current;
+      }
       datafeedRef.current.onFirstBar = (lastClose, prevClose) => {
         onFirstBarRef.current?.(lastClose, prevClose);
+      };
+
+      datafeedRef.current.onProgress = (_event: string) => {
+        // Reset/extend the watchdog whenever meaningful datafeed progress occurs
+        armWatchdog(15000);
+      };
+
+      datafeedRef.current.onError = (errText: string) => {
+        if (initTimerRef.current) {
+          clearTimeout(initTimerRef.current);
+          initTimerRef.current = null;
+        }
+        setChartStatus('error');
+        setChartError(errText || 'Failed to load historical chart data');
       };
 
       let savedData;
@@ -163,14 +192,14 @@ export default function ChartContainer({
         }
       });
 
-      console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms TradingView widget created (iframe element inserting...)`);
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=WIDGET_CREATION_END elapsed=${(performance.now() - startTime).toFixed(1)}ms`);
 
       // Monitor for iframe insertion in DOM
       const checkIframeInterval = setInterval(() => {
         const iframe = containerRef.current?.querySelector('iframe');
         if (iframe) {
           clearInterval(checkIframeInterval);
-          console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms iframe loaded into DOM`);
+          console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=IFRAME_INSERTED_INTO_DOM elapsed=${(performance.now() - startTime).toFixed(1)}ms`);
         }
       }, 20);
 
@@ -180,7 +209,7 @@ export default function ChartContainer({
     const onChartReady = (startTime: number, checkIframeInterval?: ReturnType<typeof setInterval>) => {
       if (checkIframeInterval) clearInterval(checkIframeInterval);
       const readyTime = performance.now();
-      console.log(`[CHART TRACE ${activeLoadId}] +${(readyTime - startTime).toFixed(1)}ms [4] widget.onChartReady fired!`);
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=ON_CHART_READY elapsed=${(readyTime - startTime).toFixed(1)}ms`);
       if (initTimerRef.current) {
         clearTimeout(initTimerRef.current);
         initTimerRef.current = null;
@@ -236,23 +265,23 @@ export default function ChartContainer({
       tvWidgetRef.current?.subscribe('study_event', saveChartState);
     };
 
-    // Arm 30-second timeout
-    initTimerRef.current = setTimeout(() => {
-      setChartStatus('error');
-      setChartError('Chart failed to initialize. Please refresh the page.');
-    }, 30_000);
+    // Arm initial watchdog
+    armWatchdog(20000);
 
     const scriptCheckTime = performance.now();
     if (window.TradingView) {
-      console.log(`[CHART PERF ${activeLoadId}] +${(scriptCheckTime - startTime).toFixed(1)}ms TradingView script check: ALREADY LOADED in window`);
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=TV_SCRIPT_ALREADY_IN_WINDOW elapsed=${(scriptCheckTime - startTime).toFixed(1)}ms`);
       initWidget();
     } else {
-      console.log(`[CHART PERF ${activeLoadId}] +${(scriptCheckTime - startTime).toFixed(1)}ms TradingView script check: NOT IN WINDOW -> dynamically loading script element`);
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=TV_SCRIPT_LOADING_START elapsed=${(scriptCheckTime - startTime).toFixed(1)}ms`);
       const script = document.createElement('script');
       script.src = '/charting_library/charting_library.standalone.js';
       script.onload = () => {
-        console.log(`[CHART PERF ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms TradingView script onload fired! window.TradingView is now available.`);
+        console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=TV_SCRIPT_ONLOAD_FIRED elapsed=${(performance.now() - startTime).toFixed(1)}ms`);
         initWidget();
+      };
+      script.onerror = (err) => {
+        console.error(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=TV_SCRIPT_LOAD_ERROR elapsed=${(performance.now() - startTime).toFixed(1)}ms`, err);
       };
       document.head.appendChild(script);
     }
@@ -260,7 +289,7 @@ export default function ChartContainer({
     return () => {
       globalUnmountCount++;
       globalWidgetDestroyCount++;
-      console.log(`[CHART PERF ${activeLoadId}] +${(performance.now() - loadStartTimeRef.current).toFixed(1)}ms ChartContainer unmount & tvWidget destroy (unmountCount=${globalUnmountCount}, widgetDestroyCount=${globalWidgetDestroyCount})`);
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=CHART_CONTAINER_UNMOUNT elapsed=${(performance.now() - loadStartTimeRef.current).toFixed(1)}ms`);
       if (initTimerRef.current) {
         clearTimeout(initTimerRef.current);
         initTimerRef.current = null;
@@ -355,11 +384,31 @@ export default function ChartContainer({
       {chartStatus === 'error' && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px',
+          background: isDark ? '#071824' : '#FFFFFF',
         }}>
           <div style={{ color: '#F23645', fontSize: '13px', fontWeight: 600, maxWidth: '80%', textAlign: 'center' }}>
             {chartError}
           </div>
+          <button
+            onClick={() => {
+              setChartStatus('loading');
+              setChartError(null);
+              if (tvWidgetRef.current) {
+                try { tvWidgetRef.current.remove(); } catch (e) {}
+                tvWidgetRef.current = null;
+              }
+              // re-trigger mount effect by clearing ready ref
+              isReadyRef.current = false;
+              window.location.reload();
+            }}
+            style={{
+              padding: '6px 16px', background: '#2962FF', color: '#FFF', border: 'none',
+              borderRadius: '4px', fontSize: '12px', fontWeight: 600, cursor: 'pointer'
+            }}
+          >
+            Retry Chart
+          </button>
         </div>
       )}
 

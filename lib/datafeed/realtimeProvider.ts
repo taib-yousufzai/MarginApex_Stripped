@@ -1,4 +1,5 @@
 import { resolutionToMs } from './resolutionUtils';
+import { getCanonicalSymbol } from './symbolResolver';
 
 export interface Bar {
   time: number;
@@ -26,10 +27,13 @@ export class RealtimeProvider {
   private firstTickLogged = new Set<string>();
 
   subscribe(uid: string, entry: SubscriberEntry): void {
+    const elapsed = entry.loadStartTime ? (performance.now() - entry.loadStartTime).toFixed(1) : '0';
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${entry.loadId || 'default'} symbol=${entry.symbol} resolution=${entry.resolution} event=REALTIME_SUBSCRIBER_CREATED elapsed=${elapsed}ms uid=${uid}`);
     this.subscribers.set(uid, entry);
   }
 
   unsubscribe(uid: string): void {
+    console.log(`[PROD-CHART] timestamp=${Date.now()} event=REALTIME_SUBSCRIBER_REMOVED uid=${uid}`);
     this.subscribers.delete(uid);
   }
 
@@ -40,8 +44,11 @@ export class RealtimeProvider {
   }
 
   setLastBar(symbol: string, resolution: string, bar: Bar): void {
+    const canonical = getCanonicalSymbol(symbol);
     for (const entry of this.subscribers.values()) {
-      if ((!entry.symbol || entry.symbol === symbol) && entry.resolution === resolution) {
+      const entryCanonical = getCanonicalSymbol(entry.symbol);
+      const matches = !entryCanonical || entryCanonical === canonical || canonical.endsWith(entryCanonical) || entryCanonical.endsWith(canonical);
+      if (matches && entry.resolution === resolution) {
         entry.lastBar = { ...bar };
       }
     }
@@ -70,10 +77,17 @@ export class RealtimeProvider {
     this.lastUpdateTime = Date.now();
     const { symbol, lastPrice, nowMs, volume } = this.pendingUpdate;
     this.pendingUpdate = null;
+    const canonicalIncoming = getCanonicalSymbol(symbol);
 
     for (const [uid, entry] of this.subscribers.entries()) {
-      // Data race protection: check symbol match (if symbol specified on subscriber)
-      if (entry.symbol && entry.symbol !== symbol) {
+      // Data race protection: check canonical symbol match
+      const entryCanonical = getCanonicalSymbol(entry.symbol);
+      const symbolMatches = !entryCanonical || entryCanonical === canonicalIncoming || canonicalIncoming.endsWith(entryCanonical) || entryCanonical.endsWith(canonicalIncoming);
+      if (!symbolMatches) {
+        if (!this.firstTickLogged.has(uid + '_mismatch')) {
+          this.firstTickLogged.add(uid + '_mismatch');
+          console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${entry.loadId || 'default'} symbol=${entry.symbol} event=REALTIME_TICK_SUPPRESSED_SYMBOL_MISMATCH incomingSymbol=${symbol}`);
+        }
         continue;
       }
 
@@ -81,10 +95,18 @@ export class RealtimeProvider {
       const prev = entry.lastBar;
 
       // Do NOT push real-time ticks before getBars has populated entry.lastBar for this exact symbol/resolution.
-      // Premature ticks with unanchored UTC timestamps trigger TradingView's
-      // "Incremental update failed. Starting full update" loop.
       if (!prev) {
+        if (!this.firstTickLogged.has(uid + '_noprev')) {
+          this.firstTickLogged.add(uid + '_noprev');
+          console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${entry.loadId || 'default'} symbol=${entry.symbol} event=REALTIME_TICK_SUPPRESSED_NO_LASTBAR`);
+        }
         continue;
+      }
+
+      if (!this.firstTickLogged.has(uid + '_forwarded')) {
+        this.firstTickLogged.add(uid + '_forwarded');
+        const elapsed = entry.loadStartTime ? (performance.now() - entry.loadStartTime).toFixed(1) : '0';
+        console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${entry.loadId || 'default'} symbol=${entry.symbol} resolution=${entry.resolution} event=FIRST_REALTIME_TICK_FORWARDED elapsed=${elapsed}ms price=${lastPrice}`);
       }
 
       let boundary = Math.floor(nowMs / resMs) * resMs;

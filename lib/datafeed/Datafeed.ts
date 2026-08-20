@@ -11,7 +11,7 @@ type ResolutionString = any;
 type SubscribeBarsCallback = any;
 import { fetchBars } from './historyProvider';
 import { RealtimeProvider } from './realtimeProvider';
-import { buildSymbolInfo } from './symbolResolver';
+import { buildSymbolInfo, getCanonicalSymbol } from './symbolResolver';
 
 /**
  * TradingView `IBasicDataFeed` implementation.
@@ -25,6 +25,8 @@ export class Datafeed implements IBasicDataFeed {
   private loadId: string = 'default';
   private loadStartTime: number = performance.now();
   onFirstBar?: (lastClose: number, prevClose: number | null) => void;
+  onProgress?: (event: string) => void;
+  onError?: (errorMsg: string) => void;
 
   constructor(private segment: string, loadId?: string, loadStartTime?: number) {
     this.realtimeProvider = new RealtimeProvider();
@@ -53,7 +55,8 @@ export class Datafeed implements IBasicDataFeed {
 
   onReady(callback: OnReadyCallback): void {
     const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
-    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms Datafeed.onReady called by TV iframe`);
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} event=DATAFEED_ON_READY elapsed=${elapsed}ms`);
+    this.onProgress?.('onReady');
     setTimeout(() => {
       callback({
         supported_resolutions: ['1', '2', '3', '5', '10', '15', '30', '60', 'D'] as ResolutionString[],
@@ -73,11 +76,12 @@ export class Datafeed implements IBasicDataFeed {
   ): void {
     const start = performance.now();
     const elapsed = (start - this.loadStartTime).toFixed(1);
-    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [5] Datafeed.resolveSymbol START: ${symbolName}`);
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${symbolName} event=RESOLVE_SYMBOL_START elapsed=${elapsed}ms`);
+    this.onProgress?.('resolveSymbol');
     const info = buildSymbolInfo(symbolName, this.segment);
     onResolve(info);
     const endElapsed = (performance.now() - this.loadStartTime).toFixed(1);
-    console.log(`[CHART TRACE ${this.loadId}] +${endElapsed}ms Datafeed.resolveSymbol END: ${symbolName}`);
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${symbolName} event=RESOLVE_SYMBOL_END elapsed=${endElapsed}ms`);
   }
 
   async getBars(
@@ -89,38 +93,44 @@ export class Datafeed implements IBasicDataFeed {
   ): Promise<void> {
     this.getBarsCallNum++;
     const currentCallNum = this.getBarsCallNum;
+    const canonicalSymbol = getCanonicalSymbol(symbolInfo);
     const start = performance.now();
     const startElapsed = (start - this.loadStartTime).toFixed(1);
-    console.log(`[CHART TRACE ${this.loadId}] +${startElapsed}ms [6] Datafeed.getBars #${currentCallNum} START: ${symbolInfo.name} (${resolution}) [from: ${periodParams.from}, to: ${periodParams.to}, firstDataRequest: ${periodParams.firstDataRequest}]`);
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=GET_BARS_START elapsed=${startElapsed}ms callNum=${currentCallNum} firstDataRequest=${periodParams.firstDataRequest}`);
+    this.onProgress?.(`getBars_start_${currentCallNum}`);
+
     try {
       const { bars, noData } = await fetchBars(symbolInfo, resolution, periodParams, this.segment, this.loadId, currentCallNum, this.loadStartTime);
       const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
-      console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [7] Datafeed.getBars #${currentCallNum} END: ${symbolInfo.name} -> ${bars.length} bars (took ${(performance.now() - start).toFixed(1)}ms, noData=${noData})`);
+      console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=GET_BARS_END elapsed=${elapsed}ms callNum=${currentCallNum} barCount=${bars.length} noData=${noData}`);
+      this.onProgress?.(`getBars_end_${currentCallNum}`);
       
       if (bars.length > 0 && (periodParams.firstDataRequest === undefined || periodParams.firstDataRequest)) {
         const firstBar = bars[0] as Bar;
         const lastBar = bars[bars.length - 1] as Bar;
         
-        const cacheKey = `${symbolInfo.name}:${resolution}`;
+        const cacheKey = `${canonicalSymbol}:${resolution}`;
         this.lastBarCache.set(cacheKey, lastBar);
 
-        console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [8] First historical bar received: time=${firstBar.time}, close=${firstBar.close}`);
-        console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [9] lastBar established: symbol=${symbolInfo.name}, resolution=${resolution}, time=${lastBar.time}, close=${lastBar.close}`);
+        console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=FIRST_HISTORICAL_BAR elapsed=${elapsed}ms time=${firstBar.time} close=${firstBar.close}`);
+        console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=LAST_BAR_ESTABLISHED elapsed=${elapsed}ms time=${lastBar.time} close=${lastBar.close}`);
 
-        this.realtimeProvider.setLastBar(symbolInfo.name, resolution, lastBar);
+        this.realtimeProvider.setLastBar(canonicalSymbol, resolution, lastBar);
 
         if (!this.firstBarFired) {
           this.firstBarFired = true;
           const prevClose = bars.length > 1 ? (bars[bars.length - 2] as Bar).close : null;
-          console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [13] First visible candle rendered: lastClose=${lastBar.close}`);
+          console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=FIRST_VISIBLE_CANDLE_RENDERED elapsed=${elapsed}ms lastClose=${lastBar.close}`);
           this.onFirstBar?.(lastBar.close, prevClose);
         }
       }
       onResult(bars, { noData });
     } catch (err) {
       const errElapsed = (performance.now() - this.loadStartTime).toFixed(1);
-      console.error(`[CHART TRACE ${this.loadId}] +${errElapsed}ms Datafeed.getBars #${currentCallNum} ERROR:`, err);
-      onError(`Failed to fetch bars: ${(err as Error).message}`);
+      const errMessage = (err as Error).message || 'Failed to fetch historical bars';
+      console.error(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=GET_BARS_ERROR elapsed=${errElapsed}ms callNum=${currentCallNum}`, err);
+      this.onError?.(errMessage);
+      onError(errMessage);
     }
   }
 
@@ -131,14 +141,16 @@ export class Datafeed implements IBasicDataFeed {
     listenerGuid: string,
     _onResetCacheNeededCallback: () => void,
   ): void {
+    const canonicalSymbol = getCanonicalSymbol(symbolInfo);
     const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
-    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [10] subscribeBars START: listenerGuid=${listenerGuid} symbol=${symbolInfo.name} (${resolution})`);
-    
-    const cacheKey = `${symbolInfo.name}:${resolution}`;
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} symbol=${canonicalSymbol} resolution=${resolution} event=SUBSCRIBE_BARS_START elapsed=${elapsed}ms listenerGuid=${listenerGuid}`);
+    this.onProgress?.('subscribeBars');
+
+    const cacheKey = `${canonicalSymbol}:${resolution}`;
     const lastBar = this.lastBarCache.get(cacheKey) || null;
 
     this.realtimeProvider.subscribe(listenerGuid, {
-      symbol: symbolInfo.name,
+      symbol: canonicalSymbol,
       resolution,
       callback: (bar: Bar) => {
         onTick(bar);
@@ -151,7 +163,7 @@ export class Datafeed implements IBasicDataFeed {
 
   unsubscribeBars(listenerGuid: string): void {
     const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
-    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms Datafeed.unsubscribeBars: ${listenerGuid}`);
+    console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${this.loadId} event=UNSUBSCRIBE_BARS elapsed=${elapsed}ms listenerGuid=${listenerGuid}`);
     this.realtimeProvider.unsubscribe(listenerGuid);
   }
 
@@ -164,11 +176,13 @@ export class Datafeed implements IBasicDataFeed {
   }
 
   updateLive(symbol: string, lastPrice: number, nowMs: number, volume?: number) {
+    const canonicalSymbol = getCanonicalSymbol(symbol);
     if (!this.firstRealtimeTickLogged) {
       this.firstRealtimeTickLogged = true;
       const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
-      console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [11] First realtime tick received: symbol=${symbol}, price=${lastPrice}`);
+      console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [11] First realtime tick received: symbol=${canonicalSymbol}, price=${lastPrice}`);
     }
-    this.realtimeProvider.update(symbol, lastPrice, nowMs, volume);
+    this.realtimeProvider.update(canonicalSymbol, lastPrice, nowMs, volume);
   }
 }
+
