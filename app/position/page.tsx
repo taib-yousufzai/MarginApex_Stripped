@@ -142,9 +142,8 @@ export default function PositionPage() {
   }, []);
 
   const formatBalance = (val: number | null) => {
-    if (val === null) return '...';
-    if (val > 999) return (val / 1000).toFixed(2) + 'k';
-    return val.toFixed(2);
+    if (val === null || val === undefined || isNaN(val)) return '...';
+    return val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const [currentMain, setCurrentMain] = useState<'cumulative' | 'detailed'>('cumulative');
