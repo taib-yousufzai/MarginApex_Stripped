@@ -18,7 +18,9 @@ import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
 import type { ClosePositionResponse } from '@/lib/types/order';
+
 
 /**
  * Fetch the Kite LTP for a single instrument key server-side.
@@ -154,11 +156,8 @@ export async function POST(
     const segUpper = dbSegment.toUpperCase();
 
     if (!segUpper.includes('CRYPTO')) {
-      let segmentId = 'nse';
-      if (ex === 'MCX' || segUpper.includes('MCX')) segmentId = 'mcx';
-      else if (ex === 'BSE' || segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
-      else if (ex === 'CDS' || ex === 'FOREX' || segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
-      else if (ex === 'COMEX' || segUpper.includes('COMEX')) segmentId = 'comex';
+      const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
+
 
       const { data: segmentHour, error: hrError } = await admin
         .from('trading_hours')

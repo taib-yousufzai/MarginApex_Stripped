@@ -662,7 +662,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         try {
           const token = (window as any).__accessToken || '';
           const checkRes = await fetch(
-            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}`,
+            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}&spotPrice=${currentLtp || 0}`,
             { headers: token ? { Authorization: `Bearer ${token}` } : {} }
           );
           if (checkRes.ok) {
@@ -931,6 +931,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             client_click_time: Date.now(),
           };
 
+          const orderAttemptId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `att_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
           const res = await placeOrder({
             symbol: item.symbol,
             kite_instrument: computedKiteSymbol || item.symbol,
@@ -946,6 +948,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             target: resolvedTarget,
             is_exit: true,
             linked_position_id: linkedPosId || undefined,
+            orderAttemptId,
             ...diagnosticFields,
           });
           window.dispatchEvent(new Event('order_placed'));
@@ -1006,6 +1009,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             client_click_time: Date.now(),
           };
 
+          const orderAttemptId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `att_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
           const res = await placeOrder({
             symbol: item.symbol,
             kite_instrument: computedKiteSymbol || item.symbol,
@@ -1021,6 +1026,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
             target: resolvedTarget,
             is_exit: (placeSide === 'BUY' && hasSellPos) || (placeSide === 'SELL' && hasBuyPos),
             linked_position_id: linkedPosId || undefined,
+            orderAttemptId,
             ...diagnosticFields,
           });
 

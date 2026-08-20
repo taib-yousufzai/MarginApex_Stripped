@@ -23,6 +23,8 @@ import type {
 } from '@/lib/types/order';
 import { calculateSingleLegCharge } from '@/lib/trading/BrokerageCalculator';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
+
 import { mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
 import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
 import { resolveUnderlyingKiteId, validateOptionStrike } from '@/lib/trading/OptionStrikeValidator';
@@ -428,7 +430,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { symbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit, linked_position_id } = body;
+    const { symbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit, linked_position_id, orderAttemptId } = body;
+
+    // 2b. Idempotency pre-check using Redis
+    let attemptRedisKey: string | null = null;
+    if (orderAttemptId) {
+      attemptRedisKey = `order_attempt:${user.id}:${orderAttemptId}`;
+      try {
+        const redis = getRedisClient();
+        const cached = await redis.get(attemptRedisKey);
+        if (cached) {
+          if (cached === 'IN_PROGRESS') {
+            return NextResponse.json({ error: 'Order submission in progress. Please wait.' }, { status: 409 });
+          }
+          return NextResponse.json(JSON.parse(cached));
+        }
+        await redis.setex(attemptRedisKey, 60, 'IN_PROGRESS');
+      } catch { /* proceed if redis fails */ }
+    }
 
     // 3. Basic field validation
     if (!symbol || !side || !qty || !segment) {
@@ -451,11 +470,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const segUpper = dbSegment.toUpperCase();
 
       if (!segUpper.includes('CRYPTO')) {
-        let segmentId = 'nse';
-        if (ex === 'MCX' || segUpper.includes('MCX')) segmentId = 'mcx';
-        else if (ex === 'BSE' || segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
-        else if (ex === 'CDS' || ex === 'FOREX' || segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
-        else if (ex === 'COMEX' || segUpper.includes('COMEX')) segmentId = 'comex';
+        const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
+
 
         const { data: segmentHour, error: hrError } = await admin
           .from('trading_hours')
@@ -715,7 +731,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       });
       if (!valRes.allowed) {
         return NextResponse.json({
-          error: valRes.reason || `Strike price ${valRes.orderStrike} is outside the allowed range (${valRes.minAllowed} to ${valRes.maxAllowed}).`,
+          error: valRes.reason || `Strike price ${valRes.orderStrike} is outside the active option chain window (${valRes.minAllowed} to ${valRes.maxAllowed}).`,
         }, { status: 403 });
       }
     }
@@ -1118,6 +1134,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         ? `${side} order executed at ₹${fillPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
         : `${side} ${order_type} order placed (Pending) at ₹${fillPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
     };
+
+    if (attemptRedisKey) {
+      try {
+        const redis = getRedisClient();
+        await redis.setex(attemptRedisKey, 60, JSON.stringify(response));
+      } catch { /* ignore */ }
+    }
 
     return NextResponse.json(response, { status: 201 });
   } catch (topErr: any) {

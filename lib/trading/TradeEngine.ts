@@ -66,12 +66,8 @@ export class TradeEngine {
 
     // Determine segments for market hours
     const segUpper = dbSegment.toUpperCase();
-    let segmentId = 'nse';
-    if (segUpper.includes('MCX')) segmentId = 'mcx';
-    else if (segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
-    else if (segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
-    else if (segUpper.includes('COMEX')) segmentId = 'comex';
-    else if (segUpper.includes('CRYPTO')) segmentId = 'crypto';
+    const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
+
 
     // ── Resolve kiteInst to a fully-qualified Kite key (EXCHANGE:TRADINGSYMBOL) ──
     // When exiting from the positions page, the positions table has no
@@ -479,7 +475,7 @@ export class TradeEngine {
         knownQuotesMap: quotesMap,
       });
       if (!valRes.allowed) {
-        throw new Error(valRes.reason || `Strike price ${valRes.orderStrike} is out of range. Allowed range is ${valRes.minAllowed} to ${valRes.maxAllowed}.`);
+        throw new Error(valRes.reason || `Strike price ${valRes.orderStrike} is outside the active option chain window (${valRes.minAllowed} to ${valRes.maxAllowed}).`);
       }
     }
 

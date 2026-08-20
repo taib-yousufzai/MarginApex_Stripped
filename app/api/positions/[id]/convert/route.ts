@@ -53,13 +53,8 @@ export async function POST(
     }
 
     // Market closed check for all conversions
-    const settlement = (pos.settlement || '').toUpperCase();
-    let segmentId = 'nse';
-    if (settlement.includes('MCX')) segmentId = 'mcx';
-    else if (settlement.includes('BSE') || settlement.includes('BFO')) segmentId = 'bse';
-    else if (settlement.includes('CDS') || settlement.includes('FOREX')) segmentId = 'forex';
-    else if (settlement.includes('COMEX')) segmentId = 'comex';
-    else if (settlement.includes('CRYPTO')) segmentId = 'crypto';
+    const segmentId = RiskValidation.resolveTradingHoursSegmentId(pos.symbol || '', pos.settlement || '');
+
 
     if (segmentId !== 'crypto') {
       const { data: marketHours } = await admin

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
+
 
 /**
  * Fetch bid/ask quotes for a mixed batch of instruments (Kite + Binance crypto).
@@ -234,11 +236,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const segUpper = dbSegment.toUpperCase();
 
         if (!segUpper.includes('CRYPTO')) {
-          let segmentId = 'nse';
-          if (ex === 'MCX' || segUpper.includes('MCX')) segmentId = 'mcx';
-          else if (ex === 'BSE' || segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
-          else if (ex === 'CDS' || ex === 'FOREX' || segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
-          else if (ex === 'COMEX' || segUpper.includes('COMEX')) segmentId = 'comex';
+          const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
+
 
           const segmentHour = tradingHoursMap.get(segmentId);
           if (segmentHour) {

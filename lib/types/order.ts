@@ -43,6 +43,7 @@ export interface PlaceOrderRequest {
   frontend_ltp?: number;
   frontend_quote_time?: number;
   client_click_time?: number;
+  orderAttemptId?: string;
 }
 
 // ─── Response (POST /api/orders) ─────────────────────────────────────────────

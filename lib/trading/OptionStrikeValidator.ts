@@ -53,6 +53,11 @@ export async function resolveUnderlyingKiteId(symbol: string, underlying: string
 
   if (isMcx) {
     const baseName = MCX_BASE_MAP[undUpper] || undUpper;
+    const cleanSym = symbol.includes(':') ? symbol.split(':')[1] : symbol;
+    const mcxMatch = cleanSym.toUpperCase().match(/^([A-Z]+)(\d{2}[A-Z]{3})\d+(?:CE|PE)$/);
+    if (mcxMatch) {
+      return `MCX:${mcxMatch[1]}${mcxMatch[2]}FUT`;
+    }
     const admin = getAdminClient();
     const today = new Date().toISOString().split('T')[0];
 
@@ -106,6 +111,14 @@ export async function validateOptionStrike(params: {
   const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
   const targetExchange = paramExchange || resolveTargetExchange(symbol, underlying);
 
+  const allowedExchanges = (targetExchange === 'MCX' || targetExchange === 'NCO')
+    ? ['MCX', 'NCO']
+    : (targetExchange === 'NFO' || targetExchange === 'NSE')
+    ? ['NFO', 'NSE']
+    : (targetExchange === 'BFO' || targetExchange === 'BSE')
+    ? ['BFO', 'BSE']
+    : [targetExchange];
+
   // 1. Fetch contract instrument row filtering by exact exchange to prevent NCO/MCX collision
   let query = admin
     .from('instruments')
@@ -113,11 +126,10 @@ export async function validateOptionStrike(params: {
     .or(`tradingsymbol.eq.${cleanSymbol},tradingsymbol.eq.${symbol},tradingsymbol.eq.${targetExchange}:${cleanSymbol}`);
 
   if (targetExchange) {
-    const allowedExchanges = targetExchange === 'NFO' ? ['NFO', 'NSE'] : targetExchange === 'BFO' ? ['BFO', 'BSE'] : [targetExchange];
     query = query.in('exchange', allowedExchanges);
   }
 
-  const { data: instrRow } = await query.limit(1).maybeSingle();
+  const { data: instrRow } = await query.order('exchange', { ascending: true }).limit(1).maybeSingle();
 
   if (!instrRow?.expiry) {
     // Fail open if instrument details cannot be found
@@ -130,7 +142,7 @@ export async function validateOptionStrike(params: {
     .select('strike_price')
     .eq('name', instrRow.name || underlying)
     .eq('expiry', instrRow.expiry)
-    .eq('exchange', instrRow.exchange || targetExchange)
+    .in('exchange', allowedExchanges)
     .in('option_type', ['CE', 'PE']);
 
   if (!siblingRows || siblingRows.length === 0) {
@@ -160,6 +172,15 @@ export async function validateOptionStrike(params: {
         const val = typeof raw === 'number' ? raw : (raw?.last_price ?? raw?.lastPrice ?? 0);
         if (val > 0) {
           underlyingPrice = val;
+          break;
+        }
+      }
+    }
+    if (!underlyingPrice || underlyingPrice <= 0) {
+      for (const val of Object.values(knownQuotesMap)) {
+        const num = typeof val === 'number' ? val : (val?.last_price ?? val?.lastPrice ?? 0);
+        if (typeof num === 'number' && num > 0) {
+          underlyingPrice = num;
           break;
         }
       }

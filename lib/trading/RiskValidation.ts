@@ -6,6 +6,40 @@ export interface MarketHours {
 
 export class RiskValidation {
   /**
+   * Resolves the canonical trading_hours table row ID ('nse', 'mcx', 'bse', 'forex', 'comex', 'crypto')
+   * based on symbol and dbSegment.
+   */
+  static resolveTradingHoursSegmentId(symbol: string, dbSegment: string = ''): string {
+    const symUpper = (symbol || '').toUpperCase();
+    const segUpper = (dbSegment || '').toUpperCase();
+    const exchangeName = symUpper.includes(':') ? symUpper.split(':')[0] : '';
+
+    if (segUpper.includes('CRYPTO')) return 'crypto';
+
+    const isCommodity =
+      exchangeName === 'MCX' ||
+      exchangeName === 'NCO' ||
+      segUpper.includes('MCX') ||
+      segUpper.includes('NCO') ||
+      symUpper.includes('GOLD') ||
+      symUpper.includes('SILVER') ||
+      symUpper.includes('CRUDE') ||
+      symUpper.includes('NATGAS') ||
+      symUpper.includes('NATURALGAS') ||
+      symUpper.includes('COPPER') ||
+      symUpper.includes('ZINC') ||
+      symUpper.includes('LEAD') ||
+      symUpper.includes('ALUM');
+
+    if (isCommodity) return 'mcx';
+    if (exchangeName === 'BSE' || segUpper.includes('BSE') || segUpper.includes('BFO')) return 'bse';
+    if (exchangeName === 'CDS' || exchangeName === 'FOREX' || segUpper.includes('CDS') || segUpper.includes('FOREX')) return 'forex';
+    if (exchangeName === 'COMEX' || segUpper.includes('COMEX')) return 'comex';
+
+    return 'nse';
+  }
+
+  /**
    * Validate if the user is allowed to trade the requested segment.
    * Note: If allowedSegments is empty, it implies all segments are allowed (default permissive).
    */

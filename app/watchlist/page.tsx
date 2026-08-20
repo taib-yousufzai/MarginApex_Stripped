@@ -15,6 +15,8 @@ import dynamic from 'next/dynamic';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentToDbSegment, mapSymbolToSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
+
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
@@ -586,10 +588,9 @@ function WatchlistContent() {
     const segUpper = (item.segment || '').toUpperCase();
     if (segUpper.includes('CRYPTO')) return true;
 
-    let segmentId = 'nse';
-    if (segUpper.includes('MCX') || segUpper.includes('COMEX')) segmentId = 'mcx';
-    else if (segUpper.includes('BSE') || segUpper.includes('BFO')) segmentId = 'bse';
-    else if (segUpper.includes('CDS') || segUpper.includes('FOREX')) segmentId = 'forex';
+    const symName = item.tradingsymbol || item.symbol || item.name || '';
+    const segmentId = RiskValidation.resolveTradingHoursSegmentId(symName, item.segment || '');
+
 
     const th = tradingHours.find(t => t.id === segmentId);
     if (!th) return true; // fallback
@@ -1539,9 +1540,8 @@ function WatchlistContent() {
               setIsTradeSheetOpen(false);
               setSelectedItem(null);
               setDetailOpeningSide(null);
-              setErrorModalMsg(
-                `Strike price ${data.strike} is out of range. Allowed range is ${data.min} to ${data.max}.`
-              );
+              const errMsg = data.reason || `Strike price ${data.strike} is outside the active option chain window (${data.min} to ${data.max}).`;
+              window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
               return;
             }
           }

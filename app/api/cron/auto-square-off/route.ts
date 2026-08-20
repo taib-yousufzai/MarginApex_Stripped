@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getSharedKiteSession } from '@/lib/kiteSession';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
+
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -145,18 +147,9 @@ export async function GET(request: Request) {
         if (!userProfile.intraday_sq_off) continue;
 
         // Ensure this position's market is actually closed
-        // Default to 'nse' if settlement is missing
-        let settlementId = (pos.settlement || 'nse').toLowerCase();
-        
-        // Normalize common fallbacks if trading_hours doesn't have an exact match but has equivalent
-        if (settlementId.includes('crypto')) settlementId = 'crypto';
-        else if (settlementId.includes('comex')) settlementId = 'comex';
-        else if (settlementId.includes('mcx')) settlementId = 'mcx';
-        else if (settlementId.includes('nse')) settlementId = 'nse';
-        else if (settlementId.includes('bse')) settlementId = 'bse';
-        else if (settlementId.includes('nfo')) settlementId = 'nfo';
-        else if (settlementId.includes('cds')) settlementId = 'cds';
-        else if (settlementId.includes('index') || settlementId.includes('stock')) settlementId = 'nse';
+        // Resolve market hours segment ID canonical value
+        const settlementId = RiskValidation.resolveTradingHoursSegmentId(pos.symbol || '', pos.settlement || '');
+
 
         // Check if market is closed
         if (!closedSegments.has(settlementId)) {
