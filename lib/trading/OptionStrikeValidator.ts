@@ -163,41 +163,42 @@ export async function validateOptionStrike(params: {
   const baseSymbol = underlying.toUpperCase();
   const mcxBase = MCX_BASE_MAP[baseSymbol] || baseSymbol;
 
+  const candidateKeys = Array.from(new Set([
+    underlyingKiteId,
+    `NSE:${baseSymbol}`,
+    `NSE:${baseSymbol} 50`,
+    baseSymbol,
+    `MCX:${mcxBase}`,
+    `MCX:${baseSymbol}`,
+    'spotPrice',
+    'underlyingPrice',
+  ]));
+
   let underlyingPrice = 0;
   if (knownQuotesMap) {
-    const candidates = [underlyingKiteId, `MCX:${mcxBase}`, `MCX:${baseSymbol}`, baseSymbol, 'spotPrice', 'underlyingPrice', symbol];
-    for (const key of candidates) {
+    for (const key of candidateKeys) {
       const raw = knownQuotesMap[key];
       if (raw !== undefined) {
-        const val = typeof raw === 'number' ? raw : (raw?.last_price ?? raw?.lastPrice ?? 0);
-        if (val > 0) {
+        const val = typeof raw === 'number' ? raw : (raw?.last_price ?? raw?.lastPrice ?? raw?.ltp ?? 0);
+        if (typeof val === 'number' && val > 0) {
           underlyingPrice = val;
           break;
         }
       }
     }
-    if (!underlyingPrice || underlyingPrice <= 0) {
-      for (const val of Object.values(knownQuotesMap)) {
-        const num = typeof val === 'number' ? val : (val?.last_price ?? val?.lastPrice ?? 0);
-        if (typeof num === 'number' && num > 0) {
-          underlyingPrice = num;
-          break;
-        }
-      }
-    }
   }
 
   if (!underlyingPrice || underlyingPrice <= 0) {
     try {
-      const speedMap = await fetchSpeedQuotes([underlyingKiteId, `MCX:${mcxBase}`]);
-      underlyingPrice = speedMap?.[underlyingKiteId] || speedMap?.[`MCX:${mcxBase}`] || 0;
+      const speedMap = await fetchSpeedQuotes([underlyingKiteId, `MCX:${mcxBase}`, `NSE:${baseSymbol}`]);
+      underlyingPrice = speedMap?.[underlyingKiteId] || speedMap?.[`NSE:${baseSymbol}`] || speedMap?.[`MCX:${mcxBase}`] || 0;
     } catch { /* ignore */ }
   }
 
   if (!underlyingPrice || underlyingPrice <= 0) {
     try {
-      const restMap = await fetchKiteQuotes([underlyingKiteId, `MCX:${mcxBase}`]);
-      underlyingPrice = restMap?.[underlyingKiteId] || restMap?.[`MCX:${mcxBase}`] || 0;
+      const restMap = await fetchKiteQuotes([underlyingKiteId, `MCX:${mcxBase}`, `NSE:${baseSymbol}`]);
+      underlyingPrice = restMap?.[underlyingKiteId] || restMap?.[`NSE:${baseSymbol}`] || restMap?.[`MCX:${mcxBase}`] || 0;
     } catch { /* ignore */ }
   }
 
@@ -205,6 +206,7 @@ export async function validateOptionStrike(params: {
   if (!underlyingPrice || underlyingPrice <= 0 || isNaN(underlyingPrice)) {
     return { allowed: true, orderStrike, minAllowed: 0, maxAllowed: 0 };
   }
+
 
   // 4. Compute canonical 11-strike active option chain window using getCenteredStrikeWindow
   const { centeredStrikes } = getCenteredStrikeWindow(sortedStrikes, underlyingPrice);
