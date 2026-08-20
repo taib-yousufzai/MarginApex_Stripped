@@ -30,8 +30,19 @@ interface ResolvedInstrument {
 const memCache = new Map<string, ResolvedInstrument>();
 
 /**
+ * Process-lifetime in-memory cache for historical candle responses.
+ * Survives across requests in the same Node.js worker.
+ * Eliminates redundant Kite API / DB network calls on chart load or timeframe switches.
+ */
+interface CachedCandles {
+  data: any;
+  expiry: number;
+}
+const candleMemCache = new Map<string, CachedCandles>();
+
+/**
  * Statically known instrument tokens for the most-frequently viewed symbols.
- * These never change and eliminate any DB/Redis round-trip for common indices,
+ * These never change and eliminate any DB/Redis round-trip for common assets,
  * making resolution instant (<1ms) even on cold starts.
  */
 const STATIC_TOKENS: Record<string, ResolvedInstrument> = {
@@ -49,6 +60,16 @@ const STATIC_TOKENS: Record<string, ResolvedInstrument> = {
   'BSE:SENSEX':         { token: 265,     canonicalId: 'BSE:SENSEX' },
   'BANKEX':             { token: 274441,  canonicalId: 'BSE:BANKEX' },
   'BSE:BANKEX':         { token: 274441,  canonicalId: 'BSE:BANKEX' },
+  'RELIANCE':           { token: 738561,  canonicalId: 'NSE:RELIANCE' },
+  'NSE:RELIANCE':       { token: 738561,  canonicalId: 'NSE:RELIANCE' },
+  'TCS':                { token: 2953217, canonicalId: 'NSE:TCS' },
+  'NSE:TCS':            { token: 2953217, canonicalId: 'NSE:TCS' },
+  'INFY':               { token: 408065,  canonicalId: 'NSE:INFY' },
+  'NSE:INFY':           { token: 408065,  canonicalId: 'NSE:INFY' },
+  'HDFCBANK':           { token: 341249,  canonicalId: 'NSE:HDFCBANK' },
+  'NSE:HDFCBANK':       { token: 341249,  canonicalId: 'NSE:HDFCBANK' },
+  'ICICIBANK':          { token: 1270529, canonicalId: 'NSE:ICICIBANK' },
+  'NSE:ICICIBANK':      { token: 1270529, canonicalId: 'NSE:ICICIBANK' },
 };
 
 async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | null> {
@@ -278,14 +299,23 @@ export async function GET(request: Request) {
     // canonicalId comes directly from resolution — no extra round-trip needed.
     const canonicalSymbol = resolved.canonicalId;
 
-    const redis = getRedisClient();
     const cacheKey = `historical:${instrumentToken}:${interval}:${from}:${to}`;
+
+    // 1. Process-level in-memory cache check (instant <1ms response)
+    const memHit = candleMemCache.get(cacheKey);
+    if (memHit && memHit.expiry > Date.now()) {
+      return NextResponse.json(memHit.data);
+    }
+
+    const redis = getRedisClient();
 
     if (!isRedisMock()) {
       try {
         const cached = await redis.get(cacheKey);
         if (cached) {
-          return NextResponse.json(JSON.parse(cached));
+          const parsed = JSON.parse(cached);
+          candleMemCache.set(cacheKey, { data: parsed, expiry: Date.now() + 30000 });
+          return NextResponse.json(parsed);
         }
       } catch (e) {
         console.error('Redis cache error for historical data:', e);
@@ -303,7 +333,7 @@ export async function GET(request: Request) {
           'X-Kite-Version': '3',
           'Authorization': `token ${process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY}:${session.accessToken}`
         },
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(2500)
       });
       const data = await response.json();
       if (response.ok && data.status === 'success' && data.data && Array.isArray(data.data.candles)) {
@@ -400,12 +430,16 @@ export async function GET(request: Request) {
 
     const result = { candles: candlesData };
 
-    if (!isRedisMock() && candlesData && candlesData.length > 0) {
-      try {
-        const ttl = (interval === 'day' || interval === 'week') ? 3600 : (interval.includes('minute') || interval.includes('min') || ['1m','5m','15m','30m','60m'].includes(interval)) ? 60 : 300;
-        await redis.setex(cacheKey, ttl, JSON.stringify(result));
-      } catch (e) {
-        console.error('Redis cache set error for historical data:', e);
+    if (candlesData && candlesData.length > 0) {
+      const memTtl = (interval === 'day' || interval === 'week') ? 300_000 : 30_000;
+      candleMemCache.set(cacheKey, { data: result, expiry: Date.now() + memTtl });
+      if (!isRedisMock()) {
+        try {
+          const ttl = (interval === 'day' || interval === 'week') ? 3600 : (interval.includes('minute') || interval.includes('min') || ['1m','5m','15m','30m','60m'].includes(interval)) ? 60 : 300;
+          await redis.setex(cacheKey, ttl, JSON.stringify(result));
+        } catch (e) {
+          console.error('Redis cache set error for historical data:', e);
+        }
       }
     }
 

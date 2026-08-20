@@ -32,13 +32,16 @@ const BSE_INDEX_UNDERLYINGS = new Set(['SENSEX', 'BANKEX']);
  */
 export function resolveTargetExchange(symbol: string, underlying: string): string {
   if (symbol.includes(':')) {
-    return symbol.split(':')[0].toUpperCase();
+    const prefix = symbol.split(':')[0].toUpperCase();
+    if (prefix === 'NSE') return 'NFO';
+    if (prefix === 'BSE') return 'BFO';
+    return prefix;
   }
   const undUpper = underlying.toUpperCase();
   if (MCX_UNDERLYINGS.has(undUpper)) return 'MCX';
-  if (BSE_INDEX_UNDERLYINGS.has(undUpper)) return 'BSE';
-  if (INDEX_UNDERLYINGS.has(undUpper)) return 'NSE';
-  return 'NSE';
+  if (BSE_INDEX_UNDERLYINGS.has(undUpper)) return 'BFO';
+  if (INDEX_UNDERLYINGS.has(undUpper)) return 'NFO';
+  return 'NFO';
 }
 
 /**
@@ -110,7 +113,8 @@ export async function validateOptionStrike(params: {
     .or(`tradingsymbol.eq.${cleanSymbol},tradingsymbol.eq.${symbol},tradingsymbol.eq.${targetExchange}:${cleanSymbol}`);
 
   if (targetExchange) {
-    query = query.eq('exchange', targetExchange);
+    const allowedExchanges = targetExchange === 'NFO' ? ['NFO', 'NSE'] : targetExchange === 'BFO' ? ['BFO', 'BSE'] : [targetExchange];
+    query = query.in('exchange', allowedExchanges);
   }
 
   const { data: instrRow } = await query.limit(1).maybeSingle();
@@ -149,7 +153,7 @@ export async function validateOptionStrike(params: {
 
   let underlyingPrice = 0;
   if (knownQuotesMap) {
-    const candidates = [underlyingKiteId, `MCX:${mcxBase}`, `MCX:${baseSymbol}`, baseSymbol];
+    const candidates = [underlyingKiteId, `MCX:${mcxBase}`, `MCX:${baseSymbol}`, baseSymbol, 'spotPrice', 'underlyingPrice', symbol];
     for (const key of candidates) {
       const raw = knownQuotesMap[key];
       if (raw !== undefined) {
@@ -176,11 +180,8 @@ export async function validateOptionStrike(params: {
     } catch { /* ignore */ }
   }
 
-  // FAIL OPEN: If live spot price cannot be retrieved (> 0), or if resolved price differs from order strike by > 35%
-  // (e.g. quote mismatch), do not block valid trades
-  const priceDevRatio = underlyingPrice > 0 ? Math.abs(orderStrike - underlyingPrice) / orderStrike : 1;
-
-  if (!underlyingPrice || underlyingPrice <= 0 || isNaN(underlyingPrice) || priceDevRatio > 0.35) {
+  // FAIL OPEN: If live spot price cannot be retrieved (> 0), do not block valid trades if quote stream is down
+  if (!underlyingPrice || underlyingPrice <= 0 || isNaN(underlyingPrice)) {
     return { allowed: true, orderStrike, minAllowed: 0, maxAllowed: 0 };
   }
 

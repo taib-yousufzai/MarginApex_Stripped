@@ -266,10 +266,75 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
+  const UNDERLYING_KEYS = [
+    'NSE:NIFTY 50',
+    'NSE:NIFTY BANK',
+    'BSE:SENSEX',
+    'BSE:BANKEX',
+    'NSE:NIFTY FIN SERVICE',
+    'NSE:NIFTY MID SELECT',
+    'MCX:GOLD',
+    'MCX:SILVER',
+    'MCX:CRUDEOIL',
+  ];
+
   const resultIds = React.useMemo(() => {
-    return results.map(r => r.binanceSymbol || r.kiteSymbol || r.symbol).filter(Boolean);
+    const ids = results.map(r => r.binanceSymbol || r.kiteSymbol || r.symbol).filter(Boolean);
+    return Array.from(new Set([...ids, ...UNDERLYING_KEYS]));
   }, [results]);
   const { quotes } = useMarketQuotes(resultIds);
+
+  const displayResults = React.useMemo(() => {
+    if (!results || results.length === 0) return [];
+    const hasOptions = results.some((r: any) => r.strike !== undefined || r.segment?.includes('Options'));
+    if (!hasOptions) return results;
+
+    const firstOption = results.find((r: any) => r.strike !== undefined || r.segment?.includes('Options')) as any;
+    if (!firstOption) return results;
+
+    const uSym = (firstOption.underlyingSymbol || firstOption.name || '').toUpperCase();
+    let spotKey = '';
+    if (uSym.includes('NIFTY') && !uSym.includes('BANK') && !uSym.includes('FIN') && !uSym.includes('MID')) spotKey = 'NSE:NIFTY 50';
+    else if (uSym.includes('BANKNIFTY')) spotKey = 'NSE:NIFTY BANK';
+    else if (uSym.includes('FINNIFTY')) spotKey = 'NSE:NIFTY FIN SERVICE';
+    else if (uSym.includes('MID')) spotKey = 'NSE:NIFTY MID SELECT';
+    else if (uSym.includes('SENSEX')) spotKey = 'BSE:SENSEX';
+    else if (uSym.includes('BANKEX')) spotKey = 'BSE:BANKEX';
+    else if (uSym.includes('GOLD')) spotKey = 'MCX:GOLD';
+    else if (uSym.includes('SILVER')) spotKey = 'MCX:SILVER';
+    else if (uSym.includes('CRUDE')) spotKey = 'MCX:CRUDEOIL';
+
+    const spotPrice = spotKey && quotes[spotKey]?.lastPrice ? quotes[spotKey].lastPrice : 0;
+    if (spotPrice <= 0) return results;
+
+    const nonOptions = results.filter((r: any) => r.strike === undefined && !r.segment?.includes('Options'));
+    const options = results.filter((r: any) => r.strike !== undefined || r.segment?.includes('Options'));
+
+    const strikeSet = new Set<number>();
+    options.forEach((o: any) => {
+      if (o.strike !== undefined) strikeSet.add(Number(o.strike));
+    });
+    const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+    if (strikes.length === 0) return results;
+
+    let closestIdx = 0, minDiff = Infinity;
+    strikes.forEach((s, idx) => {
+      const diff = Math.abs(s - spotPrice);
+      if (diff < minDiff) { minDiff = diff; closestIdx = idx; }
+    });
+
+    const range = 11;
+    const half = Math.floor(range / 2);
+    let startIdx = closestIdx - half;
+    let endIdx = closestIdx + half;
+    if (startIdx < 0) { endIdx += Math.abs(startIdx); startIdx = 0; }
+    if (endIdx >= strikes.length) { startIdx = Math.max(0, startIdx - (endIdx - strikes.length + 1)); endIdx = strikes.length - 1; }
+
+    const selStrikes = new Set(strikes.slice(startIdx, endIdx + 1));
+    const filteredOptions = options.filter((o: any) => selStrikes.has(Number(o.strike)));
+
+    return [...nonOptions, ...filteredOptions];
+  }, [results, quotes]);
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const normalizedQuery = query.replace(/\s+/g, ' ').trim();
@@ -375,15 +440,15 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
             <div className="section-subtitle" style={{ padding: '12px 16px', margin: 0, borderBottom: '1px solid #EFF2F8', display: 'flex', justifyContent: 'space-between', flexShrink: 0 }}>
               <span><i className="fas fa-search"></i> SEARCH RESULTS</span>
               <span id="searchResultCount" style={{ color: '#8F9BB3', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {isSearching ? <AnimatedLoader size="small" text="SEARCHING..." /> : `${results.length} MATCHES`}
+                {isSearching ? <AnimatedLoader size="small" text="SEARCHING..." /> : `${displayResults.length} MATCHES`}
               </span>
             </div>
 
             <div id="searchResultsList" style={{ paddingBottom: '8px', flex: 1, overflowY: 'auto' }}>
-              {results.length === 0 && !isSearching && (
+              {displayResults.length === 0 && !isSearching && (
                 <div className="no-results">No instruments found for &quot;{normalizedQuery}&quot;</div>
               )}
-              {results.map((r, i) => {
+              {displayResults.map((r, i) => {
                 const q = (r.binanceSymbol ? quotes[r.binanceSymbol] : null) || quotes[r.kiteSymbol] || quotes[r.symbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
                 let price = (q?.lastPrice && q.lastPrice > 0) ? q.lastPrice : (r.price || 0);
                 let high = (q?.high && q.high > 0) ? q.high : (r.high || 0);

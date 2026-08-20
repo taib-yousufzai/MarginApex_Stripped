@@ -1,11 +1,19 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useMarketQuotes } from '@/hooks/useMarketQuotes';
+import { api } from '@/lib/api';
 
 interface Instrument {
   name: string;
   symbol: string;
   segment: string;
+  kiteSymbol?: string;
+  price?: number;
+  strike?: number;
+  optionType?: string;
+  contractDate?: string;
+  lotSize?: number;
 }
 
 interface Segment {
@@ -16,7 +24,74 @@ interface Segment {
   instruments?: Instrument[];
 }
 
-const TRADING_SEGMENTS: Segment[] = [
+const UNDERLYING_QUOTE_KEYS = [
+  'NSE:NIFTY 50',
+  'NSE:NIFTY BANK',
+  'BSE:SENSEX',
+  'BSE:BANKEX',
+  'NSE:NIFTY FIN SERVICE',
+  'NSE:NIFTY MID SELECT',
+  'MCX:GOLD',
+  'MCX:SILVER',
+  'MCX:CRUDEOIL',
+];
+
+const OPTION_SUBCAT_MAP: Record<string, { underlying: string; tab: string; key: string }> = {
+  'NIFTY Options': { underlying: 'NIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY 50' },
+  'SENSEX Options': { underlying: 'SENSEX', tab: 'INDEX-OPT', key: 'BSE:SENSEX' },
+  'BANKEX Options': { underlying: 'BANKEX', tab: 'INDEX-OPT', key: 'BSE:BANKEX' },
+  'BANKNIFTY Options': { underlying: 'BANKNIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY BANK' },
+  'FINNIFTY Options': { underlying: 'FINNIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY FIN SERVICE' },
+  'MID CAP NIFTY Options': { underlying: 'MIDCPNIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY MID SELECT' },
+  'GOLD Options': { underlying: 'GOLD', tab: 'MCX-OPT', key: 'MCX:GOLD' },
+  'SILVER Options': { underlying: 'SILVER', tab: 'MCX-OPT', key: 'MCX:SILVER' },
+  'CRUDEOIL Options': { underlying: 'CRUDEOIL', tab: 'MCX-OPT', key: 'MCX:CRUDEOIL' },
+};
+
+function filterOptionStrikesBySpot(items: Instrument[], spotPrice: number): Instrument[] {
+  if (!items || items.length === 0) return [];
+  if (!spotPrice || spotPrice <= 0) return items.slice(0, 22);
+
+  const strikeSet = new Set<number>();
+  items.forEach(i => {
+    if (i.strike !== undefined && i.strike !== null) {
+      strikeSet.add(Number(i.strike));
+    }
+  });
+
+  const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+  if (strikes.length === 0) return items.slice(0, 22);
+
+  let closestIdx = 0;
+  let minDiff = Infinity;
+  strikes.forEach((s, idx) => {
+    const diff = Math.abs(s - spotPrice);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestIdx = idx;
+    }
+  });
+
+  const range = 11;
+  const half = Math.floor(range / 2);
+  let startIdx = closestIdx - half;
+  let endIdx = closestIdx + half;
+
+  if (startIdx < 0) {
+    endIdx += Math.abs(startIdx);
+    startIdx = 0;
+  }
+  if (endIdx >= strikes.length) {
+    const excess = endIdx - (strikes.length - 1);
+    startIdx = Math.max(0, startIdx - excess);
+    endIdx = strikes.length - 1;
+  }
+
+  const selectedStrikes = new Set(strikes.slice(startIdx, endIdx + 1));
+  return items.filter(i => selectedStrikes.has(Number(i.strike)));
+}
+
+const BASE_TRADING_SEGMENTS: Segment[] = [
   {
     name: 'Index-fut',
     icon: 'fa-chart-line',
@@ -34,57 +109,12 @@ const TRADING_SEGMENTS: Segment[] = [
     icon: 'fa-chart-gantt',
     count: 8,
     subCategories: [
-      {
-        name: 'NIFTY Options',
-        instruments: [
-          { name: 'NIFTY 22300 PE', symbol: 'NIFTY22300PE', segment: 'NSE - Options' },
-          { name: 'NIFTY 22400 PE', symbol: 'NIFTY22400PE', segment: 'NSE - Options' },
-          { name: 'NIFTY 22500 CE', symbol: 'NIFTY22500CE', segment: 'NSE - Options' },
-          { name: 'NIFTY 22600 CE', symbol: 'NIFTY22600CE', segment: 'NSE - Options' },
-          { name: 'NIFTY 22700 CE', symbol: 'NIFTY22700CE', segment: 'NSE - Options' }
-        ]
-      },
-      {
-        name: 'SENSEX Options',
-        instruments: [
-          { name: 'SENSEX 74100 PE', symbol: 'SENSEX741PE', segment: 'BSE - Options' },
-          { name: 'SENSEX 74500 CE', symbol: 'SENSEX745CE', segment: 'BSE - Options' },
-          { name: 'SENSEX 74900 CE', symbol: 'SENSEX749CE', segment: 'BSE - Options' }
-        ]
-      },
-      {
-        name: 'BANKEX Options',
-        instruments: [
-          { name: 'BANKEX 51800 PE', symbol: 'BANKEX518PE', segment: 'BSE - Options' },
-          { name: 'BANKEX 52000 CE', symbol: 'BANKEX520CE', segment: 'BSE - Options' }
-        ]
-      },
-      {
-        name: 'BANKNIFTY Options',
-        instruments: [
-          { name: 'BANKNIFTY 47800 PE', symbol: 'BN47800PE', segment: 'NSE - Options' },
-          { name: 'BANKNIFTY 48000 PE', symbol: 'BN48000PE', segment: 'NSE - Options' },
-          { name: 'BANKNIFTY 48200 CE', symbol: 'BN48200CE', segment: 'NSE - Options' },
-          { name: 'BANKNIFTY 48500 CE', symbol: 'BN48500CE', segment: 'NSE - Options' },
-          { name: 'BANKNIFTY 48800 CE', symbol: 'BN48800CE', segment: 'NSE - Options' },
-          { name: 'BANKNIFTY 49000 CE', symbol: 'BN49000CE', segment: 'NSE - Options' }
-        ]
-      },
-      {
-        name: 'FINNIFTY Options',
-        instruments: [
-          { name: 'FINNIFTY 21300 PE', symbol: 'FIN21300PE', segment: 'NSE - Options' },
-          { name: 'FINNIFTY 21500 CE', symbol: 'FIN21500CE', segment: 'NSE - Options' },
-          { name: 'FINNIFTY 21700 CE', symbol: 'FIN21700CE', segment: 'NSE - Options' }
-        ]
-      },
-      {
-        name: 'MID CAP NIFTY Options',
-        instruments: [
-          { name: 'MIDCPNIFTY 11800 CE', symbol: 'MIDCP118CE', segment: 'NSE - Options' },
-          { name: 'MIDCPNIFTY 12000 CE', symbol: 'MIDCP120CE', segment: 'NSE - Options' }
-        ]
-      }
+      { name: 'NIFTY Options', instruments: [] },
+      { name: 'SENSEX Options', instruments: [] },
+      { name: 'BANKEX Options', instruments: [] },
+      { name: 'BANKNIFTY Options', instruments: [] },
+      { name: 'FINNIFTY Options', instruments: [] },
+      { name: 'MID CAP NIFTY Options', instruments: [] }
     ]
   },
   {
@@ -183,12 +213,14 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
   const [expandedSegment, setExpandedSegment] = useState<string | null>(null);
   const [expandedSubcategories, setExpandedSubcategories] = useState<Record<string, boolean>>({});
   const [allowedSegments, setAllowedSegments] = useState<string[]>([]);
+  const [rawOptionInstruments, setRawOptionInstruments] = useState<Record<string, Instrument[]>>({});
+
+  const { quotes } = useMarketQuotes(UNDERLYING_QUOTE_KEYS);
 
   React.useEffect(() => {
     setMounted(true);
     const fetchAllowedSegments = async () => {
       try {
-        const { api } = await import('@/lib/api');
         const profile = await api.get<{ segments?: string[] }>('/api/user/profile');
         if (profile && profile.segments) {
           setAllowedSegments(profile.segments);
@@ -200,13 +232,75 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
     fetchAllowedSegments();
   }, []);
 
+  // Fetch live option contracts for option subcategories when drawer opens
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let isSubscribed = true;
+    async function loadOptionContracts() {
+      const results: Record<string, Instrument[]> = {};
+      await Promise.all(
+        Object.entries(OPTION_SUBCAT_MAP).map(async ([subName, cfg]) => {
+          try {
+            const url = `/api/market/instruments/search?q=${encodeURIComponent(cfg.underlying)}&tab=${cfg.tab}&_t=${Date.now()}`;
+            const res = await api.get<{ success: boolean; results: any[] }>(url);
+            if (res && res.success && Array.isArray(res.results)) {
+              results[subName] = res.results.map(r => ({
+                name: r.name || r.tradingsymbol,
+                symbol: r.symbol || r.tradingsymbol,
+                segment: r.segment || 'NSE - Options',
+                kiteSymbol: r.kiteSymbol || r.symbol,
+                price: r.price || 0,
+                strike: r.strike !== undefined ? Number(r.strike) : undefined,
+                optionType: r.optionType,
+                contractDate: r.contractDate,
+                lotSize: r.lotSize,
+              }));
+            }
+          } catch (e) {
+            console.error(`Failed to load options for ${subName}`, e);
+          }
+        })
+      );
+      if (isSubscribed) {
+        setRawOptionInstruments(results);
+      }
+    }
+
+    loadOptionContracts();
+    return () => { isSubscribed = false; };
+  }, [isOpen]);
+
+  // Compute dynamic segments with 11-strike window re-centered around live spot prices
+  const tradingSegments = useMemo(() => {
+    return BASE_TRADING_SEGMENTS.map(seg => {
+      if (!seg.subCategories) return seg;
+
+      const subCategories = seg.subCategories.map(sub => {
+        const rawItems = rawOptionInstruments[sub.name] || [];
+        const cfg = OPTION_SUBCAT_MAP[sub.name];
+        const liveSpot = cfg ? (quotes[cfg.key]?.lastPrice || 0) : 0;
+
+        const filtered = filterOptionStrikesBySpot(rawItems, liveSpot);
+        return {
+          ...sub,
+          instruments: filtered.length > 0 ? filtered : sub.instruments,
+        };
+      });
+
+      return {
+        ...seg,
+        subCategories,
+      };
+    });
+  }, [rawOptionInstruments, quotes]);
+
   if (!mounted) return null;
 
   const handleSegmentClick = (name: string) => {
     setExpandedSegment(expandedSegment === name ? null : name);
   };
 
-  // Map drawer segment names to the DB segment keys stored in profile.segments
   const SEGMENT_NAME_TO_DB_KEY: Record<string, string> = {
     'Index-fut':   'INDEX-FUT',
     'Index-opt':  'INDEX-OPT',
@@ -220,7 +314,7 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
     'Forex':            'FOREX',
   };
 
-  const visibleSegments = TRADING_SEGMENTS.filter(seg => {
+  const visibleSegments = tradingSegments.filter(seg => {
     if (allowedSegments.length === 0) return true;
     const dbKey = SEGMENT_NAME_TO_DB_KEY[seg.name] ?? seg.name.toUpperCase();
     return allowedSegments.includes(dbKey);

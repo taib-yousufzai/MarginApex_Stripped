@@ -2129,7 +2129,6 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
             {/* BUY/price/SELL widget — HIDDEN */}
 
             <ChartContainer
-              key={`${symbol}-${segment}`}
               symbol={symbol}
               segment={segment}
               timeframe={timeframe}
