@@ -86,75 +86,85 @@ class TickerDaemon {
     logger.info('Initializing Ticker Daemon...');
     
     // Create combined HTTP server for Health check, REST API, and WebSocket Gateway
-    const port = process.env.PORT || 8080;
+    const port = Number(process.env.PORT || 8080);
     const server = http.createServer((req, res) => {
-      const urlObj = new URL(req.url || '', `http://${req.headers.host}`);
+      try {
+        const rawUrl = req.url || '/';
+        const pathname = rawUrl.split('?')[0];
 
-      const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      };
+        const corsHeaders = {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        };
 
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204, corsHeaders);
-        res.end();
-        return;
-      }
-
-      const jsonHeaders = { ...corsHeaders, 'Content-Type': 'application/json' };
-
-      // GET /health — structured health check for Railway and monitoring
-      if (urlObj.pathname === '/health' || urlObj.pathname === '/') {
-        const sessionStatus = this.sessionMonitor.getStatus();
-        const healthy = this.binanceTicker.connected;
-        const redisHealth = getRedisHealthStatus();
-        const payload = JSON.stringify({
-          status: healthy ? 'ok' : 'degraded',
-          uptime: process.uptime(),
-          kiteConnected: !!this.ticker && !this.isReconnecting,
-          kiteSessionValid: sessionStatus.sessionValid,
-          kiteSessionExpiresAt: sessionStatus.expiresAt?.toISOString() ?? null,
-          minutesUntilExpiry: sessionStatus.minutesUntilExpiry,
-          lastSuccessfulLogin: sessionStatus.lastSuccessfulLogin?.toISOString() ?? null,
-          lastLoginAttempt: sessionStatus.lastLoginAttempt?.toISOString() ?? null,
-          lastLoginFailure: sessionStatus.lastLoginFailure?.toISOString() ?? null,
-          binanceConnected: this.binanceTicker.connected,
-          activeOrders: (matchingEngine as any)?.activeOrders?.size || 0,
-          activePositions: (matchingEngine as any)?.activePositions?.size || 0,
-          timestamp: new Date().toISOString(),
-          ...redisHealth
-        });
-        res.writeHead(200, jsonHeaders);
-        res.end(payload);
-        return;
-      }
-
-      // GET /metrics — live telemetry from this process
-      if (urlObj.pathname === '/metrics') {
-        const summary = telemetry.getSummary();
-        res.writeHead(200, jsonHeaders);
-        res.end(JSON.stringify(summary));
-        return;
-      }
-
-      // GET /quotes — live price quotes by symbol
-      if (urlObj.pathname === '/quotes') {
-        const symbolsParam = urlObj.searchParams.get('symbols');
-        if (symbolsParam) {
-          const symbols = symbolsParam.split(',').filter(Boolean);
-          const quotes = this.gateway.getQuotes(symbols);
-          res.writeHead(200, jsonHeaders);
-          res.end(JSON.stringify({ success: true, data: quotes }));
-        } else {
-          res.writeHead(400, jsonHeaders);
-          res.end(JSON.stringify({ success: false, error: 'Missing symbols query param' }));
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, corsHeaders);
+          res.end();
+          return;
         }
-        return;
-      }
 
-      res.writeHead(404, jsonHeaders);
-      res.end(JSON.stringify({ error: 'Not found' }));
+        const jsonHeaders = { ...corsHeaders, 'Content-Type': 'application/json' };
+
+        // GET /health — structured health check for Railway and monitoring
+        if (pathname === '/health' || pathname === '/') {
+          const sessionStatus = this.sessionMonitor.getStatus();
+          const healthy = this.binanceTicker ? this.binanceTicker.connected : true;
+          const redisHealth = getRedisHealthStatus();
+          const payload = JSON.stringify({
+            status: healthy ? 'ok' : 'degraded',
+            uptime: process.uptime(),
+            kiteConnected: !!this.ticker && !this.isReconnecting,
+            kiteSessionValid: sessionStatus.sessionValid,
+            kiteSessionExpiresAt: sessionStatus.expiresAt?.toISOString() ?? null,
+            minutesUntilExpiry: sessionStatus.minutesUntilExpiry,
+            lastSuccessfulLogin: sessionStatus.lastSuccessfulLogin?.toISOString() ?? null,
+            lastLoginAttempt: sessionStatus.lastLoginAttempt?.toISOString() ?? null,
+            lastLoginFailure: sessionStatus.lastLoginFailure?.toISOString() ?? null,
+            binanceConnected: this.binanceTicker ? this.binanceTicker.connected : false,
+            activeOrders: (matchingEngine as any)?.activeOrders?.size || 0,
+            activePositions: (matchingEngine as any)?.activePositions?.size || 0,
+            timestamp: new Date().toISOString(),
+            ...redisHealth
+          });
+          res.writeHead(200, jsonHeaders);
+          res.end(payload);
+          return;
+        }
+
+        // GET /metrics — live telemetry from this process
+        if (pathname === '/metrics') {
+          const summary = telemetry.getSummary();
+          res.writeHead(200, jsonHeaders);
+          res.end(JSON.stringify(summary));
+          return;
+        }
+
+        // GET /quotes — live price quotes by symbol
+        if (pathname === '/quotes') {
+          const urlObj = new URL(rawUrl, 'http://localhost');
+          const symbolsParam = urlObj.searchParams.get('symbols');
+          if (symbolsParam) {
+            const symbols = symbolsParam.split(',').filter(Boolean);
+            const quotes = this.gateway.getQuotes(symbols);
+            res.writeHead(200, jsonHeaders);
+            res.end(JSON.stringify({ success: true, data: quotes }));
+          } else {
+            res.writeHead(400, jsonHeaders);
+            res.end(JSON.stringify({ success: false, error: 'Missing symbols query param' }));
+          }
+          return;
+        }
+
+        res.writeHead(404, jsonHeaders);
+        res.end(JSON.stringify({ error: 'Not found' }));
+      } catch (err: any) {
+        logger.error({ err }, 'HTTP Request Handler error');
+        try {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message || 'Internal Server Error' }));
+        } catch (_) {}
+      }
     });
 
     this.gateway = new WebSocketGateway(server);
@@ -177,8 +187,8 @@ class TickerDaemon {
     // Link dbWriter to gateway and aggregator
     this.dbWriter.setGatewayAndAggregator(this.gateway, this.candleAggregator);
 
-    server.listen(port, () => {
-      logger.info(`WebSocket Gateway and HTTP API listening on port ${port}`);
+    server.listen(port, '0.0.0.0', () => {
+      logger.info(`WebSocket Gateway and HTTP API listening on 0.0.0.0:${port}`);
     });
 
     // 1. Initialize In-Memory Matching Engine cache (with retry on Supabase transient errors)
