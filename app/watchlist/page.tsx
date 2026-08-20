@@ -274,19 +274,12 @@ export function filterBySearch(items: WatchlistItem[], query: string): Watchlist
 }
 
 /** Derives the exchange badge string from a segment string. */
-export function getExchangeBadge(segment: string, name?: string, symbol?: string): string {
-  const combined = ((name || '') + ' ' + (symbol || '') + ' ' + (segment || '')).toUpperCase();
-  if (combined.includes('SENSEX') || combined.includes('BANKEX')) return 'BSE';
-  if (combined.includes('INDEX') || combined.includes('NIFTY')) {
-    if (!combined.includes('CE') && !combined.includes('PE') && !combined.includes('FUT') && !combined.includes('OPT')) {
-      return combined.includes('BSE') || combined.includes('BFO') || combined.includes('SENSEX') ? 'BSE' : 'NSE';
-    }
-  }
+export function getExchangeBadge(segment: string): string {
   if (!segment) return 'NSE';
   if (segment.includes('MCX') || segment.includes('NCO')) return 'MCX';
   if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
   if (segment.includes('CDS') || segment.includes('FOREX')) return 'CDS';
-  if (segment === 'NSE - Equity' || segment === 'NSE') return 'NSE';
+  if (segment === 'NSE - Equity' || segment === 'NSE' || segment.includes('Index')) return 'NSE';
   if (segment === 'BSE - Equity' || segment === 'BSE') return 'BSE';
   if (segment.startsWith('NSE')) return 'NFO';
   if (segment.startsWith('BSE')) return 'BFO';
@@ -340,7 +333,7 @@ interface InstrumentRowProps {
 function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetail, basketMode, onBasketBuy, onBasketSell, onChart }: InstrumentRowProps) {
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
-  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.category === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
+  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.category === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
   const isPureComex = !!item.comexSymbol && !item.kiteSymbol;
   const hasDualView = false; // Toggles removed completely
   const showComex = isPureComex;
@@ -428,7 +421,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
               isCrypto ? { background: '#F0A500', color: '#fff' } :
                 showComex ? { background: '#4A148C', color: '#fff' } : {}
             }>
-              {isCrypto ? 'CRYPTO' : showComex ? 'COMEX' : getExchangeBadge(item.segment, item.name, item.symbol)}
+              {isCrypto ? 'CRYPTO' : showComex ? 'COMEX' : getExchangeBadge(item.segment)}
             </span>
             {!basketMode && onChart && (
               <button
@@ -1070,7 +1063,7 @@ function WatchlistContent() {
       'CRUDE OIL': 'CRUDEOIL',
       'BANK NIFTY': 'BANKNIFTY',
     };
-    
+
     let query = deepLinkSymbol.toUpperCase();
     if (aliasMap[query]) {
       query = aliasMap[query];
@@ -1099,16 +1092,6 @@ function WatchlistContent() {
           for (const seg of tradingSegmentsRef.current) {
             if (seg.instruments) {
               const found = seg.instruments.find(i =>
-              i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
-              i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
-              (i.kiteSymbol && i.kiteSymbol.toUpperCase() === query) ||
-              (i.kiteSymbol && i.kiteSymbol.toUpperCase().split(':').pop() === query)
-            );
-            if (found) { masterFound = found; break; }
-          }
-          if (seg.subCategories) {
-            for (const sub of seg.subCategories) {
-              const found = sub.instruments.find(i =>
                 i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
                 i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
                 (i.kiteSymbol && i.kiteSymbol.toUpperCase() === query) ||
@@ -1116,12 +1099,22 @@ function WatchlistContent() {
               );
               if (found) { masterFound = found; break; }
             }
-            if (masterFound) break;
+            if (seg.subCategories) {
+              for (const sub of seg.subCategories) {
+                const found = sub.instruments.find(i =>
+                  i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
+                  i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
+                  (i.kiteSymbol && i.kiteSymbol.toUpperCase() === query) ||
+                  (i.kiteSymbol && i.kiteSymbol.toUpperCase().split(':').pop() === query)
+                );
+                if (found) { masterFound = found; break; }
+              }
+              if (masterFound) break;
+            }
           }
         }
-      }
 
-      if (masterFound) {
+        if (masterFound) {
           item = { ...masterFound };
         } else {
           item = {
@@ -1290,7 +1283,7 @@ function WatchlistContent() {
 
     if (deduped.length !== finalItems.length) {
       // Duplicates were found — persist the cleaned list immediately
-      try { localStorage.setItem(userKey, JSON.stringify(deduped)); } catch (e) {}
+      try { localStorage.setItem(userKey, JSON.stringify(deduped)); } catch (e) { }
     }
 
     setWatchlistItems(deduped);
@@ -1686,20 +1679,18 @@ function WatchlistContent() {
                       <div className="folder-btn select-all-btn"
                         onClick={() => {
                           if (typeof (window as any).__reactSelectAll === 'function') (window as any).__reactSelectAll();
-                        }}
-                        style={{ cursor: 'pointer', background: '#F3F4F6', color: '#4B5563', border: '1px solid #D1D5DB', padding: '6px 14px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '30px', fontWeight: '700', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        }}>
                         <span>All</span>
                       </div>
                     )}
-                    <div className="folder-btn basket-btn" id="basketModeBtn"
+                    <div className={`folder-btn basket-btn ${isSelectionActive ? 'is-delete' : ''}`} id="basketModeBtn"
                       onClick={() => {
                         if (isSelectionActive) {
                           if (typeof (window as any).__reactDeleteSelected === 'function') (window as any).__reactDeleteSelected();
                         } else {
                           setBasketMode(b => !b);
                         }
-                      }}
-                      style={{ cursor: 'pointer', background: isSelectionActive ? '#FEF0F0' : '#E9F6EF', color: isSelectionActive ? '#C62E2E' : '#006400', border: isSelectionActive ? '1px solid #FCD4D4' : '1px solid #C3E6D4', padding: '6px 14px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '30px', fontWeight: '700', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      }}>
                       {isSelectionActive ? <span>Delete</span> : <span>Basket</span>}
                     </div>
                     <div className="folder-btn dustbin-btn"
@@ -1712,8 +1703,7 @@ function WatchlistContent() {
                           setBasketMode(false);
                           if (typeof (window as any).enterSelectionMode === 'function') (window as any).enterSelectionMode();
                         }
-                      }}
-                      style={{ cursor: 'pointer', background: '#F3F4F6', color: '#4B5563', border: '1px solid #D1D5DB', padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '30px', flexShrink: 0 }}>
+                      }}>
                       <i className={isSelectionActive ? "fas fa-times" : "fas fa-trash-alt"}></i>
                     </div>
                   </div>

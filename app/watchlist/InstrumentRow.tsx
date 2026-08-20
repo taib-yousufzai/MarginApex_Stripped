@@ -34,23 +34,16 @@ interface InstrumentRowProps {
   onBasketSell?: (item: WatchlistItem) => void;
 }
 
-function getExchangeBadge(segment: string, name?: string, symbol?: string): string {
-  const combined = ((name || '') + ' ' + (symbol || '') + ' ' + (segment || '')).toUpperCase();
-  if (combined.includes('SENSEX') || combined.includes('BANKEX')) return 'BSE';
-  if (combined.includes('INDEX') || combined.includes('NIFTY')) {
-    if (!combined.includes('CE') && !combined.includes('PE') && !combined.includes('FUT') && !combined.includes('OPT')) {
-      return combined.includes('BSE') || combined.includes('BFO') || combined.includes('SENSEX') ? 'BSE' : 'NSE';
-    }
-  }
-  if (!segment) return 'NSE';
-  if (segment.includes('MCX') || segment.includes('NCO')) return 'MCX';
+function getExchangeBadge(segment: string) {
+  if (!segment) return 'OTH';
+  if (segment.startsWith('NSE') && segment !== 'NSE - Equity') return 'NFO';
+  if (segment.startsWith('BSE') && segment !== 'BSE - Equity') return 'BFO';
+  if (segment.startsWith('MCX') || segment.includes('MCX')) return 'MCX';
+  if (segment.startsWith('CDS') || segment.includes('FOREX')) return 'CDS';
   if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
-  if (segment.includes('CDS') || segment.includes('FOREX')) return 'CDS';
-  if (segment === 'NSE - Equity' || segment === 'NSE') return 'NSE';
-  if (segment === 'BSE - Equity' || segment === 'BSE') return 'BSE';
-  if (segment.startsWith('NSE')) return 'NFO';
-  if (segment.startsWith('BSE')) return 'BFO';
-  return 'NSE';
+  if (segment === 'NSE - Equity') return 'NSE';
+  if (segment === 'BSE - Equity') return 'BSE';
+  return 'OTH';
 }
 
 function getPctClass(pct: number) {
@@ -60,7 +53,7 @@ function getPctClass(pct: number) {
 export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade }: InstrumentRowProps) {
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
-  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
+  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
   const hasDualView = !!item.kiteSymbol && !!item.comexSymbol;
   const showComex = hasDualView && priceView === 'comex';
 
@@ -129,7 +122,7 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
           {isLoading ? (
             <div className="instr-row__ltp" style={{ color: '#9CA3AF' }}>Loading…</div>
           ) : (
-                      <>
+            <>
               <div className="instr-row__ltp">
                 <TickFlash value={ltp}>
                   {isCrypto
