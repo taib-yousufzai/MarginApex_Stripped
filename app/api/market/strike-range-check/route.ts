@@ -25,13 +25,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ allowed: true });
     }
 
-    const spotParam = searchParams.get('spotPrice');
-    const spotPrice = spotParam ? parseFloat(spotParam) : 0;
-
     const valResult = await validateOptionStrike({
       symbol,
       isExit: false,
-      knownQuotesMap: spotPrice > 0 ? { [symbol]: spotPrice, spotPrice } : undefined,
     });
 
     if (!valResult.allowed) {

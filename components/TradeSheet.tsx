@@ -662,7 +662,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
         try {
           const token = (window as any).__accessToken || '';
           const checkRes = await fetch(
-            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}&spotPrice=${currentLtp || 0}`,
+            `/api/market/strike-range-check?symbol=${encodeURIComponent(item.symbol)}`,
             { headers: token ? { Authorization: `Bearer ${token}` } : {} }
           );
           if (checkRes.ok) {

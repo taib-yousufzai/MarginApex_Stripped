@@ -170,8 +170,6 @@ export async function validateOptionStrike(params: {
     baseSymbol,
     `MCX:${mcxBase}`,
     `MCX:${baseSymbol}`,
-    'spotPrice',
-    'underlyingPrice',
   ]));
 
   let underlyingPrice = 0;
