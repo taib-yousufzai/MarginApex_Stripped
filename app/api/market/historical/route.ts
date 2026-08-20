@@ -356,7 +356,7 @@ export async function GET(request: Request) {
           'X-Kite-Version': '3',
           'Authorization': `token ${process.env.KITE_API_KEY || process.env.NEXT_PUBLIC_KITE_API_KEY}:${session.accessToken}`
         },
-        signal: AbortSignal.timeout(2500)
+        signal: AbortSignal.timeout(1200)
       });
       const data = await response.json();
       console.log(`[API PERF] Kite historical API finished in ${(performance.now() - kiteStart).toFixed(1)}ms (ok=${response.ok})`);

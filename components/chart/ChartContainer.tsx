@@ -120,7 +120,7 @@ export default function ChartContainer({
     loadStartTimeRef.current = startTime;
     console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=CHART_CONTAINER_MOUNT elapsed=0.0ms mountCount=${globalMountCount} unmountCount=${globalUnmountCount}`);
 
-    const armWatchdog = (ms = 20000) => {
+    const armWatchdog = (ms = 8000) => {
       if (initTimerRef.current) clearTimeout(initTimerRef.current);
       initTimerRef.current = setTimeout(() => {
         const elapsed = (performance.now() - startTime).toFixed(1);
@@ -149,7 +149,7 @@ export default function ChartContainer({
 
       datafeedRef.current.onProgress = (_event: string) => {
         // Reset/extend the watchdog whenever meaningful datafeed progress occurs
-        armWatchdog(15000);
+        armWatchdog(6000);
       };
 
       datafeedRef.current.onError = (errText: string) => {
@@ -185,8 +185,14 @@ export default function ChartContainer({
         client_id: 'marginapexx',
         user_id: 'public_user',
         auto_save_delay: 1,
-        disabled_features: ['timeframes_toolbar', 'countdown', 'header_widget'],
-        enabled_features: [],
+        disabled_features: [
+          'header_symbol_search',
+          'header_compare'
+        ],
+        enabled_features: [
+          'study_templates',
+          'use_localstorage_for_settings_saved'
+        ],
         overrides: {
           "mainSeriesProperties.showCountdown": false
         }
@@ -266,7 +272,7 @@ export default function ChartContainer({
     };
 
     // Arm initial watchdog
-    armWatchdog(20000);
+    armWatchdog(8000);
 
     const scriptCheckTime = performance.now();
     if (window.TradingView) {
