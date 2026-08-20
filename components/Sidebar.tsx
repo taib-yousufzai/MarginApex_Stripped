@@ -33,10 +33,20 @@ export default function Sidebar() {
   const toggleTheme = () => {
     const newDark = !isDark;
     setIsDark(newDark);
-    document.body.classList.remove('dark', 'black');
-    if (newDark) document.body.classList.add('dark');
-    else { const t = localStorage.getItem('marginApexTheme'); if (t === 'black') document.body.classList.add('black'); }
+    document.body.classList.remove('dark', 'black', 'blue');
+    document.documentElement.classList.remove('dark', 'black', 'blue');
+    if (newDark) {
+      document.body.classList.add('dark');
+      document.documentElement.classList.add('dark');
+    } else {
+      const t = localStorage.getItem('marginApexTheme');
+      if (t === 'black') {
+        document.body.classList.add('black');
+        document.documentElement.classList.add('black');
+      }
+    }
     localStorage.setItem('marginApexTheme', newDark ? 'dark' : 'light');
+    window.dispatchEvent(new Event('themeChanged'));
   };
 
   return (

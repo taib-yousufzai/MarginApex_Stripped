@@ -150,7 +150,9 @@ body {
 }
 
 /* DARK THEME */
-body.dark {
+html.dark,
+body.dark,
+:root.dark {
   --bg-body: #121212;
   --container-bg: #1E1E1E;
   --card-bg: #252525;
@@ -194,7 +196,9 @@ body.dark {
 }
 
 /* SUPER BLACK THEME */
-body.black {
+html.black,
+body.black,
+:root.black {
   --bg-body: #000000;
   --container-bg: #000000;
   --card-bg: #000000;
@@ -994,7 +998,9 @@ body.dark .ew-arrow--today {
 
 
 /* SUPER BLACK THEME */
-body.blue {
+html.blue,
+body.blue,
+:root.blue {
   --bg-body: #0B141E;
   --container-bg: #0B141E;
   --card-bg: #0B141E;
