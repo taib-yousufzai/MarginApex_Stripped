@@ -22,6 +22,7 @@
   border-top: 1px solid var(--border-light, #E8ECF0) !important;
 }
 
+html.dark .footer-section,
 body.dark .footer-section {
   background: var(--footer-bg, #1E1E1E);
 }
@@ -323,8 +324,9 @@ body.dark .account-drawer-ark {
 
 
 /* AMOLED SUPER BLACK OVERRIDES */
+html.black .footer-section,
 body.black .footer-section {
-  background: var(--footer-bg, #000000);
+  background: var(--footer-bg, #000000) !important;
 }
 
 body.black .footer-tab:active {

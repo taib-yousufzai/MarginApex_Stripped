@@ -34,7 +34,15 @@ interface InstrumentRowProps {
   onBasketSell?: (item: WatchlistItem) => void;
 }
 
-function getExchangeBadge(segment: string) {
+function getExchangeBadge(segment: string, name?: string, symbol?: string) {
+  if (name || symbol) {
+    const combined = `${name || ''} ${symbol || ''}`.toUpperCase();
+    if (combined.includes('INDEX') || combined.startsWith('NIFTY') || combined.startsWith('BANKNIFTY') || combined.startsWith('FINNIFTY') || combined.startsWith('SENSEX')) {
+      if (!combined.includes(' CE') && !combined.includes(' PE') && !combined.includes(' FUT')) {
+        return combined.includes('SENSEX') || combined.includes('BSE') ? 'BSE' : 'NSE';
+      }
+    }
+  }
   if (!segment) return 'OTH';
   if (segment.startsWith('NSE') && segment !== 'NSE - Equity') return 'NFO';
   if (segment.startsWith('BSE') && segment !== 'BSE - Equity') return 'BFO';

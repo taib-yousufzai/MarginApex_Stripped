@@ -35,6 +35,16 @@ export default function PositionPage() {
     });
   }, []);
 
+  useEffect(() => {
+    const saved = localStorage.getItem('marginApexTheme') || 'light';
+    document.documentElement.classList.remove('dark', 'black', 'blue');
+    document.body.classList.remove('dark', 'black', 'blue');
+    if (saved === 'dark' || saved === 'black' || saved === 'blue') {
+      document.documentElement.classList.add(saved);
+      document.body.classList.add(saved);
+    }
+  }, []);
+
   // Preload the TradeSheet dynamic-import chunk on page mount so the first Exit tap
   // never blocks on a network round-trip to fetch the JS bundle.
   useEffect(() => { import('@/components/TradeSheet'); }, []);

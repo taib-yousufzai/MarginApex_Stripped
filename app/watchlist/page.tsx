@@ -1014,9 +1014,13 @@ function WatchlistContent() {
 
 
   useEffect(() => {
-    const saved = localStorage.getItem('marginApexTheme');
+    const saved = localStorage.getItem('marginApexTheme') || 'light';
+    document.documentElement.classList.remove('dark', 'black', 'blue');
     document.body.classList.remove('dark', 'black', 'blue');
-    if (saved === 'dark' || saved === 'black' || saved === 'blue') document.body.classList.add(saved);
+    if (saved === 'dark' || saved === 'black' || saved === 'blue') {
+      document.documentElement.classList.add(saved);
+      document.body.classList.add(saved);
+    }
   }, []);
 
   // Keep a ref to activePositions so the side-change effect reads the latest
