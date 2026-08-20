@@ -132,7 +132,11 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
       baseKey.startsWith('LEAD') ||
       baseKey.startsWith('MENTHAOIL')
     ) {
-      prefix = 'MCX:';
+      if (baseKey.endsWith('CE') || baseKey.endsWith('PE')) {
+        prefix = 'NCO:';
+      } else {
+        prefix = 'MCX:';
+      }
     } else if (
       seg.includes('CDS') ||
       seg.includes('FOREX') ||
@@ -194,7 +198,8 @@ export default function PositionPage({ selectedUser, onOpenUserPanel, isDemoMode
         liveLtp = comexQuotes[p.symbol]?.lastPrice ?? liveLtp;
       } else {
         const kiteKey = resolveKitePrefix(p.symbol, p.settlement || '');
-        liveLtp = marketQuotes[kiteKey]?.lastPrice ?? liveLtp;
+        const symBare = p.symbol.includes(':') ? p.symbol.split(':')[1] : p.symbol;
+        liveLtp = marketQuotes[kiteKey]?.lastPrice ?? marketQuotes[`NCO:${symBare}`]?.lastPrice ?? marketQuotes[`MCX:${symBare}`]?.lastPrice ?? marketQuotes[p.symbol]?.lastPrice ?? liveLtp;
       }
 
       const qtyOpen = Number(p.qty.split('/')[0]) || 0;

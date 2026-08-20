@@ -78,7 +78,11 @@ const resolveKitePrefix = (key: string, settlement: string) => {
     baseKey.startsWith('LEAD') ||
     baseKey.startsWith('MENTHAOIL')
   ) {
-    prefix = 'MCX:';
+    if (baseKey.endsWith('CE') || baseKey.endsWith('PE')) {
+      prefix = 'NCO:';
+    } else {
+      prefix = 'MCX:';
+    }
   } else if (
     seg.includes('CDS') ||
     seg.includes('FOREX') ||
@@ -359,7 +363,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           const kiteKey = cached ? cached.resolvedKiteSymbol : resolveKitePrefix(p.kite_instrument || p.symbol, p.settlement || '');
           const rawSymbol = p.kite_instrument || p.symbol || '';
           const symbolWithoutPrefix = rawSymbol.includes(':') ? rawSymbol.split(':')[1] : rawSymbol;
-          const quote = marketQuotes[kiteKey] || marketQuotes[rawSymbol] || marketQuotes[symbolWithoutPrefix] || marketQuotes[`NFO:${symbolWithoutPrefix}`] || marketQuotes[`NSE:${symbolWithoutPrefix}`];
+          const quote = marketQuotes[kiteKey] || marketQuotes[`NCO:${symbolWithoutPrefix}`] || marketQuotes[`MCX:${symbolWithoutPrefix}`] || marketQuotes[rawSymbol] || marketQuotes[symbolWithoutPrefix] || marketQuotes[`NFO:${symbolWithoutPrefix}`] || marketQuotes[`NSE:${symbolWithoutPrefix}`];
           if (quote) {
             rawQuote = quote;
             ltp = quote.lastPrice ?? ltp;
