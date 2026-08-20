@@ -274,12 +274,19 @@ export function filterBySearch(items: WatchlistItem[], query: string): Watchlist
 }
 
 /** Derives the exchange badge string from a segment string. */
-export function getExchangeBadge(segment: string): string {
+export function getExchangeBadge(segment: string, name?: string, symbol?: string): string {
+  const combined = ((name || '') + ' ' + (symbol || '') + ' ' + (segment || '')).toUpperCase();
+  if (combined.includes('SENSEX') || combined.includes('BANKEX')) return 'BSE';
+  if (combined.includes('INDEX') || combined.includes('NIFTY')) {
+    if (!combined.includes('CE') && !combined.includes('PE') && !combined.includes('FUT') && !combined.includes('OPT')) {
+      return combined.includes('BSE') || combined.includes('BFO') || combined.includes('SENSEX') ? 'BSE' : 'NSE';
+    }
+  }
   if (!segment) return 'NSE';
   if (segment.includes('MCX') || segment.includes('NCO')) return 'MCX';
   if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
   if (segment.includes('CDS') || segment.includes('FOREX')) return 'CDS';
-  if (segment === 'NSE - Equity' || segment === 'NSE' || segment.includes('Index')) return 'NSE';
+  if (segment === 'NSE - Equity' || segment === 'NSE') return 'NSE';
   if (segment === 'BSE - Equity' || segment === 'BSE') return 'BSE';
   if (segment.startsWith('NSE')) return 'NFO';
   if (segment.startsWith('BSE')) return 'BFO';
@@ -421,7 +428,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
               isCrypto ? { background: '#F0A500', color: '#fff' } :
                 showComex ? { background: '#4A148C', color: '#fff' } : {}
             }>
-              {isCrypto ? 'CRYPTO' : showComex ? 'COMEX' : getExchangeBadge(item.segment)}
+              {isCrypto ? 'CRYPTO' : showComex ? 'COMEX' : getExchangeBadge(item.segment, item.name, item.symbol)}
             </span>
             {!basketMode && onChart && (
               <button
