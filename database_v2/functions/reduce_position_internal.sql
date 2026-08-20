@@ -56,10 +56,20 @@ BEGIN
     END IF;
 
     -- Calculate realized P&L
-    IF v_side = 'BUY' THEN
-        v_pnl := (p_price - v_avg_price) * p_qty;
+    -- MCX GOLD & GOLDM prices are quoted per 10 grams in INR.
+    -- 1 unit of qty = 1 gram. Value multiplier per 1 Re change in quoted price = 0.1
+    IF v_symbol ILIKE '%GOLD%' THEN
+        IF v_side = 'BUY' THEN
+            v_pnl := (p_price - v_avg_price) * p_qty * 0.1;
+        ELSE
+            v_pnl := (v_avg_price - p_price) * p_qty * 0.1;
+        END IF;
     ELSE
-        v_pnl := (v_avg_price - p_price) * p_qty;
+        IF v_side = 'BUY' THEN
+            v_pnl := (p_price - v_avg_price) * p_qty;
+        ELSE
+            v_pnl := (v_avg_price - p_price) * p_qty;
+        END IF;
     END IF;
 
     -- Calculate proportional margin release

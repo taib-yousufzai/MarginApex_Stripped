@@ -70,10 +70,20 @@ BEGIN
     END IF;
 
     -- STEP 2: Calculate Realized PnL natively in DB to prevent tampering
-    IF v_side = 'BUY' THEN
-        v_pnl := (p_close_price - v_avg_price) * p_close_qty;
+    -- MCX GOLD & GOLDM prices are quoted per 10 grams in INR.
+    -- 1 unit of qty = 1 gram. Value multiplier per 1 Re change in quoted price = 0.1
+    IF v_symbol ILIKE '%GOLD%' THEN
+        IF v_side = 'BUY' THEN
+            v_pnl := (p_close_price - v_avg_price) * p_close_qty * 0.1;
+        ELSE
+            v_pnl := (v_avg_price - p_close_price) * p_close_qty * 0.1;
+        END IF;
     ELSE
-        v_pnl := (v_avg_price - p_close_price) * p_close_qty;
+        IF v_side = 'BUY' THEN
+            v_pnl := (p_close_price - v_avg_price) * p_close_qty;
+        ELSE
+            v_pnl := (v_avg_price - p_close_price) * p_close_qty;
+        END IF;
     END IF;
 
     -- STEP 3: Proportional Margin Release and Lots Calculation

@@ -77,7 +77,11 @@ const resolveKitePrefix = (key: string, settlement: string) => {
     baseKey.startsWith('LEAD') ||
     baseKey.startsWith('MENTHAOIL')
   ) {
-    prefix = 'MCX:';
+    if (baseKey.endsWith('CE') || baseKey.endsWith('PE')) {
+      prefix = 'NCO:';
+    } else {
+      prefix = 'MCX:';
+    }
   } else if (seg.includes('NCO')) {
     prefix = 'NCO:';
   } else if (
@@ -417,10 +421,13 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           exitPriceMode,
         });
 
+        // MCX GOLD/GOLDM prices are quoted per 10g, so 1g qty has 0.1 monetary value factor per quoted price point
+        const symbolMultiplier = (p.symbol && p.symbol.toUpperCase().includes('GOLD')) ? 0.1 : 1.0;
+
         if (p.side === 'BUY') {
-          unrealised = (exitPrice - avgPrice) * p.qty_open;
+          unrealised = (exitPrice - avgPrice) * p.qty_open * symbolMultiplier;
         } else {
-          unrealised = (avgPrice - exitPrice) * p.qty_open;
+          unrealised = (avgPrice - exitPrice) * p.qty_open * symbolMultiplier;
         }
       }
 
