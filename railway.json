@@ -1,10 +1,9 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "buildCommand": "echo 'Ticker daemon build ready'"
+    "dockerfilePath": "Dockerfile.ticker"
   },
   "deploy": {
-    "startCommand": "npm run ticker",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
