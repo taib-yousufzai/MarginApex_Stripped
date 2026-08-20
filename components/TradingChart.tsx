@@ -351,9 +351,15 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar 
   );
 };
 
-export default function TradingChart({ symbol: propSymbol, segment: propSegment = '', liveQuote: propLiveQuote }: TradingChartProps) {
+let tradingChartRenderCount = 0;
+
+function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', liveQuote: propLiveQuote }: TradingChartProps) {
+  tradingChartRenderCount++;
   const [symbol, setSymbol] = useState(propSymbol);
   const [segment, setSegment] = useState(propSegment);
+  const [loadId, setLoadId] = useState(() => Math.random().toString(36).substring(2, 8));
+
+  console.log(`[CHART TRACE ${loadId}] +0.0ms [1] TradingChart render #${tradingChartRenderCount}: propSymbol=${propSymbol}, propSegment=${propSegment}`);
 
   useEffect(() => {
     if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.unlock) {
@@ -361,14 +367,17 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     }
     return () => {
       if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('portrait').catch(() => {});
+        (screen.orientation as any).lock('portrait').catch(() => {});
       }
     };
   }, []);
 
   useEffect(() => {
+    const newId = Math.random().toString(36).substring(2, 8);
+    setLoadId(newId);
     setSymbol(propSymbol);
     setSegment(propSegment);
+    console.log(`[CHART PERF ${newId}] +0.0ms TradingChart propSymbol change: ${propSymbol}`);
   }, [propSymbol, propSegment]);
 
   const [timeframe, setTimeframe] = useState<Timeframe>('5m');
@@ -2129,6 +2138,7 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
             {/* BUY/price/SELL widget — HIDDEN */}
 
             <ChartContainer
+              loadId={loadId}
               symbol={symbol}
               segment={segment}
               timeframe={timeframe}
@@ -2745,5 +2755,12 @@ export default function TradingChart({ symbol: propSymbol, segment: propSegment 
     </div>
   );
 }
+
+export default React.memo(TradingChartComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.symbol === nextProps.symbol &&
+    prevProps.segment === nextProps.segment
+  );
+});
 
 

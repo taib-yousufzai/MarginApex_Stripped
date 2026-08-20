@@ -15,44 +15,45 @@ import { buildSymbolInfo } from './symbolResolver';
 
 /**
  * TradingView `IBasicDataFeed` implementation.
- *
- * One instance is created per TV_Widget. The `segment` string (e.g. "CRYPTO",
- * "NSE - Equity") is injected at construction time so that every data-fetch
- * call can route correctly without needing to infer the segment per-call.
- *
- * Public API surface:
- *  - Standard datafeed methods required by IBasicDataFeed (onReady, resolveSymbol,
- *    getBars, subscribeBars, unsubscribeBars)
- *  - `updateLive(lastPrice, nowMs)` — called by ChartContainer when a liveQuote
- *    arrives so the active subscriber callback receives a real-time bar update.
  */
 export class Datafeed implements IBasicDataFeed {
   private readonly realtimeProvider: RealtimeProvider;
   private readonly lastBarCache = new Map<string, Bar>();
   private firstBarFired = false;
+  private firstRealtimeTickLogged = false;
+  private getBarsCallNum = 0;
+  private loadId: string = 'default';
+  private loadStartTime: number = performance.now();
   onFirstBar?: (lastClose: number, prevClose: number | null) => void;
 
-  constructor(private segment: string) {
+  constructor(private segment: string, loadId?: string, loadStartTime?: number) {
     this.realtimeProvider = new RealtimeProvider();
+    if (loadId) this.loadId = loadId;
+    if (loadStartTime) this.loadStartTime = loadStartTime;
   }
 
   setSegment(segment: string) {
     this.segment = segment;
     this.firstBarFired = false;
+    this.firstRealtimeTickLogged = false;
+  }
+
+  setLoadId(loadId: string, startTime?: number) {
+    this.loadId = loadId;
+    this.loadStartTime = startTime ?? performance.now();
+    this.getBarsCallNum = 0;
+    this.firstBarFired = false;
+    this.firstRealtimeTickLogged = false;
+    this.lastBarCache.clear();
   }
 
   // ---------------------------------------------------------------------------
   // IExternalDatafeed
   // ---------------------------------------------------------------------------
 
-  /**
-   * Called once by the TV_Widget immediately after construction.
-   * Invokes the callback asynchronously (within one event-loop tick) with the
-   * datafeed configuration so the widget can proceed with symbol resolution.
-   *
-   * Requirements: 2.1
-   */
   onReady(callback: OnReadyCallback): void {
+    const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
+    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms Datafeed.onReady called by TV iframe`);
     setTimeout(() => {
       callback({
         supported_resolutions: ['1', '2', '3', '5', '10', '15', '30', '60', 'D'] as ResolutionString[],
@@ -65,35 +66,20 @@ export class Datafeed implements IBasicDataFeed {
   // IDatafeedChartApi
   // ---------------------------------------------------------------------------
 
-  /**
-   * Resolves a symbol name to a `LibrarySymbolInfo` descriptor.
-   * The resolution is synchronous — `buildSymbolInfo` is a pure function that
-   * never throws, so `onResolve` is called immediately.
-   *
-   * Requirements: 2.2, 2.3, 2.4, 4.2, 4.3
-   */
   resolveSymbol(
     symbolName: string,
     onResolve: ResolveCallback,
     _onError: DatafeedErrorCallback,
   ): void {
+    const start = performance.now();
+    const elapsed = (start - this.loadStartTime).toFixed(1);
+    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [5] Datafeed.resolveSymbol START: ${symbolName}`);
     const info = buildSymbolInfo(symbolName, this.segment);
     onResolve(info);
+    const endElapsed = (performance.now() - this.loadStartTime).toFixed(1);
+    console.log(`[CHART TRACE ${this.loadId}] +${endElapsed}ms Datafeed.resolveSymbol END: ${symbolName}`);
   }
 
-  /**
-   * Fetches historical bars for the given symbol, resolution and time range.
-   *
-   * On success:
-   *  - If bars were returned, stores the last bar on the RealtimeProvider so
-   *    the first live tick can be merged correctly.
-   *  - Calls `onResult` with the bars array and `{ noData }` flag.
-   *
-   * On failure:
-   *  - Calls `onError` with a descriptive message.
-   *
-   * Requirements: 2.5, 2.6, 2.7, 2.8
-   */
   async getBars(
     symbolInfo: LibrarySymbolInfo,
     resolution: ResolutionString,
@@ -101,83 +87,88 @@ export class Datafeed implements IBasicDataFeed {
     onResult: HistoryCallback,
     onError: DatafeedErrorCallback,
   ): Promise<void> {
+    this.getBarsCallNum++;
+    const currentCallNum = this.getBarsCallNum;
+    const start = performance.now();
+    const startElapsed = (start - this.loadStartTime).toFixed(1);
+    console.log(`[CHART TRACE ${this.loadId}] +${startElapsed}ms [6] Datafeed.getBars #${currentCallNum} START: ${symbolInfo.name} (${resolution}) [from: ${periodParams.from}, to: ${periodParams.to}, firstDataRequest: ${periodParams.firstDataRequest}]`);
     try {
-      const { bars, noData } = await fetchBars(symbolInfo, resolution, periodParams, this.segment);
+      const { bars, noData } = await fetchBars(symbolInfo, resolution, periodParams, this.segment, this.loadId, currentCallNum, this.loadStartTime);
+      const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
+      console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [7] Datafeed.getBars #${currentCallNum} END: ${symbolInfo.name} -> ${bars.length} bars (took ${(performance.now() - start).toFixed(1)}ms, noData=${noData})`);
+      
       if (bars.length > 0 && (periodParams.firstDataRequest === undefined || periodParams.firstDataRequest)) {
+        const firstBar = bars[0] as Bar;
         const lastBar = bars[bars.length - 1] as Bar;
-        this.lastBarCache.set(resolution, lastBar);
-        this.realtimeProvider.setLastBar(lastBar, resolution);
+        
+        const cacheKey = `${symbolInfo.name}:${resolution}`;
+        this.lastBarCache.set(cacheKey, lastBar);
 
-        // Notify once so TradingChart can seed currentPrice / priceChange without a
-        // second HTTP fetch. The `firstDataRequest` guard ensures we only fire on the
-        // initial load, not on paginated history requests.
+        console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [8] First historical bar received: time=${firstBar.time}, close=${firstBar.close}`);
+        console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [9] lastBar established: symbol=${symbolInfo.name}, resolution=${resolution}, time=${lastBar.time}, close=${lastBar.close}`);
+
+        this.realtimeProvider.setLastBar(symbolInfo.name, resolution, lastBar);
+
         if (!this.firstBarFired) {
           this.firstBarFired = true;
           const prevClose = bars.length > 1 ? (bars[bars.length - 2] as Bar).close : null;
+          console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [13] First visible candle rendered: lastClose=${lastBar.close}`);
           this.onFirstBar?.(lastBar.close, prevClose);
         }
       }
       onResult(bars, { noData });
     } catch (err) {
+      const errElapsed = (performance.now() - this.loadStartTime).toFixed(1);
+      console.error(`[CHART TRACE ${this.loadId}] +${errElapsed}ms Datafeed.getBars #${currentCallNum} ERROR:`, err);
       onError(`Failed to fetch bars: ${(err as Error).message}`);
     }
   }
 
-  /**
-   * Called by the TV_Widget when it wants to start receiving real-time bar
-   * updates for a symbol/resolution combination.
-   *
-   * Requirements: 2.9
-   */
   subscribeBars(
-    _symbolInfo: LibrarySymbolInfo,
+    symbolInfo: LibrarySymbolInfo,
     resolution: ResolutionString,
     onTick: SubscribeBarsCallback,
     listenerGuid: string,
     _onResetCacheNeededCallback: () => void,
   ): void {
-    const lastBar = this.lastBarCache.get(resolution) || null;
+    const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
+    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [10] subscribeBars START: listenerGuid=${listenerGuid} symbol=${symbolInfo.name} (${resolution})`);
+    
+    const cacheKey = `${symbolInfo.name}:${resolution}`;
+    const lastBar = this.lastBarCache.get(cacheKey) || null;
+
     this.realtimeProvider.subscribe(listenerGuid, {
-      callback: onTick,
+      symbol: symbolInfo.name,
       resolution,
+      callback: (bar: Bar) => {
+        onTick(bar);
+      },
       lastBar,
+      loadId: this.loadId,
+      loadStartTime: this.loadStartTime,
     });
   }
 
-  /**
-   * Called by the TV_Widget to stop receiving real-time updates.
-   * Delegates to `RealtimeProvider.unsubscribe`, which is a no-op for unknown UIDs.
-   *
-   * Requirements: 2.10
-   */
   unsubscribeBars(listenerGuid: string): void {
+    const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
+    console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms Datafeed.unsubscribeBars: ${listenerGuid}`);
     this.realtimeProvider.unsubscribe(listenerGuid);
   }
 
-  /**
-   * Required by IDatafeedChartApi but not used — symbol search is not needed
-   * because the chart is always opened with a pre-known symbol from the watchlist.
-   */
   searchSymbols(): void {
-    // no-op: symbol search is not supported in this datafeed
+    // no-op
   }
 
   getServerTime(callback: (serverTime: number) => void): void {
     callback(Math.floor(Date.now() / 1000));
   }
 
-  // ---------------------------------------------------------------------------
-  // Public extension (called by ChartContainer)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Forwards a live price tick to the RealtimeProvider, which computes the
-   * updated candle bar and notifies all active subscribers.
-   *
-   * Should only be called after the loading guards in ChartContainer confirm
-   * that `loading === false`, `candles.length > 0`, and the price is finite > 0.
-   */
-  updateLive(lastPrice: number, nowMs: number, volume?: number) {
-    this.realtimeProvider.update(lastPrice, nowMs, volume);
+  updateLive(symbol: string, lastPrice: number, nowMs: number, volume?: number) {
+    if (!this.firstRealtimeTickLogged) {
+      this.firstRealtimeTickLogged = true;
+      const elapsed = (performance.now() - this.loadStartTime).toFixed(1);
+      console.log(`[CHART TRACE ${this.loadId}] +${elapsed}ms [11] First realtime tick received: symbol=${symbol}, price=${lastPrice}`);
+    }
+    this.realtimeProvider.update(symbol, lastPrice, nowMs, volume);
   }
 }

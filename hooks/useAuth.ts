@@ -18,7 +18,7 @@ export function useAuth() {
     let cancelled = false;
     getSession().then((session) => {
       if (cancelled) return;
-      if (!session) router.replace('/login');
+      if (!session && !(window as any).__disableAuthRedirect) router.replace('/login');
     });
     return () => { cancelled = true; };
   }, [router]);

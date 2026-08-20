@@ -70,19 +70,32 @@ const STATIC_TOKENS: Record<string, ResolvedInstrument> = {
   'NSE:HDFCBANK':       { token: 341249,  canonicalId: 'NSE:HDFCBANK' },
   'ICICIBANK':          { token: 1270529, canonicalId: 'NSE:ICICIBANK' },
   'NSE:ICICIBANK':      { token: 1270529, canonicalId: 'NSE:ICICIBANK' },
+  'GOLD':               { token: 123668231, canonicalId: 'MCX:GOLD26OCTFUT' },
+  'MCX:GOLD26OCTFUT':   { token: 123668231, canonicalId: 'MCX:GOLD26OCTFUT' },
+  'SILVER':             { token: 120761607, canonicalId: 'MCX:SILVER26SEPFUT' },
+  'MCX:SILVER26SEPFUT': { token: 120761607, canonicalId: 'MCX:SILVER26SEPFUT' },
+  'SILVERM':            { token: 120761607, canonicalId: 'MCX:SILVERM26SEPFUT' },
+  'MCX:SILVERM26SEPFUT':{ token: 120761607, canonicalId: 'MCX:SILVERM26SEPFUT' },
+  'CRUDEOIL':           { token: 121544455, canonicalId: 'MCX:CRUDEOIL26AUGFUT' },
+  'MCX:CRUDEOIL26AUGFUT':{ token: 121544455, canonicalId: 'MCX:CRUDEOIL26AUGFUT' },
 };
 
 async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | null> {
+  const start = performance.now();
   // 0. Fastest path: compile-time static tokens (zero I/O, zero cache lookup)
   const staticHit = STATIC_TOKENS[symbol] ?? STATIC_TOKENS[symbol.toUpperCase().trim()];
   if (staticHit) {
+    console.log(`[API PERF] resolveInstrument: STATIC HIT for ${symbol} (took ${(performance.now() - start).toFixed(1)}ms)`);
     memCache.set(symbol, staticHit); // backfill mem cache for subsequent paths
     return staticHit;
   }
 
   // 1. Fastest path: process-level in-memory cache (always checked first)
   const memHit = memCache.get(symbol);
-  if (memHit) return memHit;
+  if (memHit) {
+    console.log(`[API PERF] resolveInstrument: MEM HIT for ${symbol} (took ${(performance.now() - start).toFixed(1)}ms)`);
+    return memHit;
+  }
 
   const redis = getRedisClient();
   const cacheKey = `instrument_token:${symbol}`;
@@ -94,6 +107,7 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
         // Cached value may be "token" or "token|canonicalId"
         const parts = cached.split('|');
         const result: ResolvedInstrument = { token: parseInt(parts[0], 10), canonicalId: parts[1] ?? symbol };
+        console.log(`[API PERF] resolveInstrument: REDIS HIT for ${symbol} (took ${(performance.now() - start).toFixed(1)}ms)`);
         memCache.set(symbol, result); // backfill so next call skips Redis too
         return result;
       }
@@ -282,11 +296,15 @@ export async function GET(request: Request) {
     const from = fromVal;
     const to = toVal;
 
+    const routeStart = performance.now();
+    console.log(`[API PERF] /historical GET start: symbol=${symbol}, interval=${interval}, from=${from}, to=${to}`);
+
     // Run session fetch and symbol resolution in PARALLEL (they're independent)
     const [session, resolved] = await Promise.all([
       getSharedKiteSession(),
       resolveInstrument(symbol)
     ]);
+    console.log(`[API PERF] /historical resolution & session complete (took ${(performance.now() - routeStart).toFixed(1)}ms)`);
 
     if (!session) {
       return NextResponse.json({ error: 'No active Kite session found' }, { status: 401 });
@@ -304,6 +322,7 @@ export async function GET(request: Request) {
     // 1. Process-level in-memory cache check (instant <1ms response)
     const memHit = candleMemCache.get(cacheKey);
     if (memHit && memHit.expiry > Date.now()) {
+      console.log(`[API PERF] /historical CANDLE MEM CACHE HIT for ${cacheKey} (total ${(performance.now() - routeStart).toFixed(1)}ms)`);
       return NextResponse.json(memHit.data);
     }
 
@@ -315,6 +334,7 @@ export async function GET(request: Request) {
         if (cached) {
           const parsed = JSON.parse(cached);
           candleMemCache.set(cacheKey, { data: parsed, expiry: Date.now() + 30000 });
+          console.log(`[API PERF] /historical CANDLE REDIS CACHE HIT for ${cacheKey} (total ${(performance.now() - routeStart).toFixed(1)}ms)`);
           return NextResponse.json(parsed);
         }
       } catch (e) {
@@ -322,9 +342,12 @@ export async function GET(request: Request) {
       }
     }
 
+    console.log(`[API PERF] /historical CANDLE CACHE MISS for ${cacheKey} -> Fetching from Kite API`);
+
     // Fetch from Kite Historical API
     let candlesData: any[] | null = null;
     let kiteError: string | null = null;
+    const kiteStart = performance.now();
     
     try {
       const url = `https://api.kite.trade/instruments/historical/${instrumentToken}/${interval}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
@@ -336,12 +359,14 @@ export async function GET(request: Request) {
         signal: AbortSignal.timeout(2500)
       });
       const data = await response.json();
+      console.log(`[API PERF] Kite historical API finished in ${(performance.now() - kiteStart).toFixed(1)}ms (ok=${response.ok})`);
       if (response.ok && data.status === 'success' && data.data && Array.isArray(data.data.candles)) {
         candlesData = data.data.candles;
       } else {
         kiteError = data.message || data.error_type || 'Kite API error';
       }
     } catch (err: any) {
+      console.log(`[API PERF] Kite historical API exception/timeout after ${(performance.now() - kiteStart).toFixed(1)}ms: ${err.message}`);
       kiteError = err.message || 'Kite fetch exception';
     }
 

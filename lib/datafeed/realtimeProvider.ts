@@ -10,35 +10,45 @@ export interface Bar {
 }
 
 export interface SubscriberEntry {
-  callback: (bar: Bar) => void;
+  symbol: string;
   resolution: string;
+  callback: (bar: Bar) => void;
   lastBar: Bar | null;
+  loadId?: string;
+  loadStartTime?: number;
 }
 
 export class RealtimeProvider {
   private subscribers = new Map<string, SubscriberEntry>();
   private lastUpdateTime = 0;
-  private pendingUpdate: { lastPrice: number, nowMs: number, volume?: number } | null = null;
+  private pendingUpdate: { symbol: string; lastPrice: number; nowMs: number; volume?: number } | null = null;
   private updateTimeout: ReturnType<typeof setTimeout> | null = null;
+  private firstTickLogged = new Set<string>();
 
   subscribe(uid: string, entry: SubscriberEntry): void {
     this.subscribers.set(uid, entry);
   }
 
   unsubscribe(uid: string): void {
-    this.subscribers.delete(uid); // no-op if not present
+    this.subscribers.delete(uid);
   }
 
-  setLastBar(bar: Bar, resolution?: string): void {
+  clear(): void {
+    this.subscribers.clear();
+    this.pendingUpdate = null;
+    this.firstTickLogged.clear();
+  }
+
+  setLastBar(symbol: string, resolution: string, bar: Bar): void {
     for (const entry of this.subscribers.values()) {
-      if (!resolution || entry.resolution === resolution) {
-        entry.lastBar = bar;
+      if ((!entry.symbol || entry.symbol === symbol) && entry.resolution === resolution) {
+        entry.lastBar = { ...bar };
       }
     }
   }
 
-  update(lastPrice: number, nowMs: number, volume?: number): void {
-    this.pendingUpdate = { lastPrice, nowMs, volume };
+  update(symbol: string, lastPrice: number, nowMs: number, volume?: number): void {
+    this.pendingUpdate = { symbol, lastPrice, nowMs, volume };
     const now = Date.now();
 
     if (now - this.lastUpdateTime > 250) {
@@ -58,17 +68,28 @@ export class RealtimeProvider {
     if (!this.pendingUpdate) return;
 
     this.lastUpdateTime = Date.now();
-    const { lastPrice, nowMs, volume } = this.pendingUpdate;
+    const { symbol, lastPrice, nowMs, volume } = this.pendingUpdate;
     this.pendingUpdate = null;
 
-    for (const entry of this.subscribers.values()) {
+    for (const [uid, entry] of this.subscribers.entries()) {
+      // Data race protection: check symbol match (if symbol specified on subscriber)
+      if (entry.symbol && entry.symbol !== symbol) {
+        continue;
+      }
+
       const resMs = resolutionToMs(entry.resolution);
       const prev = entry.lastBar;
 
+      // Do NOT push real-time ticks before getBars has populated entry.lastBar for this exact symbol/resolution.
+      // Premature ticks with unanchored UTC timestamps trigger TradingView's
+      // "Incremental update failed. Starting full update" loop.
+      if (!prev) {
+        continue;
+      }
+
       let boundary = Math.floor(nowMs / resMs) * resMs;
-      
+
       // Anchor boundary to historical session times to avoid creating disjoint candles
-      // on timeframes that don't align with UTC (e.g., NSE 30m, 1h, 1D).
       if (prev) {
         if (nowMs < prev.time + resMs) {
           boundary = prev.time;
@@ -78,23 +99,33 @@ export class RealtimeProvider {
         }
       }
 
-      const isNewCandle = !prev || boundary > prev.time;
-      if (!entry.lastBar || isNewCandle) {
+      const isNewCandle = boundary > prev.time;
+      if (isNewCandle) {
         entry.lastBar = {
-          time:  boundary,
-          open:  lastPrice,
-          high:  lastPrice,
-          low:   lastPrice,
+          time: boundary,
+          open: lastPrice,
+          high: lastPrice,
+          low: lastPrice,
           close: lastPrice,
           volume: volume ?? 1,
         };
-      } else {
+      } else if (entry.lastBar) {
         entry.lastBar.high = Math.max(entry.lastBar.high, lastPrice);
         entry.lastBar.low = Math.min(entry.lastBar.low, lastPrice);
         entry.lastBar.close = lastPrice;
         entry.lastBar.volume = volume ?? ((entry.lastBar.volume ?? 0) + 1);
       }
-      entry.callback({ ...entry.lastBar });
+
+      const activeBar = entry.lastBar;
+      if (!activeBar) continue;
+
+      if (entry.loadId && entry.loadStartTime && !this.firstTickLogged.has(uid)) {
+        this.firstTickLogged.add(uid);
+        const elapsed = (performance.now() - entry.loadStartTime).toFixed(1);
+        console.log(`[CHART TRACE ${entry.loadId}] +${elapsed}ms [12] First realtime tick forwarded to TV: symbol=${symbol}, close=${activeBar.close}, time=${activeBar.time}`);
+      }
+
+      entry.callback({ ...activeBar });
     }
   }
 }

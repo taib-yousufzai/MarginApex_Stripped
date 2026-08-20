@@ -1307,6 +1307,21 @@ function WatchlistContent() {
   }, [marketQuotes, comexQuotes]);
 
   useEffect(() => {
+    (window as any).__reactOpenChartSheet = (item: WatchlistItem) => {
+      console.log('[WINDOW HELPER] __reactOpenChartSheet called for:', item?.symbol);
+      setChartItem(item);
+      setIsBenchmarkChart(false);
+      const sheet = document.getElementById('chartSheet');
+      const overlay = document.getElementById('chartSheetOverlay');
+      if (sheet) sheet.classList.add('open');
+      if (overlay) overlay.classList.add('active');
+    };
+    (window as any).__reactSetChartItem = (item: WatchlistItem | null) => {
+      setChartItem(item);
+    };
+  }, []);
+
+  useEffect(() => {
     window.__watchlistItems = watchlistItems;
     watchlistItemsRef.current = watchlistItems;
     if (scriptMountedRef.current && typeof (window as any).attachSwipeHandlers === 'function') {
@@ -1459,6 +1474,19 @@ function WatchlistContent() {
         if (detailSheet) detailSheet.classList.add('open');
         if (detailOverlay) detailOverlay.classList.add('active');
       }
+    };
+
+    (window as any).__reactOpenChartSheet = (item: WatchlistItem) => {
+      setChartItem(item);
+      setIsBenchmarkChart(false);
+      const sheet = document.getElementById('chartSheet');
+      const overlay = document.getElementById('chartSheetOverlay');
+      if (sheet) sheet.classList.add('open');
+      if (overlay) overlay.classList.add('active');
+    };
+
+    (window as any).__reactSetChartItem = (item: WatchlistItem | null) => {
+      setChartItem(item);
     };
   }, [watchlistItems, activeTab, userId]);
 
@@ -2455,13 +2483,12 @@ function WatchlistContent() {
           <div id="chartSheet" className="trade-sheet" style={{ height: '100dvh', paddingBottom: '0', display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
               {chartItem && (() => {
+                console.log('[CHART PERF REACTION] Rendering TradingChart for chartItem:', chartItem.symbol, chartItem.segment);
                 const isChartComex = !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
                 return (
                   <TradingChart
-                    key={`${isChartComex ? chartItem.comexSymbol : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}-${isChartComex ? 'COMEX' : chartItem.segment}`}
                     symbol={isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
                     segment={isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
-                    liveQuote={isChartComex ? comexQuotes[chartItem.comexSymbol || ''] : (chartItem.binanceSymbol ? marketQuotes[chartItem.binanceSymbol] : marketQuotes[chartItem.kiteSymbol])}
                   />
                 );
               })()}

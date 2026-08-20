@@ -4,6 +4,7 @@ import { Datafeed } from '@/lib/datafeed/Datafeed';
 import { toUdfResolution, CHART_TYPE_MAP } from '@/lib/datafeed/resolutionUtils';
 import { Candle, Timeframe } from '@/components/chart/types';
 import AnimatedLoader from '@/components/AnimatedLoader';
+import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 
 // ─── Supporting types ────────────────────────────────────────────────────────
 
@@ -29,9 +30,16 @@ interface ChartContainerProps {
   liveQuote?: any;
   loading: boolean;
   error: string | null;
+  loadId?: string;
   /** Called once when the TV widget's first getBars response arrives with bars */
   onFirstBar?: (lastClose: number, prevClose: number | null) => void;
 }
+
+// Global counters for React lifecycle tracking across component instances
+let globalMountCount = 0;
+let globalUnmountCount = 0;
+let globalWidgetCreateCount = 0;
+let globalWidgetDestroyCount = 0;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -54,8 +62,11 @@ export default function ChartContainer({
   liveQuote,
   loading,
   error,
+  loadId: propLoadId,
   onFirstBar,
 }: ChartContainerProps) {
+  const activeLoadId = propLoadId || 'def';
+  const loadStartTimeRef = useRef(performance.now());
   // ── Refs ──────────────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
   const tvWidgetRef = useRef<any | null>(null);
@@ -66,6 +77,13 @@ export default function ChartContainer({
   const onFirstBarRef = useRef(onFirstBar);
   // Keep the callback ref current without re-running the init effect
   useEffect(() => { onFirstBarRef.current = onFirstBar; }, [onFirstBar]);
+
+  // Update datafeed loadId when propLoadId changes
+  useEffect(() => {
+    if (datafeedRef.current && propLoadId) {
+      datafeedRef.current.setLoadId(propLoadId);
+    }
+  }, [propLoadId]);
 
   // ── State (drives overlay rendering only) ─────────────────────────────────
   const [chartStatus, setChartStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -97,11 +115,19 @@ export default function ChartContainer({
   // ── Task 8.2: Widget initialization — runs ONCE on mount ─────────────────
   useEffect(() => {
     if (!containerRef.current) return;
+    globalMountCount++;
+    const startTime = performance.now();
+    loadStartTimeRef.current = startTime;
+    console.log(`[CHART TRACE ${activeLoadId}] +0.0ms [2] ChartContainer mount (mountCount=${globalMountCount}, unmountCount=${globalUnmountCount}): symbol=${symbol}, segment=${segment}`);
 
     const initWidget = () => {
       if (!containerRef.current || tvWidgetRef.current) return;
 
-      datafeedRef.current = new Datafeed(segment);
+      globalWidgetCreateCount++;
+      const initStart = performance.now();
+      console.log(`[CHART TRACE ${activeLoadId}] +${(initStart - startTime).toFixed(1)}ms [3] TradingView widget creation START (widgetCreateCount=${globalWidgetCreateCount})`);
+      
+      datafeedRef.current = new Datafeed(segment, activeLoadId, startTime);
       datafeedRef.current.onFirstBar = (lastClose, prevClose) => {
         onFirstBarRef.current?.(lastClose, prevClose);
       };
@@ -137,16 +163,31 @@ export default function ChartContainer({
         }
       });
 
-      tvWidgetRef.current.onChartReady(onChartReady);
+      console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms TradingView widget created (iframe element inserting...)`);
+
+      // Monitor for iframe insertion in DOM
+      const checkIframeInterval = setInterval(() => {
+        const iframe = containerRef.current?.querySelector('iframe');
+        if (iframe) {
+          clearInterval(checkIframeInterval);
+          console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms iframe loaded into DOM`);
+        }
+      }, 20);
+
+      tvWidgetRef.current.onChartReady(() => onChartReady(startTime, checkIframeInterval));
     };
 
-    const onChartReady = () => {
+    const onChartReady = (startTime: number, checkIframeInterval?: ReturnType<typeof setInterval>) => {
+      if (checkIframeInterval) clearInterval(checkIframeInterval);
+      const readyTime = performance.now();
+      console.log(`[CHART TRACE ${activeLoadId}] +${(readyTime - startTime).toFixed(1)}ms [4] widget.onChartReady fired!`);
       if (initTimerRef.current) {
         clearTimeout(initTimerRef.current);
         initTimerRef.current = null;
       }
       isReadyRef.current = true;
       setChartStatus('ready');
+      console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms [14] Chart visually usable`);
 
       // Inject CSS directly to hide native header in case feature flags or custom CSS fail
       try {
@@ -201,16 +242,25 @@ export default function ChartContainer({
       setChartError('Chart failed to initialize. Please refresh the page.');
     }, 30_000);
 
+    const scriptCheckTime = performance.now();
     if (window.TradingView) {
+      console.log(`[CHART PERF ${activeLoadId}] +${(scriptCheckTime - startTime).toFixed(1)}ms TradingView script check: ALREADY LOADED in window`);
       initWidget();
     } else {
+      console.log(`[CHART PERF ${activeLoadId}] +${(scriptCheckTime - startTime).toFixed(1)}ms TradingView script check: NOT IN WINDOW -> dynamically loading script element`);
       const script = document.createElement('script');
       script.src = '/charting_library/charting_library.standalone.js';
-      script.onload = initWidget;
+      script.onload = () => {
+        console.log(`[CHART PERF ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms TradingView script onload fired! window.TradingView is now available.`);
+        initWidget();
+      };
       document.head.appendChild(script);
     }
 
     return () => {
+      globalUnmountCount++;
+      globalWidgetDestroyCount++;
+      console.log(`[CHART PERF ${activeLoadId}] +${(performance.now() - loadStartTimeRef.current).toFixed(1)}ms ChartContainer unmount & tvWidget destroy (unmountCount=${globalUnmountCount}, widgetDestroyCount=${globalWidgetDestroyCount})`);
       if (initTimerRef.current) {
         clearTimeout(initTimerRef.current);
         initTimerRef.current = null;
@@ -247,22 +297,24 @@ export default function ChartContainer({
   }, [chartType]);
 
   // ── Task 8.5: Live quote forwarding ──────────────────────────────────────
+  const { quotes: marketQuotes } = useMarketQuotes([symbol]);
+  const activeQuote = marketQuotes[symbol] || liveQuote;
 
   useEffect(() => {
-    let lastPrice = liveQuote?.lastPrice ?? liveQuote?.last_price;
+    let lastPrice = activeQuote?.lastPrice ?? activeQuote?.last_price;
     if (lastPrice !== undefined) lastPrice = Number(lastPrice);
 
-    let volume = liveQuote?.volume ?? liveQuote?.v;
+    let volume = activeQuote?.volume ?? activeQuote?.v;
     if (volume !== undefined) volume = Number(volume);
 
-    let nowMs = liveQuote?.timestamp ? new Date(liveQuote.timestamp).getTime() : Date.now();
+    let nowMs = activeQuote?.timestamp ? new Date(activeQuote.timestamp).getTime() : Date.now();
     if (nowMs !== undefined) nowMs = Number(nowMs);
 
     if (loading || candles.length === 0) return;
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
 
-    datafeedRef.current?.updateLive(lastPrice, nowMs, volume);
-  }, [liveQuote]); // eslint-disable-line react-hooks/exhaustive-deps
+    datafeedRef.current?.updateLive(symbol, lastPrice, nowMs, volume);
+  }, [activeQuote, symbol, loading, candles.length]);
 
   // ── Task 8.5: Theme sync via MutationObserver ─────────────────────────────
 

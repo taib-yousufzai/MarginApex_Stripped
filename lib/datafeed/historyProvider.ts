@@ -19,6 +19,9 @@ export async function fetchBars(
   resolution: ResolutionString,
   periodParams: PeriodParams,
   segment: string,
+  loadId: string = 'default',
+  getBarsCallNum: number = 1,
+  loadStartTime: number = performance.now()
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   try {
     const isCrypto =
@@ -26,9 +29,9 @@ export async function fetchBars(
       (symbolInfo.ticker ?? symbolInfo.name).endsWith('USDT');
 
     if (isCrypto) {
-      return fetchBinanceBars(symbolInfo.name, resolution, periodParams);
+      return fetchBinanceBars(symbolInfo.name, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     } else {
-      return fetchKiteBars(symbolInfo.ticker ?? symbolInfo.name, resolution, periodParams);
+      return fetchKiteBars(symbolInfo.ticker ?? symbolInfo.name, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     }
   } catch (err) {
     throw err;
@@ -43,6 +46,9 @@ async function fetchBinanceBars(
   symbol: string,
   resolution: ResolutionString,
   periodParams: PeriodParams,
+  loadId: string,
+  getBarsCallNum: number,
+  loadStartTime: number
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   const interval = resolutionToBinanceInterval(resolution);
   const url =
@@ -53,13 +59,17 @@ async function fetchBinanceBars(
     `&endTime=${periodParams.to * 1000}` +
     `&limit=1000`;
 
+  const fetchStart = performance.now();
+  console.log(`[CHART PERF ${loadId}] +${(fetchStart - loadStartTime).toFixed(1)}ms fetchBars #${getBarsCallNum} Crypto START: ${symbol} (${interval})`);
+
   const data: BinanceKline[] = await fetch(url).then((r) => {
     if (!r.ok) throw new Error('Network response was not ok');
     return r.json();
   });
 
+  const duration = performance.now() - fetchStart;
   const bars: Bar[] = data.map((k) => ({
-    time: k[0], // already in milliseconds
+    time: k[0],
     open: parseFloat(k[1]),
     high: parseFloat(k[2]),
     low: parseFloat(k[3]),
@@ -67,6 +77,7 @@ async function fetchBinanceBars(
     volume: parseFloat(k[5]),
   }));
 
+  console.log(`[CHART PERF ${loadId}] +${(performance.now() - loadStartTime).toFixed(1)}ms fetchBars #${getBarsCallNum} Crypto COMPLETE: ${symbol} -> ${bars.length} bars (fetch took ${duration.toFixed(1)}ms, noData=${bars.length === 0})`);
   return { bars, noData: bars.length === 0 };
 }
 
@@ -78,12 +89,14 @@ async function fetchKiteBars(
   ticker: string,
   resolution: ResolutionString,
   periodParams: PeriodParams,
+  loadId: string,
+  getBarsCallNum: number,
+  loadStartTime: number
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   const interval = resolutionToKiteInterval(resolution);
 
   const formatDate = (tsSeconds: number) => {
     const d = new Date(tsSeconds * 1000);
-    // Format to YYYY-MM-DD HH:mm:ss for Kite API
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
@@ -93,31 +106,33 @@ async function fetchKiteBars(
     return `${year}-${month}-${day} ${hours}:${mins}:${secs}`;
   };
 
-  const fromFmt = encodeURIComponent(formatDate(periodParams.from));
-  const toFmt = encodeURIComponent(formatDate(periodParams.to));
+  const fromFmt = formatDate(periodParams.from);
+  const toFmt = formatDate(periodParams.to);
 
   const url =
     `/api/market/historical` +
     `?symbol=${encodeURIComponent(ticker)}` +
     `&interval=${interval}` +
-    `&from=${fromFmt}` +
-    `&to=${toFmt}`;
+    `&from=${encodeURIComponent(fromFmt)}` +
+    `&to=${encodeURIComponent(toFmt)}`;
+
+  const fetchStart = performance.now();
+  console.log(`[CHART PERF ${loadId}] +${(fetchStart - loadStartTime).toFixed(1)}ms fetchBars #${getBarsCallNum} Kite START: ${ticker} (${resolution}) [from: ${fromFmt}, to: ${toFmt}]`);
 
   const json = await fetch(url).then((r) => {
     if (!r.ok) throw new Error(`Historical data fetch failed: ${r.status} ${r.statusText}`);
     return r.json();
   });
 
+  const duration = performance.now() - fetchStart;
   const candles: any[][] = json?.data?.candles ?? json?.candles ?? [];
 
-  // If the server returned an error body (e.g. { error: '...' }) instead of candles,
-  // throw so Datafeed.getBars can invoke onError and the loading spinner clears.
   if (!Array.isArray(candles)) {
     throw new Error(json?.error || json?.message || 'Invalid candles response from server');
   }
 
   const bars: Bar[] = candles.map((c) => ({
-    time: new Date(c[0]).getTime(), // convert ISO string to milliseconds
+    time: new Date(c[0]).getTime(),
     open: c[1],
     high: c[2],
     low: c[3],
@@ -125,5 +140,6 @@ async function fetchKiteBars(
     volume: c[5] ?? 0,
   }));
 
+  console.log(`[CHART PERF ${loadId}] +${(performance.now() - loadStartTime).toFixed(1)}ms fetchBars #${getBarsCallNum} Kite COMPLETE: ${ticker} -> ${bars.length} bars (fetch took ${duration.toFixed(1)}ms, noData=${bars.length === 0})`);
   return { bars, noData: bars.length === 0 };
 }
