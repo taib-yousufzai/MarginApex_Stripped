@@ -117,7 +117,7 @@ export function getDefaultWatchlistItems(): WatchlistItem[] {
       kiteSymbol: 'NSE:NIFTY 50',
       price: 22456.80,
       change: '+0.45%',
-      segment: 'NSE - Futures',
+      segment: 'NSE - Equity',
       contractDate: '',
       open: 22350,
       high: 22580,
@@ -130,7 +130,7 @@ export function getDefaultWatchlistItems(): WatchlistItem[] {
       kiteSymbol: 'NSE:NIFTY BANK',
       price: 48210.50,
       change: '-0.21%',
-      segment: 'NSE - Futures',
+      segment: 'NSE - Equity',
       contractDate: '',
       open: 48350,
       high: 48500,
@@ -143,7 +143,7 @@ export function getDefaultWatchlistItems(): WatchlistItem[] {
       kiteSymbol: 'BSE:SENSEX',
       price: 74230.15,
       change: '+0.32%',
-      segment: 'BSE - Futures',
+      segment: 'BSE - Equity',
       contractDate: '',
       open: 73950,
       high: 74500,
@@ -275,14 +275,15 @@ export function filterBySearch(items: WatchlistItem[], query: string): Watchlist
 
 /** Derives the exchange badge string from a segment string. */
 export function getExchangeBadge(segment: string): string {
-  if (segment.startsWith('NSE') && segment !== 'NSE - Equity') return 'NFO';
-  if (segment.startsWith('BSE') && segment !== 'BSE - Equity') return 'BFO';
-  if (segment.startsWith('MCX') || segment.includes('MCX')) return 'MCX';
-  if (segment.startsWith('CDS') || segment.includes('FOREX')) return 'CDS';
+  if (!segment) return 'NSE';
+  if (segment.includes('MCX') || segment.includes('NCO')) return 'MCX';
   if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
-  if (segment === 'NSE - Equity') return 'NSE';
-  if (segment === 'BSE - Equity') return 'BSE';
-  return 'OTH';
+  if (segment.includes('CDS') || segment.includes('FOREX')) return 'CDS';
+  if (segment === 'NSE - Equity' || segment === 'NSE' || segment.includes('Index')) return 'NSE';
+  if (segment === 'BSE - Equity' || segment === 'BSE') return 'BSE';
+  if (segment.startsWith('NSE')) return 'NFO';
+  if (segment.startsWith('BSE')) return 'BFO';
+  return 'NSE';
 }
 
 /** Returns the CSS class for a percentage change value. */
@@ -2514,11 +2515,11 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           name: 'INDEX-FUT',
           icon: 'fa-chart-line',
           instruments: [
-            { name: 'NIFTY 50 INDEX', symbol: 'NIFTY_INDEX', kiteSymbol: 'NSE:NIFTY 50', price: 22456.80, change: '+0.45%', segment: 'NSE - Futures', contractDate: '', open: 22350, high: 22580, low: 22320, close: 22456.80 },
-            { name: 'SENSEX INDEX', symbol: 'SENSEX_INDEX', kiteSymbol: 'BSE:SENSEX', price: 74230.15, change: '+0.32%', segment: 'BSE - Futures', contractDate: '', open: 73950, high: 74500, low: 73800, close: 74230.15 },
-            { name: 'BANKNIFTY INDEX', symbol: 'BANKNIFTY_INDEX', kiteSymbol: 'NSE:NIFTY BANK', price: 48210.50, change: '-0.21%', segment: 'NSE - Futures', contractDate: '', open: 48350, high: 48500, low: 48100, close: 48210.50 },
-            { name: 'FINNIFTY INDEX', symbol: 'FINNIFTY_INDEX', kiteSymbol: 'NSE:NIFTY FIN SERVICE', price: 21234.90, change: '+0.67%', segment: 'NSE - Futures', contractDate: '', open: 21080, high: 21350, low: 21050, close: 21234.90 },
-            { name: 'MIDCAP NIFTY INDEX', symbol: 'MIDCP_INDEX', kiteSymbol: 'NSE:NIFTY MID SELECT', price: 11820.45, change: '+0.88%', segment: 'NSE - Futures', contractDate: '', open: 11700, high: 11880, low: 11680, close: 11820.45 }
+            { name: 'NIFTY 50 INDEX', symbol: 'NIFTY_INDEX', kiteSymbol: 'NSE:NIFTY 50', price: 22456.80, change: '+0.45%', segment: 'NSE - Equity', contractDate: '', open: 22350, high: 22580, low: 22320, close: 22456.80 },
+            { name: 'SENSEX INDEX', symbol: 'SENSEX_INDEX', kiteSymbol: 'BSE:SENSEX', price: 74230.15, change: '+0.32%', segment: 'BSE - Equity', contractDate: '', open: 73950, high: 74500, low: 73800, close: 74230.15 },
+            { name: 'BANKNIFTY INDEX', symbol: 'BANKNIFTY_INDEX', kiteSymbol: 'NSE:NIFTY BANK', price: 48210.50, change: '-0.21%', segment: 'NSE - Equity', contractDate: '', open: 48350, high: 48500, low: 48100, close: 48210.50 },
+            { name: 'FINNIFTY INDEX', symbol: 'FINNIFTY_INDEX', kiteSymbol: 'NSE:NIFTY FIN SERVICE', price: 21234.90, change: '+0.67%', segment: 'NSE - Equity', contractDate: '', open: 21080, high: 21350, low: 21050, close: 21234.90 },
+            { name: 'MIDCAP NIFTY INDEX', symbol: 'MIDCP_INDEX', kiteSymbol: 'NSE:NIFTY MID SELECT', price: 11820.45, change: '+0.88%', segment: 'NSE - Equity', contractDate: '', open: 11700, high: 11880, low: 11680, close: 11820.45 }
           ]
         },
         {
