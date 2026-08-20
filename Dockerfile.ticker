@@ -8,10 +8,12 @@ COPY package.json package-lock.json* ./
 # Install all dependencies (including devDeps for tsx + typescript)
 RUN npm install
 
-# Copy only the files the ticker needs
+# Copy source files needed for the ticker
 COPY tsconfig.json ./
 COPY lib/ ./lib/
 COPY scripts/ ./scripts/
+
+EXPOSE 8080
 
 # Run the ticker daemon
 CMD ["npx", "tsx", "scripts/ticker/index.ts"]
