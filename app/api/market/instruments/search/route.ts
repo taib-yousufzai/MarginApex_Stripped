@@ -722,8 +722,11 @@ export async function GET(request: NextRequest) {
             : nearestOpts;
           const optsToFilter = stepOpts.length > 0 ? stepOpts : nearestOpts;
 
-          // Step 4: Push all strikes directly (bypass range filter for search)
-          kept.push(...optsToFilter);
+          // Step 4: Apply 11-strike range filter centered around live spot price ltp
+          const centeredOpts = ltp > 0
+            ? applyStrikeRangeFilter(optsToFilter as any[], ltp, 11)
+            : optsToFilter;
+          kept.push(...centeredOpts);
         }
 
         filteredOptions = kept as Instrument[];
@@ -813,7 +816,12 @@ export async function GET(request: NextRequest) {
         return a.expiry.localeCompare(b.expiry);
       }
       
-      // Tie-breaker 3: Alphabetical by tradingsymbol
+      // Tie-breaker 3: Sort options by strike_price ascending
+      if (a.strike_price !== undefined && a.strike_price !== null && b.strike_price !== undefined && b.strike_price !== null && a.strike_price !== b.strike_price) {
+        return (Number(a.strike_price) || 0) - (Number(b.strike_price) || 0);
+      }
+
+      // Tie-breaker 4: Alphabetical by tradingsymbol
       return (a.tradingsymbol || '').localeCompare(b.tradingsymbol || '');
     });
 

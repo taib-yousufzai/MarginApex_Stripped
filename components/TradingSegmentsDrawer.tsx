@@ -88,7 +88,9 @@ function filterOptionStrikesBySpot(items: Instrument[], spotPrice: number): Inst
   }
 
   const selectedStrikes = new Set(strikes.slice(startIdx, endIdx + 1));
-  return items.filter(i => selectedStrikes.has(Number(i.strike)));
+  return items
+    .filter(i => selectedStrikes.has(Number(i.strike)))
+    .sort((a, b) => (Number(a.strike) || 0) - (Number(b.strike) || 0));
 }
 
 const BASE_TRADING_SEGMENTS: Segment[] = [
