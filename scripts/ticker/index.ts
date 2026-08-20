@@ -17,7 +17,7 @@ import { BinanceTicker } from './binance.ts';
 import { WebSocketGateway } from './gateway.ts';
 import { CandleAggregator } from './candleAggregator.ts';
 
-import { matchingEngine } from '../../lib/orderMatching.ts';
+import { processPendingOrdersAndPositions } from '../../lib/orderMatching.ts';
 import { telemetry } from '../../lib/metrics.ts';
 import { getRedisHealthStatus } from '../../lib/redis.ts';
 
@@ -122,8 +122,8 @@ class TickerDaemon {
             lastLoginAttempt: sessionStatus.lastLoginAttempt?.toISOString() ?? null,
             lastLoginFailure: sessionStatus.lastLoginFailure?.toISOString() ?? null,
             binanceConnected: this.binanceTicker ? this.binanceTicker.connected : false,
-            activeOrders: (matchingEngine as any)?.activeOrders?.size || 0,
-            activePositions: (matchingEngine as any)?.activePositions?.size || 0,
+            activeOrders: 0,
+            activePositions: 0,
             timestamp: new Date().toISOString(),
             ...redisHealth
           });
@@ -191,35 +191,8 @@ class TickerDaemon {
       logger.info(`WebSocket Gateway and HTTP API listening on 0.0.0.0:${port}`);
     });
 
-    // 1. Initialize In-Memory Matching Engine cache (with retry on Supabase transient errors)
-    const MAX_INIT_RETRIES = 5;
-    let initSuccess = false;
-    if (matchingEngine && typeof (matchingEngine as any).initialize === 'function') {
-      for (let attempt = 1; attempt <= MAX_INIT_RETRIES; attempt++) {
-        try {
-          logger.info({ attempt }, 'Seeding In-Memory Matching Engine cache from database...');
-          await (matchingEngine as any).initialize();
-          (matchingEngine as any).setupRealtimeSync?.();
-          (matchingEngine as any).startBalanceSync?.();
-          logger.info('In-Memory Matching Engine initialized and synced.');
-          initSuccess = true;
-          break;
-        } catch (err) {
-          const delay = Math.min(attempt * 2000, 30_000);
-          if (attempt < MAX_INIT_RETRIES) {
-            logger.warn({ err, attempt, delay }, 'Matching engine init failed — retrying...');
-            await new Promise(r => setTimeout(r, delay));
-          } else {
-            logger.fatal({ err }, 'Matching engine failed to initialize after max retries.');
-          }
-        }
-      }
-      if (!initSuccess) {
-        try { (matchingEngine as any).setupRealtimeSync?.(); } catch (_) {}
-      }
-    } else {
-      logger.info('Stateless order matching mode active.');
-    }
+    logger.info('Stateless order matching mode active.');
+
 
     // 2. Start database batch writer
     this.dbWriter.start();

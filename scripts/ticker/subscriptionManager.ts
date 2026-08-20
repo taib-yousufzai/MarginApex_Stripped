@@ -181,6 +181,13 @@ export class SubscriptionManager {
       this.symbolToToken.clear();
 
       if (resolvedInstruments) {
+        // Sort so MCX exchange rows process after NCO rows, ensuring MCX takes precedence in maps
+        resolvedInstruments.sort((a, b) => {
+          if (a.id?.startsWith('MCX:') && !b.id?.startsWith('MCX:')) return 1;
+          if (!a.id?.startsWith('MCX:') && b.id?.startsWith('MCX:')) return -1;
+          return 0;
+        });
+
         resolvedInstruments.forEach(row => {
           const token = Number(row.instrument_token);
           const symbolKey = row.id;
@@ -189,8 +196,8 @@ export class SubscriptionManager {
           this.tokenToSymbol.set(token, symbolKey);
           this.symbolToToken.set(symbolKey, token);
 
-          if (symbolKey.includes('SILVER')) {
-            logger.info({ symbolKey, token, tradingsymbol: row.tradingsymbol }, '[MCX DIAGNOSTIC] Mapped SILVER instrument token');
+          if (symbolKey.includes('SILVER') || symbolKey.includes('GOLD')) {
+            logger.info({ symbolKey, token, tradingsymbol: row.tradingsymbol }, '[MCX DIAGNOSTIC] Mapped instrument token');
           }
         });
       }

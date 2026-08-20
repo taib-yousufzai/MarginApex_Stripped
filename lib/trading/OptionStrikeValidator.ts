@@ -53,11 +53,6 @@ export async function resolveUnderlyingKiteId(symbol: string, underlying: string
 
   if (isMcx) {
     const baseName = MCX_BASE_MAP[undUpper] || undUpper;
-    const cleanSym = symbol.includes(':') ? symbol.split(':')[1] : symbol;
-    const mcxMatch = cleanSym.toUpperCase().match(/^([A-Z]+)(\d{2}[A-Z]{3})\d+(?:CE|PE)$/);
-    if (mcxMatch) {
-      return `MCX:${mcxMatch[1]}${mcxMatch[2]}FUT`;
-    }
     const admin = getAdminClient();
     const today = new Date().toISOString().split('T')[0];
 
@@ -111,8 +106,10 @@ export async function validateOptionStrike(params: {
   const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
   const targetExchange = paramExchange || resolveTargetExchange(symbol, underlying);
 
-  const allowedExchanges = (targetExchange === 'MCX' || targetExchange === 'NCO')
-    ? ['MCX', 'NCO']
+  const allowedExchanges = (targetExchange === 'MCX')
+    ? ['MCX']
+    : (targetExchange === 'NCO')
+    ? ['NCO']
     : (targetExchange === 'NFO' || targetExchange === 'NSE')
     ? ['NFO', 'NSE']
     : (targetExchange === 'BFO' || targetExchange === 'BSE')
@@ -165,11 +162,11 @@ export async function validateOptionStrike(params: {
 
   const candidateKeys = Array.from(new Set([
     underlyingKiteId,
+    `MCX:${mcxBase}`,
+    `MCX:${baseSymbol}`,
     `NSE:${baseSymbol}`,
     `NSE:${baseSymbol} 50`,
     baseSymbol,
-    `MCX:${mcxBase}`,
-    `MCX:${baseSymbol}`,
   ]));
 
   let underlyingPrice = 0;

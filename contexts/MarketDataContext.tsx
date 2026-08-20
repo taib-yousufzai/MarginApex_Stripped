@@ -513,23 +513,26 @@ function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     if (low > 0 && low < 20) low *= usdInrRate;
   }
 
-  // Sanity-check depth-derived bid/ask against lastPrice (within 50% deviation)
-  const maxDeviation = 0.50;
-  const bidOk = rawBid > 0 && lastPrice > 0 && Math.abs(rawBid - lastPrice) / lastPrice <= maxDeviation;
-  const askOk = rawAsk > 0 && lastPrice > 0 && Math.abs(rawAsk - lastPrice) / lastPrice <= maxDeviation;
-
+  // Sanity-check depth-derived bid/ask against lastPrice
   let finalBid = 0;
   let finalAsk = 0;
 
-  if (bidOk && askOk && rawBid < rawAsk) {
+  if (rawBid > 0 && rawAsk > 0 && rawBid < rawAsk) {
     finalBid = rawBid;
     finalAsk = rawAsk;
-  } else if (bidOk && !askOk) {
-    finalBid = rawBid;
-    finalAsk = 0;
-  } else if (askOk && !bidOk) {
-    finalAsk = rawAsk;
-    finalBid = 0;
+  } else {
+    const maxDeviation = 0.50;
+    const bidOk = rawBid > 0 && lastPrice > 0 && Math.abs(rawBid - lastPrice) / lastPrice <= maxDeviation;
+    const askOk = rawAsk > 0 && lastPrice > 0 && Math.abs(rawAsk - lastPrice) / lastPrice <= maxDeviation;
+
+    if (bidOk && askOk && rawBid < rawAsk) {
+      finalBid = rawBid;
+      finalAsk = rawAsk;
+    } else if (bidOk) {
+      finalBid = rawBid;
+    } else if (askOk) {
+      finalAsk = rawAsk;
+    }
   }
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);

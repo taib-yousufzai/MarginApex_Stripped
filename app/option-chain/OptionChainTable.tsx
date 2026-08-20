@@ -164,6 +164,7 @@ const StrikeRow = React.memo(function StrikeRow({
     </div>
   );
 }, (prev, next) => {
+  if (prev.strike !== next.strike || prev.ceSymbol !== next.ceSymbol || prev.peSymbol !== next.peSymbol) return false;
   if (prev.isAtm !== next.isAtm || prev.priceMode !== next.priceMode) return false;
   const cq = [prev.ceQuote, next.ceQuote]; const pq = [prev.peQuote, next.peQuote];
   if (cq[0]?.lastPrice !== cq[1]?.lastPrice || cq[0]?.bid !== cq[1]?.bid || cq[0]?.ask !== cq[1]?.ask) return false;
@@ -211,8 +212,8 @@ export default function OptionChainTable({
       const s = id.split(':').pop();
       if (s) {
         if (quotes[s]) return quotes[s];
-        if (quotes[`NCO:${s}`]) return quotes[`NCO:${s}`];
         if (quotes[`MCX:${s}`]) return quotes[`MCX:${s}`];
+        if (quotes[`NCO:${s}`]) return quotes[`NCO:${s}`];
         if (quotes[`NFO:${s}`]) return quotes[`NFO:${s}`];
       }
     }

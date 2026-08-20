@@ -234,8 +234,8 @@ function OptionChainContent() {
       setData(cached);
       setLoading(false);
       setLoadingError(null);
-      if (!selectedExpiry && cached.expiry) {
-        setSelectedExpiry(cached.expiry);
+      if (!selectedExpiry && (cached as { expiry?: string }).expiry) {
+        setSelectedExpiry((cached as { expiry?: string }).expiry!);
       }
     }
 

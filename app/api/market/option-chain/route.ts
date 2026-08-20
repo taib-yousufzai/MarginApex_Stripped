@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     const spotParam = searchParams.get('spotPrice');
     const today     = new Date().toISOString().split('T')[0];
     const isMcx     = MCX_SYMBOLS.has(symbol);
-    const targetExchanges = isMcx ? ['MCX', 'NCO'] : ['NFO', 'BFO'];
+    const targetExchanges = isMcx ? ['MCX'] : ['NFO', 'BFO'];
 
     const spotForBucket = parseFloat(spotParam || '0') || 0;
     const atmBucket = spotForBucket > 0
@@ -208,15 +208,15 @@ export async function GET(request: Request) {
         if (row.ce?.id) {
           allKiteIds.push(row.ce.id);
           if (row.ce.symbol) {
-            allKiteIds.push(`NCO:${row.ce.symbol}`);
             allKiteIds.push(`MCX:${row.ce.symbol}`);
+            allKiteIds.push(`NCO:${row.ce.symbol}`);
           }
         }
         if (row.pe?.id) {
           allKiteIds.push(row.pe.id);
           if (row.pe.symbol) {
-            allKiteIds.push(`NCO:${row.pe.symbol}`);
             allKiteIds.push(`MCX:${row.pe.symbol}`);
+            allKiteIds.push(`NCO:${row.pe.symbol}`);
           }
         }
       });
@@ -234,13 +234,13 @@ export async function GET(request: Request) {
           const ceId = row.ce?.id;
           const ceSym = row.ce?.symbol;
           if (ceId) {
-            const price = priceMap[ceId] || (ceSym ? (priceMap[`NCO:${ceSym}`] || priceMap[`MCX:${ceSym}`]) : undefined);
+            const price = priceMap[ceId] || (ceSym ? (priceMap[`MCX:${ceSym}`] || priceMap[`NCO:${ceSym}`]) : undefined);
             if (price) row.ce.price = price;
           }
           const peId = row.pe?.id;
           const peSym = row.pe?.symbol;
           if (peId) {
-            const price = priceMap[peId] || (peSym ? (priceMap[`NCO:${peSym}`] || priceMap[`MCX:${peSym}`]) : undefined);
+            const price = priceMap[peId] || (peSym ? (priceMap[`MCX:${peSym}`] || priceMap[`NCO:${peSym}`]) : undefined);
             if (price) row.pe.price = price;
           }
         });
