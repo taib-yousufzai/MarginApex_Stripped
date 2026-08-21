@@ -48,11 +48,11 @@ describe('Position Engine Load & Concurrency Tests', () => {
   }, 60000);
 
   afterAll(async () => {
-    // Cleanup load test records
-    await admin.from('transactions').delete().eq('user_id', userId);
-    await admin.from('positions').delete().eq('user_id', userId);
-    await admin.from('orders').delete().eq('user_id', userId);
-    
+    // Cleanup any orphaned LOAD_TEST_INFY records globally
+    await admin.from('positions').delete().eq('symbol', 'LOAD_TEST_INFY');
+    await admin.from('orders').delete().eq('symbol', 'LOAD_TEST_INFY');
+    await admin.from('script_settings').delete().eq('symbol', 'LOAD_TEST_INFY');
+
     // Restore original balance
     await admin
       .from('profiles')

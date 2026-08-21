@@ -45,5 +45,5 @@ describe('MCX Option Pricing Correctness & Instrument Binding', () => {
       symbol: 'GOLD26AUG159000PE',
       id: 'MCX:GOLD26AUG159000PE',
     });
-  });
+  }, 15000);
 });

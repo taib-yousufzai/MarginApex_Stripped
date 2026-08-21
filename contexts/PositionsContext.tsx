@@ -78,11 +78,7 @@ const resolveKitePrefix = (key: string, settlement: string) => {
     baseKey.startsWith('LEAD') ||
     baseKey.startsWith('MENTHAOIL')
   ) {
-    if (baseKey.endsWith('CE') || baseKey.endsWith('PE')) {
-      prefix = 'NCO:';
-    } else {
-      prefix = 'MCX:';
-    }
+    prefix = (seg === 'NCO' || seg === 'NCO-OPT') ? 'NCO:' : 'MCX:';
   } else if (
     seg.includes('CDS') ||
     seg.includes('FOREX') ||
