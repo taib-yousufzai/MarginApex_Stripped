@@ -490,9 +490,21 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     return { lastPrice: 0, change: 0, changePercent: 0, open: 0, high: 0, low: 0, close: 0, volume: 0, bid: 0, ask: 0 };
   }
 
-  const sym = (q.symbol || q.tradingsymbol || symbolKey || '').toUpperCase().replace(/^CRYPTO:/, '').replace('USDT', '');
-  const isForexUsd = ['GBPUSD', 'EURUSD'].includes(sym);
+  const rawSym = (q.symbol || q.tradingsymbol || symbolKey || '').toUpperCase();
+  const exchange = (q.exchange || (rawSym.includes(':') ? rawSym.split(':')[0] : '')).toUpperCase();
+  const cleanSym = rawSym.replace(/^CRYPTO:/, '').replace(/^MCX:/, '').replace(/^COMEX:/, '').replace(/^NCO:/, '').replace('USDT', '');
+
+  const isForexUsd = ['GBPUSD', 'EURUSD'].includes(cleanSym);
   const usdInrRate = 83.85;
+
+  const isCrypto = exchange === 'CRYPTO' || rawSym.startsWith('CRYPTO:') || rawSym.endsWith('USDT') ||
+    ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => cleanSym === c || cleanSym.startsWith(c));
+
+  const isCommodity = exchange === 'MCX' || exchange === 'COMEX' || exchange === 'NCO' ||
+    rawSym.startsWith('MCX:') || rawSym.startsWith('COMEX:') || rawSym.startsWith('NCO:') || rawSym.startsWith('MCX-') ||
+    ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c => cleanSym.includes(c));
+
+  const isCommodityOrCrypto = isCrypto || isCommodity;
 
   let close = Number(q.ohlc?.close ?? q.close ?? 0);
   let rawLastPrice = Number(q.last_price ?? q.lastPrice ?? q.price ?? close ?? 0);
@@ -514,8 +526,14 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     if (low > 0 && low < 20) low *= usdInrRate;
   }
 
-  // Normalize depth against LTP to eliminate stale/impossible Bid/Ask depth while preserving valid depth 1:1
-  const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(lastPrice, rawBid, rawAsk, { forceSynthetic: false, useSyntheticFallback: true });
+  // Force synthetic calculation for Commodity (MCX/COMEX) and Crypto instruments.
+  // For Equity/Index (NSE), preserve valid exchange orderbook depth 1:1.
+  const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(
+    lastPrice,
+    rawBid,
+    rawAsk,
+    { forceSynthetic: isCommodityOrCrypto, useSyntheticFallback: true }
+  );
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);
   const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : Number(q.changePercent ?? 0);
