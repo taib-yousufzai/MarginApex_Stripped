@@ -25,43 +25,84 @@ export async function GET(request: NextRequest) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolsParam)}`, {
-      cache: 'no-store',
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeout));
+    let fetchOk = false;
+    let resData: any = null;
 
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        data.forEach((item: any) => {
-          if (item && item.symbol) {
-            const lp = parseFloat(item.lastPrice || '0');
-            const quote = {
-              symbol: item.symbol,
-              lastPrice: lp,
-              prevClosePrice: parseFloat(item.prevClosePrice || item.openPrice || '0'),
-              openPrice: parseFloat(item.openPrice || '0'),
-              highPrice: parseFloat(item.highPrice || '0'),
-              lowPrice: parseFloat(item.lowPrice || '0'),
-              volume: parseFloat(item.volume || '0'),
-              time: item.closeTime || Date.now(),
-              bid: lp,
-              ask: lp,
-            };
-            quotes[item.symbol] = quote;
-            const shortSymbol = item.symbol.replace('USDT', '');
-            quotes[shortSymbol] = quote;
-          }
-        });
+    try {
+      const res = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolsParam)}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (res.ok) {
+        resData = await res.json();
+        fetchOk = true;
       }
+    } catch {
+      fetchOk = false;
+    }
+
+    if (fetchOk && Array.isArray(resData)) {
+      resData.forEach((item: any) => {
+        if (item && item.symbol) {
+          const lp = parseFloat(item.lastPrice || '0');
+          const quote = {
+            symbol: item.symbol,
+            lastPrice: lp,
+            prevClosePrice: parseFloat(item.prevClosePrice || item.openPrice || '0'),
+            openPrice: parseFloat(item.openPrice || '0'),
+            highPrice: parseFloat(item.highPrice || '0'),
+            lowPrice: parseFloat(item.lowPrice || '0'),
+            volume: parseFloat(item.volume || '0'),
+            time: item.closeTime || Date.now(),
+            bid: lp,
+            ask: lp,
+          };
+          quotes[item.symbol] = quote;
+          const shortSymbol = item.symbol.replace('USDT', '');
+          quotes[shortSymbol] = quote;
+        }
+      });
+    } else {
+      // Fallback: fetch symbols individually so invalid symbols don't break valid ones
+      await Promise.allSettled(
+        uniqueSymbols.map(async (sym) => {
+          try {
+            const singleRes = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(sym)}`, {
+              cache: 'no-store',
+            });
+            if (singleRes.ok) {
+              const item = await singleRes.json();
+              if (item && item.symbol) {
+                const lp = parseFloat(item.lastPrice || '0');
+                const quote = {
+                  symbol: item.symbol,
+                  lastPrice: lp,
+                  prevClosePrice: parseFloat(item.prevClosePrice || item.openPrice || '0'),
+                  openPrice: parseFloat(item.openPrice || '0'),
+                  highPrice: parseFloat(item.highPrice || '0'),
+                  lowPrice: parseFloat(item.lowPrice || '0'),
+                  volume: parseFloat(item.volume || '0'),
+                  time: item.closeTime || Date.now(),
+                  bid: lp,
+                  ask: lp,
+                };
+                quotes[item.symbol] = quote;
+                const shortSymbol = item.symbol.replace('USDT', '');
+                quotes[shortSymbol] = quote;
+              }
+            }
+          } catch {
+            // Ignore individual symbol fetch errors
+          }
+        })
+      );
     }
 
     return NextResponse.json({ success: true, data: quotes });
   } catch (err) {
     console.error('[GET /api/binance/quotes] Error:', err);
     return NextResponse.json(
-      { error: 'Failed to fetch Binance quotes' },
-      { status: 500 }
+      { success: true, data: {} }
     );
   }
 }

@@ -989,13 +989,13 @@ export async function GET(request: NextRequest) {
     // Append matching FOREX items if tab is All or FOREX
     if (tab === 'All' || tab === 'FOREX') {
       const forexSearchItems = [
-        { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: 'EURUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
-        { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: 'GBPUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
+        { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'EURUSD=X', segment: 'Forex', category: 'FOREX' },
+        { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'GBPUSD=X', segment: 'Forex', category: 'FOREX' },
         { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'USDJPY=X', segment: 'Forex', category: 'FOREX' },
         { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'USDCHF=X', segment: 'Forex', category: 'FOREX' },
         { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'USDCAD=X', segment: 'Forex', category: 'FOREX' },
-        { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', binanceSymbol: 'AUDUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
-        { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', binanceSymbol: 'NZDUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
+        { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'AUDUSD=X', segment: 'Forex', category: 'FOREX' },
+        { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'NZDUSD=X', segment: 'Forex', category: 'FOREX' },
         { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },
         { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },
         { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },

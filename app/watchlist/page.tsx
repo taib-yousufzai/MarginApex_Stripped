@@ -282,7 +282,8 @@ export function getExchangeBadge(segment: string): string {
   if (!segment) return 'NSE';
   if (segment.includes('MCX') || segment.includes('NCO')) return 'MCX';
   if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
-  if (segment.includes('CDS') || segment.includes('FOREX')) return 'CDS';
+  if (segment.includes('FOREX') || segment === 'Forex') return 'FOREX';
+  if (segment.includes('CDS')) return 'CDS';
   if (segment === 'NSE - Equity' || segment === 'NSE' || segment.includes('Index')) return 'NSE';
   if (segment === 'BSE - Equity' || segment === 'BSE') return 'BSE';
   if (segment.startsWith('NSE')) return 'NFO';
@@ -337,10 +338,13 @@ interface InstrumentRowProps {
 function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetail, basketMode, onBasketBuy, onBasketSell, onChart }: InstrumentRowProps) {
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
-  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.category === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
+  const symCheck = ((item.symbol || '') + ' ' + (item.name || '') + ' ' + (item.kiteSymbol || '')).toUpperCase();
+  const isForex = item.category === 'FOREX' || item.segment === 'Forex' || ['USDJPY', 'USDCHF', 'USDCAD', 'EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDINR', 'EURINR', 'GBPINR', 'JPYINR'].some(f => symCheck.replace(/[\/\=X\s]/g, '').includes(f));
+
+  const isCrypto = !isForex && (item.segment === 'CRYPTO' || item.category === 'CRYPTO' || item.symbol.endsWith('USDT') || (!!item.binanceSymbol && ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c))) || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c)));
   const isPureComex = !!item.comexSymbol && !item.kiteSymbol;
-  const hasDualView = false; // Toggles removed completely
-  const showComex = isPureComex;
+  const hasDualView = false;
+  const showComex = isPureComex || (isForex && !!item.comexSymbol);
 
   const activeCryptoQuote = binanceQuote || quote;
 
@@ -352,22 +356,17 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   if (isCrypto) {
     let rawLtp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
     let rawClose = activeCryptoQuote?.close ?? (item.close || rawLtp);
-    const isForexUsd = ['GBPUSD', 'EURUSD'].includes((item.symbol || '').toUpperCase());
-    if (isForexUsd && rawLtp > 0 && rawLtp < 20) {
-      rawLtp *= 83.85;
-      rawClose *= 83.85;
-    }
     ltp = rawLtp;
     prevClose = rawClose;
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else if (showComex) {
-    ltp = comexQuote?.lastPrice ?? 0;
-    prevClose = comexQuote?.close ?? 0;
+    ltp = comexQuote?.lastPrice ?? item.price ?? 0;
+    prevClose = comexQuote?.close ?? (item.close || ltp);
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else {
-    ltp = quote?.lastPrice ?? item.price;
+    ltp = quote?.lastPrice ?? item.price ?? 0;
     if (quote) {
       prevClose = quote.close ?? ltp;
       absoluteChange = ltp - prevClose;
@@ -380,7 +379,6 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
     }
   }
 
-  const symCheck = ((item.symbol || '') + ' ' + (item.name || '') + ' ' + (item.kiteSymbol || '')).toUpperCase();
   const isForexUsd = symCheck.includes('GBPUSD') || symCheck.includes('EURUSD') || symCheck.includes('GBP/USD') || symCheck.includes('EUR/USD');
   if (isForexUsd && ltp > 0 && ltp < 20) {
     ltp *= 83.85;
@@ -389,7 +387,11 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   }
 
-  const isLoading = isCrypto ? (!activeCryptoQuote && ltp === 0) : (showComex && !comexQuote);
+  const isLoading = isCrypto
+    ? (!activeCryptoQuote && ltp === 0)
+    : showComex
+      ? (!comexQuote && ltp === 0)
+      : (!quote && ltp === 0);
 
   const handleLeftClick = () => {
     if (basketMode) return;
@@ -423,9 +425,10 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
             <span className="instr-row__name">{item.name}</span>
             <span className="exchange-badge" style={
               isCrypto ? { background: '#F0A500', color: '#fff' } :
+                isForex ? { background: '#2563EB', color: '#fff' } :
                 showComex ? { background: '#4A148C', color: '#fff' } : {}
             }>
-              {isCrypto ? 'CRYPTO' : showComex ? 'COMEX' : getExchangeBadge(item.segment)}
+              {isCrypto ? 'CRYPTO' : isForex ? 'FOREX' : showComex ? 'COMEX' : getExchangeBadge(item.segment)}
             </span>
             {!basketMode && onChart && (
               <button
