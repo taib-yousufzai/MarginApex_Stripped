@@ -4,6 +4,7 @@ import { WatchlistItem, TabLabel, getTabForItem, getDefaultWatchlistItems } from
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { api } from '@/lib/api';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
+import { useComexQuotes } from '@/hooks/useComexQuotes';
 
 interface WatchlistSearchProps {
   activeTab: TabLabel;
@@ -284,6 +285,12 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   }, [results]);
   const { quotes } = useMarketQuotes(resultIds);
 
+  const comexIds = React.useMemo(() => {
+    const ids = results.map(r => r.comexSymbol).filter((s): s is string => !!s);
+    return Array.from(new Set(ids));
+  }, [results]);
+  const { quotes: comexQuotes } = useComexQuotes(comexIds);
+
   const displayResults = React.useMemo(() => {
     if (!results || results.length === 0) return [];
     const hasOptions = results.some((r: any) => r.strike !== undefined || r.segment?.includes('Options'));
@@ -449,7 +456,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                 <div className="no-results">No instruments found for &quot;{normalizedQuery}&quot;</div>
               )}
               {displayResults.map((r, i) => {
-                const q = (r.binanceSymbol ? quotes[r.binanceSymbol] : null) || quotes[r.kiteSymbol] || quotes[r.symbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
+                const q = (r.binanceSymbol ? quotes[r.binanceSymbol] : null) || (r.comexSymbol ? comexQuotes[r.comexSymbol] : null) || quotes[r.kiteSymbol] || quotes[r.symbol] || quotes[(r.kiteSymbol || '').split(':').pop() || ''];
                 let price = (q?.lastPrice && q.lastPrice > 0) ? q.lastPrice : (r.price || 0);
                 let high = (q?.high && q.high > 0) ? q.high : (r.high || 0);
                 let low = (q?.low && q.low > 0) ? q.low : (r.low || 0);

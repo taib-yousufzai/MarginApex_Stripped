@@ -52,13 +52,9 @@ export async function GET(request: NextRequest) {
 
         // For closed positions, default to today-only unless 'all' param or 'from' date is passed
         if (lowerStatus === 'closed' && !searchParams.get('all') && !searchParams.get('from')) {
-          const now = new Date();
-          // Kolkata offset is +5:30 (330 minutes)
-          const kolkataTime = new Date(now.getTime() + (330 * 60 * 1000));
-          const yyyy = kolkataTime.getUTCFullYear();
-          const mm = String(kolkataTime.getUTCMonth() + 1).padStart(2, '0');
-          const dd = String(kolkataTime.getUTCDate()).padStart(2, '0');
-          const utcMidnight = new Date(`${yyyy}-${mm}-${dd}T00:00:00+05:30`);
+          const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+          const istDateStr = formatter.format(new Date());
+          const utcMidnight = new Date(`${istDateStr}T00:00:00+05:30`);
           positionsQuery = positionsQuery.gte('updated_at', utcMidnight.toISOString());
         } else if (lowerStatus === 'closed' && searchParams.get('from')) {
           positionsQuery = positionsQuery.gte('updated_at', `${searchParams.get('from')}T00:00:00+05:30`);

@@ -15,6 +15,7 @@ import type { TradeSheetItem } from '@/components/TradeSheet';
 import dynamic from 'next/dynamic';
 import PullToRefresh from '@/components/PullToRefresh';
 import { ErrorModal } from '@/components/ErrorModal';
+import HoldLockCountdown from '@/components/HoldLockCountdown';
 import './page.css';
 
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
@@ -82,13 +83,21 @@ export default function PositionPage() {
       // so we derive the missing EnrichedPosition fields here.
       const enriched = (data.positions || []).map((p: any): EnrichedPosition => {
         const pnl = Number(p.pnl || 0);
-        const investment = Number(p.avg_price || p.entry_price || 0) * Number(p.qty_total || p.qty_open || 1);
+        const qtyTotal = Number(p.qty_total || p.qty_open || p.qty || 1);
+        const avgEntry = Number(p.avg_price || p.entry_price || 0);
+        const exitPrice = Number(p.exit_price || p.ltp || avgEntry);
+        const investment = avgEntry * qtyTotal;
         const pnl_percent = investment > 0 ? parseFloat(((pnl / investment) * 100).toFixed(2)) : 0;
         return {
           ...p,
-          current_ltp: Number(p.exit_price || p.ltp || p.entry_price || 0),
+          qty_total: qtyTotal,
+          avg_price: avgEntry,
+          entry_price: avgEntry,
+          exit_price: exitPrice,
+          current_ltp: exitPrice,
           unrealised_pnl: 0,
-          total_pnl: pnl,
+          total_pnl: pnl - Number(p.brokerage || 0),
+          pnl,
           pnl_percent,
           hold_lock_active: false,
           remaining_hold_seconds: 0,
@@ -573,6 +582,12 @@ export default function PositionPage() {
     brokerage: number;
     pnl_percent: number;
     ids: string[];
+    first_entry_time: string;
+    last_exit_time: string;
+    avg_duration_seconds: number;
+    weighted_duration_sum?: number;
+    total_margin: number;
+    trades_count: number;
   }
 
   const groupedClosedPositions: GroupedClosedPosition[] = useMemo(() => {
@@ -582,6 +597,20 @@ export default function PositionPage() {
       const key = `${displaySymbol}|${pos.side}|${pos.product_type}`;
       const existing = map.get(key);
       const posBrokerage = Number((pos as any).brokerage || 0);
+      const posQty = Number(pos.qty_total || pos.qty_open || (pos as any).qty || 1);
+      const posEntry = Number(pos.avg_price || pos.entry_price || 0);
+      const posExit = Number(pos.exit_price || pos.current_ltp || 0);
+      const posPnl = Number(pos.pnl || 0);
+
+      const posEntryTime = pos.entry_time || (pos as any).created_at || new Date().toISOString();
+      const posExitTime = pos.exit_time || (pos as any).closed_at || (pos as any).updated_at || posEntryTime;
+      const posEntryTs = new Date(posEntryTime).getTime();
+      const posExitTs = new Date(posExitTime).getTime();
+      const posDuration = (pos.duration_seconds !== undefined && pos.duration_seconds !== null)
+        ? Number(pos.duration_seconds)
+        : Math.max(0, Math.round((posExitTs - posEntryTs) / 1000));
+      const posMargin = Number((pos as any).locked_margin || (pos as any).margin_required || 0);
+
       if (!existing) {
         map.set(key, {
           key,
@@ -589,26 +618,45 @@ export default function PositionPage() {
           side: pos.side,
           product_type: pos.product_type || 'INTRADAY',
           settlement: pos.settlement || '',
-          qty_total: pos.qty_total,
-          avg_price: pos.avg_price || pos.entry_price,
-          exit_price: pos.exit_price || 0,
-          pnl: pos.pnl || 0,
+          qty_total: posQty,
+          avg_price: posEntry,
+          exit_price: posExit,
+          pnl: posPnl,
           brokerage: posBrokerage,
           pnl_percent: pos.pnl_percent || 0,
           ids: [pos.id],
+          first_entry_time: posEntryTime,
+          last_exit_time: posExitTime,
+          avg_duration_seconds: posDuration,
+          weighted_duration_sum: posDuration * posQty,
+          total_margin: posMargin,
+          trades_count: 1,
         });
       } else {
-        const newQty = existing.qty_total + pos.qty_total;
+        const newQty = existing.qty_total + posQty;
         const newAvgEntry = newQty > 0
-          ? (existing.avg_price * existing.qty_total + (pos.avg_price || pos.entry_price) * pos.qty_total) / newQty
+          ? (existing.avg_price * existing.qty_total + posEntry * posQty) / newQty
           : existing.avg_price;
         const newAvgExit = newQty > 0
-          ? (existing.exit_price * existing.qty_total + (pos.exit_price || 0) * pos.qty_total) / newQty
+          ? (existing.exit_price * existing.qty_total + posExit * posQty) / newQty
           : existing.exit_price;
-        const newPnl = existing.pnl + (pos.pnl || 0);
+        const newPnl = existing.pnl + posPnl;
         const newBrokerage = existing.brokerage + posBrokerage;
         const investment = newAvgEntry * newQty;
         const netPnl = newPnl - newBrokerage;
+
+        const existingFirstTs = new Date(existing.first_entry_time).getTime();
+        const firstEntryTime = posEntryTs < existingFirstTs ? posEntryTime : existing.first_entry_time;
+
+        const existingLastTs = new Date(existing.last_exit_time).getTime();
+        const lastExitTime = posExitTs > existingLastTs ? posExitTime : existing.last_exit_time;
+
+        const newTradesCount = existing.trades_count + 1;
+        const existingWeightedSum = existing.weighted_duration_sum ?? (existing.avg_duration_seconds * existing.qty_total);
+        const newWeightedDurationSum = existingWeightedSum + (posDuration * posQty);
+        const newAvgDuration = newQty > 0 ? Math.round(newWeightedDurationSum / newQty) : existing.avg_duration_seconds;
+        const newTotalMargin = existing.total_margin + posMargin;
+
         existing.qty_total = newQty;
         existing.avg_price = newAvgEntry;
         existing.exit_price = newAvgExit;
@@ -616,6 +664,12 @@ export default function PositionPage() {
         existing.brokerage = newBrokerage;
         existing.pnl_percent = investment > 0 ? parseFloat(((netPnl / investment) * 100).toFixed(2)) : 0;
         existing.ids.push(pos.id);
+        existing.first_entry_time = firstEntryTime;
+        existing.last_exit_time = lastExitTime;
+        existing.weighted_duration_sum = newWeightedDurationSum;
+        existing.avg_duration_seconds = newAvgDuration;
+        existing.total_margin = newTotalMargin;
+        existing.trades_count = newTradesCount;
       }
     }
     return Array.from(map.values());
@@ -1059,7 +1113,13 @@ export default function PositionPage() {
                                 pnl: group.pnl,
                                 total_pnl: group.pnl - group.brokerage,
                                 pnl_percent: group.pnl_percent,
-                              });
+                                is_cumulative_group: true,
+                                trades_count: group.trades_count,
+                                first_entry_time: group.first_entry_time,
+                                last_exit_time: group.last_exit_time,
+                                avg_duration_seconds: group.avg_duration_seconds,
+                                locked_margin: group.total_margin,
+                              } as any);
                             }
                           }}>
                             <div className="pos-card-left">
@@ -1355,7 +1415,9 @@ export default function PositionPage() {
                       }}>
                         {/* Left Side: Realised P&L Info */}
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>Realised P&amp;L</div>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                            {(selectedPos as any).is_cumulative_group ? 'Cumulative Realised P&L' : 'Realised P&L'}
+                          </div>
                           {(() => {
                             return (
                               <>
@@ -1373,11 +1435,15 @@ export default function PositionPage() {
                         {/* Right Side: Entry & Exit Price Stack */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'right' }}>
                           <div>
-                            <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1px' }}>Entry Price</div>
+                            <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1px' }}>
+                              {(selectedPos as any).is_cumulative_group ? 'Avg Entry Price' : 'Entry Price'}
+                            </div>
                             <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>{fmtPrice(selectedPos.entry_price, selectedPos.settlement)}</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1px' }}>Exit Price</div>
+                            <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '1px' }}>
+                              {(selectedPos as any).is_cumulative_group ? 'Avg Exit Price' : 'Exit Price'}
+                            </div>
                             <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>{fmtPrice(selectedPos.exit_price || 0, selectedPos.settlement)}</div>
                           </div>
                         </div>
@@ -1386,18 +1452,28 @@ export default function PositionPage() {
                       {/* Meta grid */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', width: '100%', marginBottom: '8px' }}>
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
-                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Avg Price</div>
-                          <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>{fmtPrice(selectedPos.avg_price || selectedPos.entry_price, selectedPos.settlement)}</div>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>
+                            {(selectedPos as any).is_cumulative_group ? 'Total Trades' : 'Avg Price'}
+                          </div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>
+                            {(selectedPos as any).is_cumulative_group 
+                              ? `${(selectedPos as any).trades_count || 1} ${((selectedPos as any).trades_count || 1) === 1 ? 'Trade' : 'Trades'}` 
+                              : fmtPrice(selectedPos.avg_price || selectedPos.entry_price, selectedPos.settlement)}
+                          </div>
                         </div>
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
                           <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Quantity</div>
                           <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>{selectedPos.qty_total}</div>
                         </div>
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
-                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Duration</div>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>
+                            {(selectedPos as any).is_cumulative_group ? 'Avg Duration' : 'Duration'}
+                          </div>
                           <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary, #1A1A1A)' }}>
                             {(() => {
-                              const s = selectedPos.duration_seconds || 0;
+                              const s = (selectedPos as any).is_cumulative_group
+                                ? ((selectedPos as any).avg_duration_seconds || 0)
+                                : (selectedPos.duration_seconds || 0);
                               if (s < 60) return `${s}s`;
                               if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
                               return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
@@ -1411,15 +1487,25 @@ export default function PositionPage() {
                           </div>
                         </div>
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
-                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Entry Time</div>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>
+                            {(selectedPos as any).is_cumulative_group ? 'First Entry Time' : 'Entry Time'}
+                          </div>
                           <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary, #1A1A1A)' }}>
-                            {new Date(selectedPos.entry_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+                            {(() => {
+                              const tStr = (selectedPos as any).is_cumulative_group ? ((selectedPos as any).first_entry_time || selectedPos.entry_time) : selectedPos.entry_time;
+                              return tStr ? new Date(tStr).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+                            })()}
                           </div>
                         </div>
                         <div style={{ background: 'var(--card-alt-bg, #F8F9FB)', border: '1px solid var(--border-card, #E2E6EA)', padding: '6px 10px', borderRadius: '12px' }}>
-                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Exit Time</div>
+                          <div style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--text-secondary, #6B7280)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>
+                            {(selectedPos as any).is_cumulative_group ? 'Last Exit Time' : 'Exit Time'}
+                          </div>
                           <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary, #1A1A1A)' }}>
-                            {selectedPos.exit_time ? new Date(selectedPos.exit_time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                            {(() => {
+                              const tStr = (selectedPos as any).is_cumulative_group ? ((selectedPos as any).last_exit_time || selectedPos.exit_time) : selectedPos.exit_time;
+                              return tStr ? new Date(tStr).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+                            })()}
                           </div>
                         </div>
                       </div>

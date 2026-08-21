@@ -989,17 +989,17 @@ export async function GET(request: NextRequest) {
     // Append matching FOREX items if tab is All or FOREX
     if (tab === 'All' || tab === 'FOREX') {
       const forexSearchItems = [
-        { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: 'EURUSDT', segment: 'Forex', category: 'FOREX' },
-        { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: 'GBPUSDT', segment: 'Forex', category: 'FOREX' },
-        { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', binanceSymbol: 'USDJPY', segment: 'Forex', category: 'FOREX' },
-        { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', binanceSymbol: 'USDCHF', segment: 'Forex', category: 'FOREX' },
-        { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', binanceSymbol: 'USDCAD', segment: 'Forex', category: 'FOREX' },
-        { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', binanceSymbol: 'AUDUSDT', segment: 'Forex', category: 'FOREX' },
-        { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', binanceSymbol: 'NZDUSDT', segment: 'Forex', category: 'FOREX' },
-        { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
-        { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
-        { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
-        { name: 'JPY/INR', symbol: 'CDS:JPYINR26AUGFUT', kiteSymbol: 'CDS:JPYINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: 'EURUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
+        { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: 'GBPUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'USDJPY=X', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'USDCHF=X', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', binanceSymbol: '', comexSymbol: 'USDCAD=X', segment: 'Forex', category: 'FOREX' },
+        { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', binanceSymbol: 'AUDUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
+        { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', binanceSymbol: 'NZDUSDT', comexSymbol: '', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'JPY/INR', symbol: 'CDS:JPYINR26AUGFUT', kiteSymbol: 'CDS:JPYINR26AUGFUT', comexSymbol: '', segment: 'CDS - Futures', category: 'FOREX' },
       ];
       const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
       const qClean = q.replace(/[\s\/]+/g, '').toLowerCase();
@@ -1014,6 +1014,7 @@ export async function GET(request: NextRequest) {
           symbol: item.symbol,
           kiteSymbol: item.kiteSymbol || '',
           binanceSymbol: (item as any).binanceSymbol || '',
+          comexSymbol: (item as any).comexSymbol || '',
           price: 0,
           change: '0%',
           segment: item.segment,

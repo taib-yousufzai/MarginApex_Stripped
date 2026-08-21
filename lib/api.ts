@@ -135,6 +135,8 @@ async function apiCall<T>(
         const path = window.location.pathname;
         if (path !== '/login' && path !== '/register' && path !== '/forgot-password' && path !== '/reset-password') {
           window.location.href = '/login';
+          // Return pending promise to prevent throwing uncaught ApiError during page unload
+          return new Promise<T>(() => {});
         }
       }
     }
