@@ -971,6 +971,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
 
+    const symbolExchange = (symbol.includes(':') ? symbol.split(':')[0] : '').toUpperCase();
+
     const isIndianMarket = ['NSE', 'NFO', 'MCX', 'BSE', 'BFO', 'NCO'].includes(symbolExchange) ||
       symbol.startsWith('NSE:') || symbol.startsWith('NFO:') || symbol.startsWith('MCX:') || symbol.startsWith('MCX-');
 
