@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface PullToRefreshProps {
   onRefresh: () => Promise<void> | void;
@@ -13,61 +13,82 @@ export default function PullToRefresh({ onRefresh, children, className = '', sty
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const touchStartY = useRef(0);
-  const touchCurrentY = useRef(0);
   const isPulling = useRef(false);
+  const isRefreshingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const PULL_THRESHOLD = 60;
   const DAMPING = 0.45;
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (containerRef.current && containerRef.current.scrollTop <= 0 && !isRefreshing) {
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    if (isRefreshingRef.current) return;
+    const scrollTop = containerRef.current?.scrollTop ?? 0;
+    if (scrollTop <= 0) {
       touchStartY.current = e.touches[0].clientY;
-      touchCurrentY.current = e.touches[0].clientY;
       isPulling.current = true;
     } else {
       isPulling.current = false;
     }
-  };
+  }, []);
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isPulling.current || isRefreshing) return;
-    touchCurrentY.current = e.touches[0].clientY;
-    const dy = touchCurrentY.current - touchStartY.current;
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!isPulling.current || isRefreshingRef.current) return;
+    const dy = e.touches[0].clientY - touchStartY.current;
 
-    if (dy > 0 && containerRef.current && containerRef.current.scrollTop <= 0) {
+    const scrollTop = containerRef.current?.scrollTop ?? 0;
+    if (dy > 0 && scrollTop <= 0) {
+      e.preventDefault(); // works because listener is non-passive
       const dist = Math.min(dy * DAMPING, 90);
       setPullDistance(dist);
-      if (dy > 10 && e.cancelable) {
-        e.preventDefault();
-      }
     } else {
+      isPulling.current = false;
       setPullDistance(0);
     }
-  };
+  }, []);
 
-  const handleTouchEnd = async () => {
-    if (!isPulling.current || isRefreshing) return;
+  const handleTouchEnd = useCallback(async () => {
+    if (!isPulling.current || isRefreshingRef.current) return;
     isPulling.current = false;
 
-    if (pullDistance >= PULL_THRESHOLD) {
-      setIsRefreshing(true);
-      setPullDistance(50);
-      try {
-        await Promise.all([
-          Promise.resolve(onRefresh()),
-          new Promise(r => setTimeout(r, 600))
-        ]);
-      } catch (err) {
-        console.error('Pull to refresh error:', err);
-      } finally {
-        setIsRefreshing(false);
-        setPullDistance(0);
+    setPullDistance(prev => {
+      if (prev >= PULL_THRESHOLD) {
+        (async () => {
+          isRefreshingRef.current = true;
+          setIsRefreshing(true);
+          setPullDistance(50);
+          try {
+            await Promise.all([
+              Promise.resolve(onRefresh()),
+              new Promise(r => setTimeout(r, 700))
+            ]);
+          } catch (err) {
+            console.error('Pull to refresh error:', err);
+          } finally {
+            isRefreshingRef.current = false;
+            setIsRefreshing(false);
+            setPullDistance(0);
+          }
+        })();
+        return prev;
       }
-    } else {
-      setPullDistance(0);
-    }
-  };
+      return 0;
+    });
+  }, [onRefresh]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const rotationDeg = Math.min((pullDistance / PULL_THRESHOLD) * 180, 180);
 
@@ -77,11 +98,8 @@ export default function PullToRefresh({ onRefresh, children, className = '', sty
       className={className}
       style={{
         ...style,
-        position: 'relative'
+        position: 'relative',
       }}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
     >
       {(pullDistance > 0 || isRefreshing) && (
         <div
