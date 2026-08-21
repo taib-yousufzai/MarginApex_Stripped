@@ -11,8 +11,22 @@ export function calculateSyntheticOptionSpread(
   bidBuffer: number = 0
 ): { bid: number; ask: number } {
   if (!ltp || ltp <= 0) return { bid: 0, ask: 0 };
-  const aBuf = Math.max(0, askBuffer);
-  const bBuf = Math.max(0, bidBuffer);
+
+  const getBufferAmount = (buf: number): number => {
+    if (!buf || buf <= 0) {
+      // Default fallback synthetic spread (0.1% of LTP, min 0.15 pts) when buffer is 0
+      return Math.max(0.15, Math.round(ltp * 0.001 * 100) / 100);
+    }
+    if (buf >= 1) {
+      return buf; // Absolute points if >= 1
+    }
+    // Percentage buffer (e.g., 0.3 => 0.3%, 0.08 => 0.08%, 0.03 => 0.03%)
+    const pct = buf > 0.005 ? buf / 100 : buf;
+    return Math.max(0.05, Math.round(ltp * pct * 100) / 100);
+  };
+
+  const aBuf = getBufferAmount(askBuffer);
+  const bBuf = getBufferAmount(bidBuffer);
 
   const ask = Math.round((ltp + aBuf) * 100) / 100;
   const bid = Math.max(0.05, Math.round((ltp - bBuf) * 100) / 100);
