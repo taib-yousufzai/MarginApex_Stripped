@@ -7,8 +7,8 @@
  */
 export function calculateSyntheticOptionSpread(
   ltp: number,
-  askBuffer: number = 0.3,
-  bidBuffer: number = 0.3
+  askBuffer: number = 0,
+  bidBuffer: number = 0
 ): { bid: number; ask: number } {
   if (!ltp || ltp <= 0) return { bid: 0, ask: 0 };
   const aBuf = Math.max(0, askBuffer);
@@ -22,8 +22,7 @@ export function calculateSyntheticOptionSpread(
 
 /**
  * Normalizes option contract depth (Bid / Ask) against Last Traded Price (LTP)
- * to prevent stale or impossible order-book depth display while preserving
- * valid exchange depth or generating synthetic Crypto-style depth when missing.
+ * or generates synthetic Crypto-style depth derived strictly from LTP.
  */
 export function normalizeOptionQuoteDepth(
   ltp: number,
@@ -33,18 +32,24 @@ export function normalizeOptionQuoteDepth(
     askBuffer?: number;
     bidBuffer?: number;
     useSyntheticFallback?: boolean;
+    forceSynthetic?: boolean;
   }
 ): { bid: number; ask: number } {
-  const askBuffer = options?.askBuffer ?? 0.3;
-  const bidBuffer = options?.bidBuffer ?? 0.3;
-  const useSyntheticFallback = options?.useSyntheticFallback ?? true;
+  const askBuffer = options?.askBuffer ?? 0;
+  const bidBuffer = options?.bidBuffer ?? 0;
+  const forceSynthetic = options?.forceSynthetic ?? true;
 
-  // If no LTP, return raw values
+  // If no LTP, return raw values (or 0)
   if (!ltp || ltp <= 0) return { bid: rawBid > 0 ? rawBid : 0, ask: rawAsk > 0 ? rawAsk : 0 };
+
+  // When forceSynthetic is true (default), generate synthetic Bid & Ask strictly from LTP (matching Crypto model)
+  if (forceSynthetic) {
+    return calculateSyntheticOptionSpread(ltp, askBuffer, bidBuffer);
+  }
 
   // If depth is missing (0 / 0), generate synthetic Crypto-style Bid/Ask from LTP if fallback enabled
   if ((!rawBid || rawBid <= 0) && (!rawAsk || rawAsk <= 0)) {
-    if (useSyntheticFallback) {
+    if (options?.useSyntheticFallback ?? true) {
       return calculateSyntheticOptionSpread(ltp, askBuffer, bidBuffer);
     }
     return { bid: 0, ask: 0 };
@@ -72,7 +77,7 @@ export function normalizeOptionQuoteDepth(
     } else if (ltp > ask) {
       ask = ltp;
     }
-  } else if (useSyntheticFallback) {
+  } else {
     ask = Math.round((ltp + askBuffer) * 100) / 100;
   }
 
@@ -81,7 +86,7 @@ export function normalizeOptionQuoteDepth(
     if (bid > ltp) {
       bid = ltp;
     }
-  } else if (useSyntheticFallback) {
+  } else {
     bid = Math.max(0.05, Math.round((ltp - bidBuffer) * 100) / 100);
   }
 
