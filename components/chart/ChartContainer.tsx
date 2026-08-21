@@ -209,7 +209,19 @@ export default function ChartContainer({
           'use_localstorage_for_settings_saved'
         ],
         overrides: {
-          "mainSeriesProperties.showCountdown": false
+          "mainSeriesProperties.showCountdown": false,
+          "mainSeriesProperties.visible": true,
+          "mainSeriesProperties.style": 1,
+          "mainSeriesProperties.candleStyle.upColor": "#089981",
+          "mainSeriesProperties.candleStyle.downColor": "#F23645",
+          "mainSeriesProperties.candleStyle.drawWick": true,
+          "mainSeriesProperties.candleStyle.drawBorder": true,
+          "mainSeriesProperties.candleStyle.borderColor": "#089981",
+          "mainSeriesProperties.candleStyle.borderUpColor": "#089981",
+          "mainSeriesProperties.candleStyle.borderDownColor": "#F23645",
+          "mainSeriesProperties.candleStyle.wickColor": "#089981",
+          "mainSeriesProperties.candleStyle.wickUpColor": "#089981",
+          "mainSeriesProperties.candleStyle.wickDownColor": "#F23645"
         }
       });
 
@@ -237,6 +249,9 @@ export default function ChartContainer({
       }
       isReadyRef.current = true;
       setChartStatus('ready');
+      try {
+        tvWidgetRef.current?.chart().executeActionById('timeScaleReset');
+      } catch (e) {}
       console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms [14] Chart visually usable`);
 
       // Inject CSS directly to hide native header in case feature flags or custom CSS fail
@@ -360,7 +375,7 @@ export default function ChartContainer({
     let nowMs = activeQuote?.timestamp ? new Date(activeQuote.timestamp).getTime() : Date.now();
     if (nowMs !== undefined) nowMs = Number(nowMs);
 
-    if (loading || candles.length === 0) return;
+    if (chartStatus !== 'ready') return;
     if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
 
     datafeedRef.current?.updateLive(symbol, lastPrice, nowMs, volume);
