@@ -497,15 +497,6 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
   const isForexUsd = ['GBPUSD', 'EURUSD'].includes(cleanSym);
   const usdInrRate = 83.85;
 
-  const isCrypto = exchange === 'CRYPTO' || rawSym.startsWith('CRYPTO:') || rawSym.endsWith('USDT') ||
-    ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => cleanSym === c || cleanSym.startsWith(c));
-
-  const isCommodity = exchange === 'MCX' || exchange === 'COMEX' || exchange === 'NCO' ||
-    rawSym.startsWith('MCX:') || rawSym.startsWith('COMEX:') || rawSym.startsWith('NCO:') || rawSym.startsWith('MCX-') ||
-    ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c => cleanSym.includes(c));
-
-  const isCommodityOrCrypto = isCrypto || isCommodity;
-
   let close = Number(q.ohlc?.close ?? q.close ?? 0);
   let rawLastPrice = Number(q.last_price ?? q.lastPrice ?? q.price ?? close ?? 0);
   let lastPrice = rawLastPrice > 0 ? rawLastPrice : close;
@@ -526,13 +517,18 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     if (low > 0 && low < 20) low *= usdInrRate;
   }
 
-  // Force synthetic calculation for Commodity (MCX/COMEX) and Crypto instruments.
-  // For Equity/Index (NSE), preserve valid exchange orderbook depth 1:1.
+  const isIndianMarket = exchange === 'NSE' || exchange === 'NFO' || exchange === 'MCX' || exchange === 'BSE' || exchange === 'BFO' || exchange === 'NCO' ||
+    rawSym.startsWith('NSE:') || rawSym.startsWith('NFO:') || rawSym.startsWith('MCX:') || rawSym.startsWith('BSE:') || rawSym.startsWith('BFO:') || rawSym.startsWith('NCO:') || rawSym.startsWith('MCX-') ||
+    ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX'].some(c => cleanSym.includes(c));
+
+  // For Indian market (NSE, NFO, MCX), ignore buffers and use Zerodha raw ask/bid 1:1
+  const forceSynthetic = !isIndianMarket;
+
   const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(
     lastPrice,
     rawBid,
     rawAsk,
-    { forceSynthetic: isCommodityOrCrypto, useSyntheticFallback: true }
+    { forceSynthetic, askBuffer: 0, bidBuffer: 0, useSyntheticFallback: true }
   );
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);

@@ -971,13 +971,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0);
 
+    const isIndianMarket = ['NSE', 'NFO', 'MCX', 'BSE', 'BFO', 'NCO'].includes(symbolExchange) ||
+      symbol.startsWith('NSE:') || symbol.startsWith('NFO:') || symbol.startsWith('MCX:') || symbol.startsWith('MCX-');
+
+    const askBuf = isIndianMarket ? 0 : (buySetting?.entry_buffer ?? buySetting?.bid_buffer ?? 0);
+    const bidBuf = isIndianMarket ? 0 : (sellSetting?.entry_buffer ?? sellSetting?.bid_buffer ?? 0);
+
     const effective = resolveEffectivePrices({
       ltp: baseLtp,
       rawBid,
       rawAsk,
       hasRealBidAsk,
-      askBuffer: buySetting?.entry_buffer ?? buySetting?.bid_buffer ?? 0,
-      bidBuffer: sellSetting?.entry_buffer ?? sellSetting?.bid_buffer ?? 0,
+      askBuffer: askBuf,
+      bidBuffer: bidBuf,
     });
 
     if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
