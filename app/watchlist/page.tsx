@@ -1845,15 +1845,23 @@ function WatchlistContent() {
               <div className="sheet-handle"><div className="handle-bar"></div></div>
               {selectedItem && (() => {
                 const dbSeg = mapSegmentWithSymbol(selectedItem.segment || '', selectedItem.symbol);
-                const segSetting = segmentSettings.find((s: any) => s.segment === dbSeg || s.segment === selectedItem.segment);
-                const activeBuf = segSetting?.bid_buffer ?? 0;
+                const isDetailCrypto = dbSeg === 'CRYPTO' || (selectedItem.symbol || '').endsWith('USDT') || !!selectedItem.binanceSymbol;
+                const isDetailComex = dbSeg === 'COMEX' || !!selectedItem.comexSymbol;
+                const isDetailIndian = !isDetailCrypto && !isDetailComex;
+
+                const buySegSetting = segmentSettings.find((s: any) => (s.segment === dbSeg || s.segment === selectedItem.segment) && s.side === 'BUY');
+                const sellSegSetting = segmentSettings.find((s: any) => (s.segment === dbSeg || s.segment === selectedItem.segment) && s.side === 'SELL');
+
+                const activeAskBuf = isDetailIndian ? 0 : (buySegSetting?.entry_buffer ?? buySegSetting?.bid_buffer ?? 0.003);
+                const activeBidBuf = isDetailIndian ? 0 : (sellSegSetting?.entry_buffer ?? sellSegSetting?.bid_buffer ?? 0.003);
+
                 const effective = resolveEffectivePrices({
                   ltp: currentLtp,
                   rawBid,
                   rawAsk,
                   hasRealBidAsk: Boolean(rawBid && rawAsk && rawBid < rawAsk),
-                  askBuffer: activeBuf,
-                  bidBuffer: activeBuf,
+                  askBuffer: activeAskBuf,
+                  bidBuffer: activeBidBuf,
                 });
                 const ltp = currentLtp;
                 const bid = effective.effectiveBid;

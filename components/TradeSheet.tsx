@@ -243,8 +243,8 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
     const isIndianMarket = !isCrypto && !isComex;
 
-    const activeAskBuffer = (isCrypto || isIndianMarket) ? 0 : (buyEntryBuffer || (buySetting?.bid_buffer ?? 0));
-    const activeBidBuffer = (isCrypto || isIndianMarket) ? 0 : (sellEntryBuffer || (sellSetting?.bid_buffer ?? 0));
+    const activeAskBuffer = isIndianMarket ? 0 : (buyEntryBuffer || (buySetting?.bid_buffer ?? 0.003));
+    const activeBidBuffer = isIndianMarket ? 0 : (sellEntryBuffer || (sellSetting?.bid_buffer ?? 0.003));
 
     const effective = resolveEffectivePrices({
       ltp: currentLtp,

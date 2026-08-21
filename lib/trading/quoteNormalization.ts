@@ -56,8 +56,11 @@ export function normalizeOptionQuoteDepth(
   // If no LTP, return raw values (or 0)
   if (!ltp || ltp <= 0) return { bid: rawBid > 0 ? rawBid : 0, ask: rawAsk > 0 ? rawAsk : 0 };
 
-  // When forceSynthetic is true (default), generate synthetic Bid & Ask strictly from LTP (matching Crypto model)
+  // When forceSynthetic is true (default), generate synthetic Bid & Ask from LTP or use real depth if valid
   if (forceSynthetic) {
+    if (rawBid > 0 && rawAsk > 0 && rawBid < rawAsk) {
+      return { bid: rawBid, ask: rawAsk };
+    }
     return calculateSyntheticOptionSpread(ltp, askBuffer, bidBuffer);
   }
 
