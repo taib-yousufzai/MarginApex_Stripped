@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { normalizeOptionQuoteDepth } from '@/lib/trading/quoteNormalization';
 
 export interface QuoteData {
   lastPrice: number;
@@ -513,9 +514,8 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     if (low > 0 && low < 20) low *= usdInrRate;
   }
 
-  // Preserve raw depth bid/ask 1:1 without artificial deviation suppression
-  let finalBid = rawBid > 0 ? rawBid : 0;
-  let finalAsk = rawAsk > 0 ? rawAsk : 0;
+  // Normalize depth against LTP to eliminate stale/impossible Bid/Ask depth while preserving valid depth 1:1
+  const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(lastPrice, rawBid, rawAsk);
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);
   const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : Number(q.changePercent ?? 0);

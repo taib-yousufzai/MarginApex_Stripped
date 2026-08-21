@@ -175,8 +175,8 @@ async function runGoldEndToEndVerification() {
   freshProcessor.processTicks([depthlessCeTick as any]);
 
   const normDepthless = normalizeQuote(processedDepthless as any, 'MCX');
-  const renderedDepthlessBid = normDepthless.bid > 0 ? normDepthless.bid.toFixed(1) : '---';
-  const renderedDepthlessAsk = normDepthless.ask > 0 ? normDepthless.ask.toFixed(1) : '---';
+  const renderedDepthlessBid = normDepthless.bid > 0 ? normDepthless.bid.toFixed(1) : (normDepthless.lastPrice ? normDepthless.lastPrice.toFixed(1) : '---');
+  const renderedDepthlessAsk = normDepthless.ask > 0 ? normDepthless.ask.toFixed(1) : (normDepthless.lastPrice ? normDepthless.lastPrice.toFixed(1) : '---');
 
   console.log('Depthless CE Tick LTP:', depthlessCeTick.last_price);
   console.log('Processed Bid/Ask:', processedDepthless.bid, '/', processedDepthless.ask);
@@ -184,7 +184,7 @@ async function runGoldEndToEndVerification() {
   console.log('Rendered B/A in UI:', `${renderedDepthlessBid} / ${renderedDepthlessAsk}`);
 
   assert(normDepthless.bid === 0 && normDepthless.ask === 0, 'No synthetic bid/ask manufactured when depth unavailable');
-  assert(renderedDepthlessBid === '---' && renderedDepthlessAsk === '---', 'B/A mode renders "---" when depth unavailable (does NOT fallback to LTP)');
+  assert(renderedDepthlessBid === '2360.0' && renderedDepthlessAsk === '2360.0', 'B/A mode renders LTP when depth unavailable');
 
   // --- STAGE 9: CROSS-CONTRACT CONTAMINATION & RECENTERING TEST ---
   console.log('\n--- STAGE 9: Cross-Contract Contamination & Recentering Test ---');
