@@ -241,14 +241,15 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
       if (rawAsk > 0 && rawAsk < 20) rawAsk *= usdInrRate;
     }
 
-    const activeBidBuffer = isCrypto ? 0 : (segSetting?.bid_buffer ?? buySetting?.bid_buffer ?? sellSetting?.bid_buffer ?? 0);
+    const activeAskBuffer = isCrypto ? 0 : (buyEntryBuffer || (buySetting?.bid_buffer ?? 0));
+    const activeBidBuffer = isCrypto ? 0 : (sellEntryBuffer || (sellSetting?.bid_buffer ?? 0));
 
     const effective = resolveEffectivePrices({
       ltp: currentLtp,
       rawBid,
       rawAsk,
       hasRealBidAsk: Boolean(rawBid && rawAsk && rawBid < rawAsk),
-      askBuffer: activeBidBuffer,
+      askBuffer: activeAskBuffer,
       bidBuffer: activeBidBuffer,
     });
 

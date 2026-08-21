@@ -515,7 +515,7 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
   }
 
   // Normalize depth against LTP to eliminate stale/impossible Bid/Ask depth while preserving valid depth 1:1
-  const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(lastPrice, rawBid, rawAsk);
+  const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(lastPrice, rawBid, rawAsk, { forceSynthetic: false, useSyntheticFallback: true });
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);
   const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : Number(q.changePercent ?? 0);

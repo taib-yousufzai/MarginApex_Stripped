@@ -976,8 +976,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       rawBid,
       rawAsk,
       hasRealBidAsk,
-      askBuffer: buySetting?.ask_buffer ?? buySetting?.bid_buffer ?? 0,
-      bidBuffer: sellSetting?.bid_buffer ?? sellSetting?.ask_buffer ?? 0,
+      askBuffer: buySetting?.entry_buffer ?? buySetting?.bid_buffer ?? 0,
+      bidBuffer: sellSetting?.entry_buffer ?? sellSetting?.bid_buffer ?? 0,
     });
 
     if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
@@ -1031,8 +1031,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         depthBestAsk: typeof rawQuote === 'object' ? (rawQuote?.depth?.sell?.[0]?.price ?? rawAsk) : rawAsk,
         depthBestAskQuantity: typeof rawQuote === 'object' ? (rawQuote?.depth?.sell?.[0]?.quantity ?? null) : null,
 
-        askBuffer: buySetting?.ask_buffer ?? buySetting?.bid_buffer ?? 0,
-        bidBuffer: sellSetting?.bid_buffer ?? sellSetting?.ask_buffer ?? 0,
+        askBuffer: buySetting?.entry_buffer ?? buySetting?.bid_buffer ?? 0,
+        bidBuffer: sellSetting?.entry_buffer ?? sellSetting?.bid_buffer ?? 0,
         normalBuffer: segSetting?.entry_buffer ?? 0,
 
         effectiveBid: effective.effectiveBid,
