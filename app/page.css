@@ -1585,7 +1585,7 @@ body.blue .notif-item {
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
   scroll-behavior: smooth !important;
-  overscroll-behavior-y: contain !important;
+  overscroll-behavior-y: auto !important;
   padding-top: 0 !important;
   padding-bottom: 6.25rem !important; /* Clear the fixed footer */
 }

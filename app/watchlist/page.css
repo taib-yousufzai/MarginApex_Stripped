@@ -343,7 +343,7 @@
     min-height: 0;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
-    overscroll-behavior-y: contain;
+    overscroll-behavior-y: auto;
     will-change: scroll-position;
     padding-right: 2px;
     padding-bottom: calc(var(--footer-nav-height, 4.0625rem) + env(safe-area-inset-bottom, 0px) + 1.25rem) !important;
