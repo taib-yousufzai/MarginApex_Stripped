@@ -196,10 +196,8 @@ export default function ChartContainer({
         timezone: 'Asia/Kolkata',
         theme: isDark ? 'dark' : 'light',
         autosize: true,
-        saved_data: savedData,
         client_id: 'marginapexx',
         user_id: 'public_user',
-        auto_save_delay: 1,
         disabled_features: [
           'header_symbol_search',
           'header_compare'
@@ -212,6 +210,10 @@ export default function ChartContainer({
           "mainSeriesProperties.showCountdown": false,
           "mainSeriesProperties.visible": true,
           "mainSeriesProperties.style": 1,
+          "mainSeriesProperties.priceAxisProperties.autoScale": true,
+          "mainSeriesProperties.priceAxisProperties.autoScaleDisabled": false,
+          "paneProperties.topMargin": 12,
+          "paneProperties.bottomMargin": 12,
           "mainSeriesProperties.candleStyle.upColor": "#089981",
           "mainSeriesProperties.candleStyle.downColor": "#F23645",
           "mainSeriesProperties.candleStyle.drawWick": true,
@@ -342,7 +344,11 @@ export default function ChartContainer({
 
   useEffect(() => {
     if (!isReadyRef.current) { pendingRef.current.symbol = symbol; return; }
-    tvWidgetRef.current?.chart().setSymbol(symbol);
+    tvWidgetRef.current?.chart().setSymbol(symbol, () => {
+      try {
+        tvWidgetRef.current?.chart().executeActionById('timeScaleReset');
+      } catch (e) {}
+    });
   }, [symbol]);
 
   useEffect(() => {
