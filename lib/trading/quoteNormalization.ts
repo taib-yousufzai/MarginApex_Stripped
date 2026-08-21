@@ -1,16 +1,52 @@
 /**
+ * Calculates synthetic Bid and Ask prices around Last Traded Price (LTP)
+ * using segment buffers (identical to the Crypto pricing model).
+ *
+ * Effective Ask = LTP + askBuffer
+ * Effective Bid = max(0.05, LTP - bidBuffer)
+ */
+export function calculateSyntheticOptionSpread(
+  ltp: number,
+  askBuffer: number = 0.3,
+  bidBuffer: number = 0.3
+): { bid: number; ask: number } {
+  if (!ltp || ltp <= 0) return { bid: 0, ask: 0 };
+  const aBuf = Math.max(0, askBuffer);
+  const bBuf = Math.max(0, bidBuffer);
+
+  const ask = Math.round((ltp + aBuf) * 100) / 100;
+  const bid = Math.max(0.05, Math.round((ltp - bBuf) * 100) / 100);
+
+  return { bid, ask };
+}
+
+/**
  * Normalizes option contract depth (Bid / Ask) against Last Traded Price (LTP)
  * to prevent stale or impossible order-book depth display while preserving
- * valid exchange depth.
+ * valid exchange depth or generating synthetic Crypto-style depth when missing.
  */
 export function normalizeOptionQuoteDepth(
   ltp: number,
   rawBid: number,
-  rawAsk: number
+  rawAsk: number,
+  options?: {
+    askBuffer?: number;
+    bidBuffer?: number;
+    useSyntheticFallback?: boolean;
+  }
 ): { bid: number; ask: number } {
-  // If no LTP or no depth available, return raw values (or 0 / 0 for no depth)
+  const askBuffer = options?.askBuffer ?? 0.3;
+  const bidBuffer = options?.bidBuffer ?? 0.3;
+  const useSyntheticFallback = options?.useSyntheticFallback ?? true;
+
+  // If no LTP, return raw values
   if (!ltp || ltp <= 0) return { bid: rawBid > 0 ? rawBid : 0, ask: rawAsk > 0 ? rawAsk : 0 };
+
+  // If depth is missing (0 / 0), generate synthetic Crypto-style Bid/Ask from LTP if fallback enabled
   if ((!rawBid || rawBid <= 0) && (!rawAsk || rawAsk <= 0)) {
+    if (useSyntheticFallback) {
+      return calculateSyntheticOptionSpread(ltp, askBuffer, bidBuffer);
+    }
     return { bid: 0, ask: 0 };
   }
 
@@ -23,9 +59,6 @@ export function normalizeOptionQuoteDepth(
     const bidDistance = ltp - bid;
     const askDistance = ask - ltp;
 
-    // A spread is valid and preserved if ask is reasonably balanced relative to bid distance.
-    // If ask is disproportionately far above LTP (e.g. LTP 2724, Bid 2713, Ask 2857),
-    // the ask is stale relative to the trade that just executed at LTP.
     const maxReasonableAskDistance = Math.max(bidDistance * 3, 50);
     if (askDistance <= maxReasonableAskDistance) {
       return { bid, ask };
@@ -33,22 +66,23 @@ export function normalizeOptionQuoteDepth(
   }
 
   // 2. Normalize Ask:
-  //    - If LTP < Ask (outside valid spread or ask is stale): Ask is capped to LTP.
-  //    - If LTP > Ask (LTP above Ask): Ask is stale below LTP and becomes LTP.
   if (ask > 0) {
     if (ltp < ask) {
       ask = ltp;
     } else if (ltp > ask) {
       ask = ltp;
     }
+  } else if (useSyntheticFallback) {
+    ask = Math.round((ltp + askBuffer) * 100) / 100;
   }
 
   // 3. Normalize Bid:
-  //    - If Bid > LTP: Bid cannot be higher than LTP, so Bid becomes LTP.
   if (bid > 0) {
     if (bid > ltp) {
       bid = ltp;
     }
+  } else if (useSyntheticFallback) {
+    bid = Math.max(0.05, Math.round((ltp - bidBuffer) * 100) / 100);
   }
 
   // 4. Preserve Bid <= Ask invariant:
