@@ -138,7 +138,7 @@ export default function ChartContainer({
       const width = containerRef.current.clientWidth;
       const height = containerRef.current.clientHeight;
       console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=WIDGET_CREATION_START elapsed=${(initStart - startTime).toFixed(1)}ms widgetCreateCount=${globalWidgetCreateCount} containerSize=${width}x${height}`);
-      
+
       datafeedRef.current = new Datafeed(segment, activeLoadId, startTime);
       if (typeof window !== 'undefined') {
         (window as any).__reactDatafeedInstance = datafeedRef.current;
@@ -184,7 +184,7 @@ export default function ChartContainer({
             localStorage.removeItem(key);
           }
         });
-      } catch (e) {}
+      } catch (e) { }
 
       tvWidgetRef.current = new window.TradingView.widget({
         container: containerRef.current,
@@ -255,7 +255,7 @@ export default function ChartContainer({
       setChartStatus('ready');
       try {
         tvWidgetRef.current?.chart().executeActionById('timeScaleReset');
-      } catch (e) {}
+      } catch (e) { }
       console.log(`[CHART TRACE ${activeLoadId}] +${(performance.now() - startTime).toFixed(1)}ms [14] Chart visually usable`);
 
       // Inject CSS directly to hide native header in case feature flags or custom CSS fail
@@ -263,7 +263,7 @@ export default function ChartContainer({
         const iframe = containerRef.current?.querySelector('iframe');
         if (iframe && iframe.contentDocument) {
           const style = iframe.contentDocument.createElement('style');
-          style.innerHTML = '.layout__area--top { display: none !important; } .header-chart-panel { display: none !important; }';
+          style.innerHTML = '.layout__area--top { display: none !important; } .header-chart-panel { display: none !important; } .layout__area--center { top: 0 !important; height: 100% !important; }';
           iframe.contentDocument.head.appendChild(style);
         }
       } catch (e) {
@@ -349,7 +349,7 @@ export default function ChartContainer({
     tvWidgetRef.current?.chart().setSymbol(symbol, () => {
       try {
         tvWidgetRef.current?.chart().executeActionById('timeScaleReset');
-      } catch (e) {}
+      } catch (e) { }
     });
   }, [symbol]);
 
@@ -439,7 +439,7 @@ export default function ChartContainer({
               setChartStatus('loading');
               setChartError(null);
               if (tvWidgetRef.current) {
-                try { tvWidgetRef.current.remove(); } catch (e) {}
+                try { tvWidgetRef.current.remove(); } catch (e) { }
                 tvWidgetRef.current = null;
               }
               // re-trigger mount effect by clearing ready ref

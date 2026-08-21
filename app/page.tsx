@@ -63,10 +63,7 @@ const learningData: LearningItem[] = [
         <path d="M16 3h3a2 2 0 0 1 2 2v3"/>
         <path d="M21 16v3a2 2 0 0 1-2 2h-3"/>
         <path d="M8 21H5a2 2 0 0 1-2-2v-3"/>
-        <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2">
-          <animate attributeName="y1" values="5;19;5" dur="2s" repeatCount="indefinite" />
-          <animate attributeName="y2" values="5;19;5" dur="2s" repeatCount="indefinite" />
-        </line>
+        <line className="scanner-line" x1="4" y1="12" x2="20" y2="12" stroke="currentColor" strokeWidth="2" />
       </svg>
     ), 
     iconClass: "ai", 
@@ -202,7 +199,9 @@ export default function Page() {
         }
       } catch (err) {
         if (err instanceof ApiError) {
-          console.error('Failed to fetch allowed segments', err.status, err.details);
+          if (err.status !== 401) {
+            console.error('Failed to fetch allowed segments', err.status, err.details);
+          }
         } else {
           console.error('Failed to fetch allowed segments', err);
         }

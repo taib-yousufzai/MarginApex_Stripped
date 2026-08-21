@@ -346,7 +346,7 @@ function OptionChainContent() {
   if (!mounted) return null;
 
   return (
-    <div className={`oc-app-container${mounted && isDark ? ' dark' : ''}`}>
+    <div className={`oc-app-container${mounted && isDark ? ' dark' : ''}`} suppressHydrationWarning>
       <header className="app-header premium-header">
         <div className="header-wrapper">
           <div className="oc-capsule-header">

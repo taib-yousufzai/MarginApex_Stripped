@@ -1606,7 +1606,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
       return (
         <div className="tc-chain-container" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
           <OptionChainTable
-            symbol={selectedSymbol}
+            symbol={underlyingSym}
             strikes={mappedStrikes}
             quotes={marketQuotes}
             spotPrice={chainData?.underlyingPrice || currentPrice || 71.00}
@@ -1842,6 +1842,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
 
   return (
     <div
+      suppressHydrationWarning
       className={`tc-wrapper ${isPanelExpanded && !(isLandscape || isCssLandscape) ? 'panel-expanded' : ''}`}
       style={(isLandscape || isCssLandscape) ? {
         position: 'fixed',

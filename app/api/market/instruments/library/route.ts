@@ -39,15 +39,16 @@ export async function GET(request: Request) {
     };
 
     const redis = getRedisClient();
-    const cacheKey = 'market:library:segments:v4';
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached) {
-        return NextResponse.json(JSON.parse(cached));
-      }
-    } catch (e) {
-      console.error('[library] Redis get cache error:', e);
-    }
+    const cacheKey = 'market:library:segments:v5';
+    // NOTE: Cache disabled to ensure strike ranges always reflect live ATM price.
+    // try {
+    //   const cached = await redis.get(cacheKey);
+    //   if (cached) {
+    //     return NextResponse.json(JSON.parse(cached));
+    //   }
+    // } catch (e) {
+    //   console.error('[library] Redis get cache error:', e);
+    // }
 
     const today = new Date().toISOString().split('T')[0];
     const segments: any[] = [];
@@ -113,34 +114,59 @@ export async function GET(request: Request) {
 
       if (!opts || opts.length === 0) return null;
 
-      // Apply strike range filter using Redis ATM price
+      // Apply strike range filter using Redis ATM price, with multiple fallbacks
       let selectedOpts: Instrument[] = opts as Instrument[];
       try {
         const kiteId = kiteIdMap[idx];
         if (kiteId) {
-          const cached = await redis.hget('market:quotes', kiteId);
           let atmPrice = 0;
-          if (cached) {
-            const q = JSON.parse(cached);
-            atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-          }
-          if (!atmPrice) {
-            const altKey = kiteId.split(':')[1] || idx;
-            const altCached = await redis.hget('market:quotes', altKey);
-            if (altCached) {
-              const q = JSON.parse(altCached);
+
+          // 1. Try Redis cache
+          try {
+            const cached = await redis.hget('market:quotes', kiteId);
+            if (cached) {
+              const q = JSON.parse(cached);
               atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
             }
+            if (!atmPrice) {
+              const altKey = kiteId.split(':')[1] || idx;
+              const altCached = await redis.hget('market:quotes', altKey);
+              if (altCached) {
+                const q = JSON.parse(altCached);
+                atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
+              }
+            }
+          } catch (_) { /* Redis unavailable */ }
+
+          // 2. Try internal quotes API (works even when Redis is down)
+          if (!atmPrice) {
+            try {
+              const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+              const res = await fetch(`${baseUrl}/api/market/quotes?symbols=${encodeURIComponent(kiteId)}`, {
+                headers: { 'x-internal': '1' },
+                signal: AbortSignal.timeout(2000),
+              });
+              if (res.ok) {
+                const qdata = await res.json();
+                const q = qdata?.data?.[kiteId] || qdata?.[kiteId];
+                if (q) atmPrice = q.lastPrice || q.last_price || 0;
+              }
+            } catch (_) { /* internal API unavailable */ }
           }
+
+          // 3. Use spot price passed from frontend via query string
           if (!atmPrice && qsAtm[idx]) {
             atmPrice = qsAtm[idx];
           }
+
+          // 4. Last resort: use the average of min+max strike as the center
           if (!atmPrice && opts.length > 0) {
-            console.warn(`[library] Redis ATM price unavailable for ${idx}, falling back to median strike`);
+            console.warn(`[library] All ATM price sources unavailable for ${idx}, using strike midpoint`);
             usedFallback = true;
-            const middleIndex = Math.floor(opts.length / 2);
-            atmPrice = (opts as Instrument[])[middleIndex]?.strike_price || 0;
+            const allStrikes = [...new Set((opts as Instrument[]).map(i => i.strike_price || 0))].sort((a, b) => a - b);
+            atmPrice = allStrikes[Math.floor(allStrikes.length / 2)] || 0;
           }
+
           if (atmPrice) {
             selectedOpts = applyStrikeRangeFilter(opts as Instrument[], atmPrice, strikeConfig.indexOptionsRange);
           }
