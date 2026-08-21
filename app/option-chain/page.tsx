@@ -404,10 +404,13 @@ function OptionChainContent() {
               <button
                 className="oc-chart-btn"
                 onClick={() => {
+                  const isMcxOpt = symbol.includes('GOLD') || symbol.includes('SILVER') || symbol.includes('CRUDE') || symbol.includes('NATGAS') || symbol.includes('NATURALGAS');
+                  const isBfoOpt = symbol.includes('SENSEX') || symbol.includes('BANKEX');
+                  const optSegment = isMcxOpt ? 'MCX - Options' : (isBfoOpt ? 'BFO' : 'NFO');
                   setChartItem({
                     symbol: symbol,
                     kiteSymbol: data?.underlyingSymbol || symbol,
-                    segment: symbol.includes('SENSEX') || symbol.includes('BANKEX') ? 'BFO' : 'NFO'
+                    segment: optSegment
                   });
                   const chartSheet = document.getElementById('chartSheet');
                   const chartOverlay = document.getElementById('chartSheetOverlay');

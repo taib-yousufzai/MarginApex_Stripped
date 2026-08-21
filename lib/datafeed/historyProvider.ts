@@ -97,22 +97,15 @@ async function fetchKiteBars(
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   const interval = resolutionToKiteInterval(resolution);
 
-  const formatDate = (tsSeconds: number) => {
-    const d = new Date(tsSeconds * 1000);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const mins = String(d.getMinutes()).padStart(2, '0');
-    const secs = String(d.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${mins}:${secs}`;
-  };
+  const fromFmt = new Date(periodParams.from * 1000).toISOString();
+  const toFmt = new Date(periodParams.to * 1000).toISOString();
 
-  const fromFmt = formatDate(periodParams.from);
-  const toFmt = formatDate(periodParams.to);
+  const baseUrl = typeof window !== 'undefined'
+    ? ''
+    : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
 
   const url =
-    `/api/market/historical` +
+    `${baseUrl}/api/market/historical` +
     `?symbol=${encodeURIComponent(ticker)}` +
     `&interval=${interval}` +
     `&from=${encodeURIComponent(fromFmt)}` +

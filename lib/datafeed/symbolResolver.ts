@@ -6,6 +6,19 @@ type ResolutionString = any;
  * Falls back to "NSE" for unrecognised or un-prefixed symbols.
  */
 export function deriveExchange(symbolName: string): string {
+  const upper = symbolName.toUpperCase();
+
+  // Commodity contracts (GOLD, SILVER, CRUDEOIL, NATURALGAS, etc.) are always MCX
+  if (
+    upper.includes('CRUDE') || upper.includes('GOLD') || 
+    upper.includes('SILVER') || upper.includes('NATURALGAS') || 
+    upper.includes('NATGAS') || upper.includes('COPPER') || 
+    upper.includes('ZINC') || upper.includes('ALUMINIUM') || 
+    upper.includes('LEAD')
+  ) {
+    return 'MCX';
+  }
+
   if (symbolName.startsWith('NSE:')) return 'NSE';
   if (symbolName.startsWith('BSE:')) return 'BSE';
   if (symbolName.startsWith('MCX:')) return 'MCX';
@@ -14,26 +27,14 @@ export function deriveExchange(symbolName: string): string {
   if (symbolName.startsWith('BFO:')) return 'BFO';
   if (symbolName.startsWith('CDS:')) return 'CDS';
 
-  // Guess exchange based on commodity/currency names if no prefix is provided
-  const upper = symbolName.toUpperCase();
   if (
-    upper.startsWith('CRUDE') || upper.startsWith('GOLD') || 
-    upper.startsWith('SILVER') || upper.startsWith('NATURALGAS') || 
-    upper.startsWith('NATGAS') || upper.startsWith('COPPER') || 
-    upper.startsWith('ZINC') || upper.startsWith('ALUMINIUM') || 
-    upper.startsWith('LEAD')
-  ) {
-    return 'MCX';
-  }
-  
-  if (
-    upper.startsWith('EURINR') || upper.startsWith('USDINR') || 
-    upper.startsWith('GBPINR') || upper.startsWith('JPYINR')
+    upper.includes('EURINR') || upper.includes('USDINR') || 
+    upper.includes('GBPINR') || upper.includes('JPYINR')
   ) {
     return 'CDS';
   }
 
-  if (upper.match(/(CE|PE|FUT)$/)) {
+  if (upper.match(/\d+(CE|PE)$/) || upper.match(/(FUT)$/)) {
     if (upper.includes('SENSEX') || upper.includes('BANKEX')) return 'BFO';
     return 'NFO';
   }
@@ -84,7 +85,10 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
   const name = formatShortName(rawName);
   
   const exchange = isCrypto ? 'BINANCE' : deriveExchange(symbolName);
-  const ticker = (isCrypto || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
+  let ticker = (isCrypto || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
+  if (exchange === 'MCX' && ticker.startsWith('NFO:')) {
+    ticker = `MCX:${ticker.slice(4)}`;
+  }
   
   let session = '0915-1530';
   if (isCrypto) session = '24x7';
@@ -103,6 +107,8 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
     pricescale: isCrypto ? 100000 : 100,
     minmov: 1,
     has_intraday: true,
+    has_daily: true,
+    has_weekly_and_monthly: false,
     intraday_multipliers: ['1', '2', '3', '5', '10', '15', '30', '60'],
     supported_resolutions: ['1', '2', '3', '5', '10', '15', '30', '60', 'D'] as ResolutionString[],
     volume_precision: 2,

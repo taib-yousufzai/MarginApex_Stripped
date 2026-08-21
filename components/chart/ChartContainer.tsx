@@ -176,15 +176,15 @@ export default function ChartContainer({
         setChartError(errText || 'Failed to load historical chart data');
       };
 
-      let savedData;
+      // Clear legacy TradingView localStorage settings that may lock or corrupt price scales / main series visibility
       try {
-        const stored = localStorage.getItem('marginapexx_tv_layout');
-        if (stored) {
-          savedData = JSON.parse(stored);
-        }
-      } catch (e) {
-        console.error('Failed to parse saved chart layout:', e);
-      }
+        localStorage.removeItem('marginapexx_tv_layout');
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('tradingview.')) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (e) {}
 
       tvWidgetRef.current = new window.TradingView.widget({
         container: containerRef.current,
@@ -200,11 +200,11 @@ export default function ChartContainer({
         user_id: 'public_user',
         disabled_features: [
           'header_symbol_search',
-          'header_compare'
+          'header_compare',
+          'use_localstorage_for_settings_saved'
         ],
         enabled_features: [
-          'study_templates',
-          'use_localstorage_for_settings_saved'
+          'study_templates'
         ],
         overrides: {
           "mainSeriesProperties.showCountdown": false,
@@ -212,6 +212,8 @@ export default function ChartContainer({
           "mainSeriesProperties.style": 1,
           "mainSeriesProperties.priceAxisProperties.autoScale": true,
           "mainSeriesProperties.priceAxisProperties.autoScaleDisabled": false,
+          "mainSeriesProperties.priceAxisProperties.percentage": false,
+          "mainSeriesProperties.priceAxisProperties.log": false,
           "paneProperties.topMargin": 12,
           "paneProperties.bottomMargin": 12,
           "mainSeriesProperties.candleStyle.upColor": "#089981",

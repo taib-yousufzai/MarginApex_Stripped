@@ -19,6 +19,12 @@ export interface SubscriberEntry {
   loadStartTime?: number;
 }
 
+function normalizeSymbol(s: string): string {
+  if (!s) return '';
+  const canonical = getCanonicalSymbol(s);
+  return canonical.replace(/^(MCX|NSE|NFO|BSE|BFO|CDS):/i, '').trim().toUpperCase();
+}
+
 export class RealtimeProvider {
   private subscribers = new Map<string, SubscriberEntry>();
   private lastUpdateTime = 0;
@@ -44,10 +50,10 @@ export class RealtimeProvider {
   }
 
   setLastBar(symbol: string, resolution: string, bar: Bar): void {
-    const canonical = getCanonicalSymbol(symbol);
+    const incomingNorm = normalizeSymbol(symbol);
     for (const entry of this.subscribers.values()) {
-      const entryCanonical = getCanonicalSymbol(entry.symbol);
-      const matches = !entryCanonical || entryCanonical === canonical || canonical.endsWith(entryCanonical) || entryCanonical.endsWith(canonical);
+      const subscriberNorm = normalizeSymbol(entry.symbol);
+      const matches = !subscriberNorm || subscriberNorm === incomingNorm;
       if (matches && entry.resolution === resolution) {
         entry.lastBar = { ...bar };
       }
@@ -55,6 +61,7 @@ export class RealtimeProvider {
   }
 
   update(symbol: string, lastPrice: number, nowMs: number, volume?: number): void {
+    if (!lastPrice || !isFinite(lastPrice) || lastPrice <= 0) return;
     this.pendingUpdate = { symbol, lastPrice, nowMs, volume };
     const now = Date.now();
 
@@ -77,12 +84,12 @@ export class RealtimeProvider {
     this.lastUpdateTime = Date.now();
     const { symbol, lastPrice, nowMs, volume } = this.pendingUpdate;
     this.pendingUpdate = null;
-    const canonicalIncoming = getCanonicalSymbol(symbol);
+    const incomingNorm = normalizeSymbol(symbol);
 
     for (const [uid, entry] of this.subscribers.entries()) {
       // Data race protection: check canonical symbol match
-      const entryCanonical = getCanonicalSymbol(entry.symbol);
-      const symbolMatches = !entryCanonical || entryCanonical === canonicalIncoming || canonicalIncoming.endsWith(entryCanonical) || entryCanonical.endsWith(canonicalIncoming);
+      const subscriberNorm = normalizeSymbol(entry.symbol);
+      const symbolMatches = !subscriberNorm || subscriberNorm === incomingNorm;
       if (!symbolMatches) {
         if (!this.firstTickLogged.has(uid + '_mismatch')) {
           this.firstTickLogged.add(uid + '_mismatch');

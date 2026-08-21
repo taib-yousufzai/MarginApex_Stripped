@@ -298,8 +298,24 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
-    const from = fromVal;
-    const to = toVal;
+    const fromMs = searchParams.get('from') ? new Date(searchParams.get('from')!).getTime() : (Date.now() - 7 * 86400 * 1000);
+    const toMs = searchParams.get('to') ? new Date(searchParams.get('to')!).getTime() : Date.now();
+
+    const from = new Date(fromMs).toISOString();
+    const to = new Date(toMs).toISOString();
+
+    const formatKiteIST = (ms: number) => {
+      const d = new Date(ms + 19800 * 1000);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const h = String(d.getUTCHours()).padStart(2, '0');
+      const min = String(d.getUTCMinutes()).padStart(2, '0');
+      const s = String(d.getUTCSeconds()).padStart(2, '0');
+      return `${y}-${m}-${day} ${h}:${min}:${s}`;
+    };
+    const kiteFrom = formatKiteIST(fromMs);
+    const kiteTo = formatKiteIST(toMs);
 
     const routeStart = performance.now();
     console.log(`[API PERF] /historical GET start: symbol=${symbol}, interval=${interval}, from=${from}, to=${to}`);
@@ -355,7 +371,7 @@ export async function GET(request: Request) {
     const kiteStart = performance.now();
     
     try {
-      const url = `https://api.kite.trade/instruments/historical/${instrumentToken}/${interval}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      const url = `https://api.kite.trade/instruments/historical/${instrumentToken}/${interval}?from=${encodeURIComponent(kiteFrom)}&to=${encodeURIComponent(kiteTo)}`;
       const response = await fetch(url, {
         headers: {
           'X-Kite-Version': '3',
@@ -404,9 +420,9 @@ export async function GET(request: Request) {
       }
     }
 
-    // Fallback 2: Synthesize a sequence of flat placeholder candles using the latest LTP
+    // Fallback 2: Synthesize a sequence of flat placeholder candles strictly bounded within [fromMs, toMs]
     if (!candlesData || candlesData.length === 0) {
-      console.warn(`[historical] No historical data found in Kite or DB for ${canonicalSymbol}. Synthesizing flat-line placeholder candles.`);
+      console.warn(`[historical] No historical data found in Kite or DB for ${canonicalSymbol}. Synthesizing flat-line placeholder candles bounded within requested timeframe.`);
       let lastPrice = 0;
       try {
         const keysToTry = [canonicalSymbol, symbol, String(instrumentToken)];
@@ -422,10 +438,11 @@ export async function GET(request: Request) {
 
       if (lastPrice === 0) {
         try {
+          const cleanSymbol = symbol.includes(':') ? symbol.split(':')[1] : symbol;
           const { data: instData } = await getSupabase()
             .from('instruments')
             .select('last_price')
-            .or(`id.eq.${canonicalSymbol},id.eq.${symbol},tradingsymbol.eq.${symbol}`)
+            .or(`id.eq.${canonicalSymbol},id.eq.${symbol},tradingsymbol.eq.${cleanSymbol}`)
             .limit(1);
           if (instData?.[0]?.last_price) {
             lastPrice = Number(instData[0].last_price);
@@ -433,14 +450,10 @@ export async function GET(request: Request) {
         } catch (e) {}
       }
 
-      // If price is still unknown, default to a safe positive value to prevent TradingView chart stalls
+      // Default to minimum positive tick price if untraded / unknown
       if (lastPrice <= 0) {
-        const strikeMatch = symbol.match(/\d+(?:CE|PE)$/i);
-        if (strikeMatch) {
-          lastPrice = 100.0;
-        } else {
-          lastPrice = 10.0;
-        }
+        const isOption = symbol.match(/(?:CE|PE)$/i);
+        lastPrice = isOption ? 0.05 : 10.0;
       }
 
       let spacingMs = 60 * 1000;
@@ -453,12 +466,14 @@ export async function GET(request: Request) {
       else if (normalized.includes('60min') || normalized.includes('hour')) spacingMs = 60 * 60 * 1000;
       else if (normalized.includes('day') || normalized.includes('1d')) spacingMs = 24 * 60 * 60 * 1000;
 
-      const nowMs = Date.now();
+      const endMs = Math.min(toMs, Date.now());
+      const maxBars = 100;
+      const startMs = Math.max(fromMs, endMs - maxBars * spacingMs);
       candlesData = [];
-      for (let i = 99; i >= 0; i--) {
-        const candleTime = new Date(nowMs - i * spacingMs).toISOString();
+      for (let t = startMs; t <= endMs; t += spacingMs) {
+        const roundedTime = Math.floor(t / spacingMs) * spacingMs;
         candlesData.push([
-          candleTime,
+          new Date(roundedTime).toISOString(),
           lastPrice,
           lastPrice,
           lastPrice,
