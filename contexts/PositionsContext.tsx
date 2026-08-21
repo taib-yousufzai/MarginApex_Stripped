@@ -10,8 +10,6 @@ import { MyPosition } from '@/lib/types/order';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 import { isContractExpired } from '@/lib/contractExpiry';
-import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
-import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
 
 export interface EnrichedPosition extends MyPosition {
   current_ltp: number;
@@ -376,50 +374,10 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       
       let unrealised = 0;
       if ((p.status === 'open' || p.status === 'active') && p.qty_open !== 0) {
-        const rawExitBuf = sideSetting?.exit_buffer;
-        const exitBuffer = (rawExitBuf !== undefined && rawExitBuf !== null && !isNaN(Number(rawExitBuf)))
-          ? (Number(rawExitBuf) > 0.005 ? Number(rawExitBuf) / 100 : Number(rawExitBuf))
-          : 0;
-
-        const exitPriceMode = (sideSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
-
-        const hasRealBidAsk = Boolean(
-          rawQuote &&
-          typeof rawQuote.bid === 'number' &&
-          typeof rawQuote.ask === 'number' &&
-          rawQuote.bid > 0 &&
-          rawQuote.ask > 0 &&
-          rawQuote.bid < rawQuote.ask
-        );
-
-        const effective = resolveEffectivePrices({
-          ltp,
-          rawBid: bid,
-          rawAsk: ask,
-          hasRealBidAsk,
-          askBuffer: sideSetting?.ask_buffer ?? sideSetting?.bid_buffer ?? 0,
-          bidBuffer: sideSetting?.bid_buffer ?? sideSetting?.ask_buffer ?? 0,
-        });
-
-        // For BUY position exit (selling to close) -> target Effective Bid
-        // For SELL position exit (buying back to close) -> target Effective Ask
-        const basePrice = exitPriceMode === 'LTP'
-          ? ltp
-          : (p.side === 'BUY' ? effective.effectiveBid : effective.effectiveAsk);
-
-        const exitPrice = calculateBufferedPrice({
-          side: p.side === 'BUY' ? 'SELL' : 'BUY',
-          isExit: true,
-          basePrice,
-          buySetting: sideSetting,
-          sellSetting: sideSetting,
-          exitPriceMode,
-        });
-
         if (p.side === 'BUY') {
-          unrealised = (exitPrice - avgPrice) * p.qty_open;
+          unrealised = (ltp - avgPrice) * p.qty_open;
         } else {
-          unrealised = (avgPrice - exitPrice) * p.qty_open;
+          unrealised = (avgPrice - ltp) * p.qty_open;
         }
       }
 
