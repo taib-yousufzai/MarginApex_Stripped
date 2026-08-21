@@ -484,7 +484,7 @@ const wsManager = MarketWSManager.getInstance();
  * This threshold is wide enough to cover legitimate wide spreads on illiquid
  * instruments while catching the pathological OTM-option case.
  */
-function normalizeQuote(q: any, symbolKey?: string): QuoteData {
+export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
   if (!q) {
     return { lastPrice: 0, change: 0, changePercent: 0, open: 0, high: 0, low: 0, close: 0, volume: 0, bid: 0, ask: 0 };
   }
@@ -513,27 +513,9 @@ function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     if (low > 0 && low < 20) low *= usdInrRate;
   }
 
-  // Sanity-check depth-derived bid/ask against lastPrice
-  let finalBid = 0;
-  let finalAsk = 0;
-
-  if (rawBid > 0 && rawAsk > 0 && rawBid < rawAsk) {
-    finalBid = rawBid;
-    finalAsk = rawAsk;
-  } else {
-    const maxDeviation = 0.50;
-    const bidOk = rawBid > 0 && lastPrice > 0 && Math.abs(rawBid - lastPrice) / lastPrice <= maxDeviation;
-    const askOk = rawAsk > 0 && lastPrice > 0 && Math.abs(rawAsk - lastPrice) / lastPrice <= maxDeviation;
-
-    if (bidOk && askOk && rawBid < rawAsk) {
-      finalBid = rawBid;
-      finalAsk = rawAsk;
-    } else if (bidOk) {
-      finalBid = rawBid;
-    } else if (askOk) {
-      finalAsk = rawAsk;
-    }
-  }
+  // Preserve raw depth bid/ask 1:1 without artificial deviation suppression
+  let finalBid = rawBid > 0 ? rawBid : 0;
+  let finalAsk = rawAsk > 0 ? rawAsk : 0;
 
   const change = lastPrice > 0 && close > 0 ? lastPrice - close : Number(q.net_change ?? q.change ?? 0);
   const changePercent = close > 0 ? ((lastPrice - close) / close) * 100 : Number(q.changePercent ?? 0);
@@ -582,6 +564,8 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => clearInterval(flushInterval);
   }, []);
 
+  const lastWsTickTimeRef = useRef<Record<string, number>>({});
+
   useEffect(() => {
     const onMessage = (type: string, data: any) => {
       if (type === 'status') {
@@ -592,12 +576,18 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
       } else if (type === 'quotes') {
         const mapped: Record<string, QuoteData> = {};
+        const now = Date.now();
         for (const [key, quote] of Object.entries(data)) {
-          mapped[key] = normalizeQuote(quote as any, key);
+          // Do not allow HTTP fallback quotes to overwrite fresh WS ticks (within last 5s)
+          const lastWsTime = lastWsTickTimeRef.current[key] || 0;
+          if (now - lastWsTime > 5000) {
+            mapped[key] = normalizeQuote(quote as any, key);
+          }
         }
         Object.assign(pendingUpdatesRef.current, mapped);
       } else if (type === 'update') {
         const { symbol, quote: q } = data;
+        lastWsTickTimeRef.current[symbol] = Date.now();
         pendingUpdatesRef.current[symbol] = normalizeQuote(q, symbol);
       }
     };

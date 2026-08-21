@@ -201,47 +201,37 @@ export async function GET(request: Request) {
     }
     const sortedStrikes = Object.values(strikeMap).sort((a: any, b: any) => a.strike - b.strike);
 
-    // ── 8. Backfill Redis prices (single hmget) ───────────────────────────────
+    // ── 8. Backfill Redis prices (single hmget with freshness check) ─────────
     try {
       const allKiteIds: string[] = [];
       sortedStrikes.forEach((row: any) => {
-        if (row.ce?.id) {
-          allKiteIds.push(row.ce.id);
-          if (row.ce.symbol) {
-            allKiteIds.push(`MCX:${row.ce.symbol}`);
-            allKiteIds.push(`NCO:${row.ce.symbol}`);
-          }
-        }
-        if (row.pe?.id) {
-          allKiteIds.push(row.pe.id);
-          if (row.pe.symbol) {
-            allKiteIds.push(`MCX:${row.pe.symbol}`);
-            allKiteIds.push(`NCO:${row.pe.symbol}`);
-          }
-        }
+        if (row.ce?.id) allKiteIds.push(row.ce.id);
+        if (row.pe?.id) allKiteIds.push(row.pe.id);
       });
       if (allKiteIds.length > 0) {
         const prices = await redis.hmget('market:quotes', ...allKiteIds);
         const priceMap: Record<string, number> = {};
+        const now = Date.now();
         allKiteIds.forEach((id, i) => {
           try {
+            if (!prices[i]) return;
             const q = JSON.parse(prices[i] as string);
-            const ltp = q.last_price || q.lastPrice || 0;
-            if (ltp > 0) priceMap[id] = ltp;
+            const rawTime = q.last_trade_time || q.timestamp || q.time || 0;
+            const qTime = new Date(rawTime).getTime();
+            // Strictly reject stale Redis cached ticks older than 60 seconds
+            const isFresh = qTime > 0 && !isNaN(qTime) && (now - qTime < 60000);
+            const ltp = Number(q.last_price ?? q.lastPrice ?? 0);
+            if (isFresh && ltp > 0) {
+              priceMap[id] = ltp;
+            }
           } catch { /* malformed entry */ }
         });
         sortedStrikes.forEach((row: any) => {
-          const ceId = row.ce?.id;
-          const ceSym = row.ce?.symbol;
-          if (ceId) {
-            const price = priceMap[ceId] || (ceSym ? (priceMap[`MCX:${ceSym}`] || priceMap[`NCO:${ceSym}`]) : undefined);
-            if (price) row.ce.price = price;
+          if (row.ce?.id && priceMap[row.ce.id]) {
+            row.ce.price = priceMap[row.ce.id];
           }
-          const peId = row.pe?.id;
-          const peSym = row.pe?.symbol;
-          if (peId) {
-            const price = priceMap[peId] || (peSym ? (priceMap[`MCX:${peSym}`] || priceMap[`NCO:${peSym}`]) : undefined);
-            if (price) row.pe.price = price;
+          if (row.pe?.id && priceMap[row.pe.id]) {
+            row.pe.price = priceMap[row.pe.id];
           }
         });
       }

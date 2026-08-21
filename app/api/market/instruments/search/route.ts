@@ -473,9 +473,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fallback: tradingsymbol ilike (spaces removed) or numeric strike
+    // Fallback: tradingsymbol ilike (spaces/slashes removed) or numeric strike
     if (!data || data.length === 0) {
-      const qNoSpace = q.replace(/\s+/g, '').toUpperCase();
+      const qNoSpace = q.replace(/[\s\/]+/g, '').toUpperCase();
 
       let buildBaseFallbackQuery = () => {
         let qry = getSupabase()
@@ -496,6 +496,7 @@ export async function GET(request: NextRequest) {
           // Add ilike conditions that approximate exact, starts with, and contains
           orParts.push(`name.ilike.${q}%`);
           orParts.push(`name.ilike.% ${q}%`);
+          orParts.push(`name.ilike.%${qNoSpace}%`);
           orParts.push(`tradingsymbol.ilike.%${qNoSpace}%`);
         }
 
@@ -952,36 +953,96 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Append matching COMEX items if search query matches name, symbol, or 'comex'
-    const comexSearchItems = [
-      { name: 'GOLD', symbol: 'GC=F', comexSymbol: 'GC=F', segment: 'COMEX - Futures' },
-      { name: 'SILVER', symbol: 'SI=F', comexSymbol: 'SI=F', segment: 'COMEX - Futures' },
-      { name: 'CRUDEOIL', symbol: 'CL=F', comexSymbol: 'CL=F', segment: 'COMEX - Futures' },
-      { name: 'COPPER', symbol: 'HG=F', comexSymbol: 'HG=F', segment: 'COMEX - Futures' },
-      { name: 'NATURALGAS', symbol: 'NG=F', comexSymbol: 'NG=F', segment: 'COMEX - Futures' },
-    ];
-    const comexSearchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const matchingComex = comexSearchItems
-      .filter(item => {
-        const itemText = `${item.name} ${item.symbol} ${item.segment} comex`.toLowerCase();
-        return comexSearchTerms.every(term => itemText.includes(term));
-      })
-      .map(item => ({
-        name: item.name,
-        symbol: item.symbol,
-        kiteSymbol: '', // Pure COMEX has no kiteSymbol
-        comexSymbol: item.comexSymbol,
-        price: 0,
-        change: '0%',
-        segment: item.segment,
-        contractDate: 'Continuous',
-        open: 0,
-        high: 0,
-        low: 0,
-        close: 0,
-      }));
+    // Append matching COMEX items if tab is All or COMEX
+    if (tab === 'All' || tab === 'COMEX') {
+      const comexSearchItems = [
+        { name: 'GOLD', symbol: 'GC=F', comexSymbol: 'GC=F', segment: 'COMEX - Futures' },
+        { name: 'SILVER', symbol: 'SI=F', comexSymbol: 'SI=F', segment: 'COMEX - Futures' },
+        { name: 'CRUDEOIL', symbol: 'CL=F', comexSymbol: 'CL=F', segment: 'COMEX - Futures' },
+        { name: 'COPPER', symbol: 'HG=F', comexSymbol: 'HG=F', segment: 'COMEX - Futures' },
+        { name: 'NATURALGAS', symbol: 'NG=F', comexSymbol: 'NG=F', segment: 'COMEX - Futures' },
+      ];
+      const comexSearchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const matchingComex = comexSearchItems
+        .filter(item => {
+          const itemText = `${item.name} ${item.symbol} ${item.segment} comex`.toLowerCase();
+          return comexSearchTerms.every(term => itemText.includes(term));
+        })
+        .map(item => ({
+          name: item.name,
+          symbol: item.symbol,
+          kiteSymbol: '', // Pure COMEX has no kiteSymbol
+          comexSymbol: item.comexSymbol,
+          price: 0,
+          change: '0%',
+          segment: item.segment,
+          contractDate: 'Continuous',
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+        }));
 
-    results.push(...matchingComex);
+      results.push(...matchingComex);
+    }
+
+    // Append matching FOREX items if tab is All or FOREX
+    if (tab === 'All' || tab === 'FOREX') {
+      const forexSearchItems = [
+        { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: 'EURUSDT', segment: 'Forex', category: 'FOREX' },
+        { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: 'GBPUSDT', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', binanceSymbol: 'USDJPY', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', binanceSymbol: 'USDCHF', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', binanceSymbol: 'USDCAD', segment: 'Forex', category: 'FOREX' },
+        { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', binanceSymbol: 'AUDUSDT', segment: 'Forex', category: 'FOREX' },
+        { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', binanceSymbol: 'NZDUSDT', segment: 'Forex', category: 'FOREX' },
+        { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
+        { name: 'JPY/INR', symbol: 'CDS:JPYINR26AUGFUT', kiteSymbol: 'CDS:JPYINR26AUGFUT', segment: 'CDS - Futures', category: 'FOREX' },
+      ];
+      const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const qClean = q.replace(/[\s\/]+/g, '').toLowerCase();
+      const matchingForex = forexSearchItems
+        .filter(item => {
+          const itemText = `${item.name} ${item.symbol} ${item.segment} forex`.toLowerCase();
+          const cleanText = itemText.replace(/[\s\/]+/g, '');
+          return searchTerms.every(term => itemText.includes(term) || cleanText.includes(term.replace(/[\s\/]+/g, '')) || cleanText.includes(qClean));
+        })
+        .map(item => ({
+          name: item.name,
+          symbol: item.symbol,
+          kiteSymbol: item.kiteSymbol || '',
+          binanceSymbol: (item as any).binanceSymbol || '',
+          price: 0,
+          change: '0%',
+          segment: item.segment,
+          contractDate: item.segment.includes('CDS') ? 'Aug 2026' : 'Continuous',
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+        }));
+
+      results.push(...matchingForex);
+    }
+
+    // Deduplicate results by symbol/name
+    const seenSymbols = new Set<string>();
+    results = results.filter(r => {
+      const key = `${r.name}_${r.symbol}`.toUpperCase();
+      if (seenSymbols.has(key)) return false;
+      seenSymbols.add(key);
+      return true;
+    });
+
+    if (tab === 'FOREX') {
+      const forexPattern = /(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|INR|FOREX|CDS)/i;
+      results = results.filter(item => {
+        const text = `${item.name || ''} ${item.symbol || ''} ${item.segment || ''}`.toUpperCase();
+        return forexPattern.test(text) && !/GOLD|SILVER|CRUDEOIL|NATURALGAS|COPPER|ZINC|LEAD|ALUMINIUM/i.test(text);
+      });
+    }
 
     return NextResponse.json(results);
   } catch (err: any) {

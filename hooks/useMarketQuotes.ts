@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useGlobalMarketQuotes } from '@/contexts/MarketDataContext';
 import { isContractExpired } from '@/lib/contractExpiry';
 
@@ -27,15 +27,35 @@ export function useMarketQuotes(symbols: string[]) {
   
   const symbolsKey = symbols.join(',');
 
-  useEffect(() => {
-    const currentSymbols = symbolsKey.split(',').filter(Boolean);
-    if (currentSymbols.length === 0) return;
+  const prevSymbolsRef = useRef<string[]>([]);
 
-    subscribe(currentSymbols);
-    return () => {
-      unsubscribe(currentSymbols);
-    };
+  useEffect(() => {
+    const currentSymbols = Array.from(new Set(symbols.filter(Boolean)));
+    const prevSymbols = prevSymbolsRef.current;
+
+    const currentSet = new Set(currentSymbols);
+    const prevSet = new Set(prevSymbols);
+
+    const added = currentSymbols.filter(s => !prevSet.has(s));
+    const removed = prevSymbols.filter(s => !currentSet.has(s));
+
+    if (added.length > 0) {
+      subscribe(added);
+    }
+    if (removed.length > 0) {
+      unsubscribe(removed);
+    }
+
+    prevSymbolsRef.current = currentSymbols;
   }, [symbolsKey, subscribe, unsubscribe]);
+
+  useEffect(() => {
+    return () => {
+      if (prevSymbolsRef.current.length > 0) {
+        unsubscribe(prevSymbolsRef.current);
+      }
+    };
+  }, [unsubscribe]);
 
   const localQuotes = useMemo(() => {
     const res: Record<string, QuoteData> = {};

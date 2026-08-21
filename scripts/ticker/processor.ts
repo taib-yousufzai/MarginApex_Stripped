@@ -109,7 +109,7 @@ export class TickProcessor extends EventEmitter {
       }
       window.push({ price: tick.last_price, timestamp: tickTime });
 
-      // Preserve depth-derived bid/ask across LTP-only ticks to avoid feed jitter
+      // Preserve depth-derived bid/ask across LTP-only ticks when present
       const rawBid = tick.depth?.buy?.[0]?.price;
       const rawAsk = tick.depth?.sell?.[0]?.price;
       let bid = (rawBid != null && rawBid > 0) ? rawBid : 0;
@@ -119,15 +119,9 @@ export class TickProcessor extends EventEmitter {
         this.lastSeenBid.set(token, bid);
         this.lastSeenAsk.set(token, ask);
       } else {
-        const prevBid = this.lastSeenBid.get(token);
-        const prevAsk = this.lastSeenAsk.get(token);
-        if (prevBid && prevAsk && lastPrice && lastPrice > 0) {
-          const delta = tick.last_price - lastPrice;
-          bid = Math.max(0.05, Math.round((prevBid + delta) * 100) / 100);
-          ask = Math.max(bid + 0.05, Math.round((prevAsk + delta) * 100) / 100);
-          this.lastSeenBid.set(token, bid);
-          this.lastSeenAsk.set(token, ask);
-        }
+        // Use previously seen real depth bid/ask if present, without synthetic delta drift
+        bid = this.lastSeenBid.get(token) || 0;
+        ask = this.lastSeenAsk.get(token) || 0;
       }
 
       // 4. Send to throttled database writer

@@ -87,10 +87,10 @@ const StrikeRow = React.memo(function StrikeRow({
   const ceHasSpread = !!(ceBidVal && ceAskVal && ceBidVal < ceAskVal);
   const peHasSpread = !!(peBidVal && peAskVal && peBidVal < peAskVal);
 
-  const ceBid = (ceHasSpread ? ceBidVal : ceLtpVal ? ceLtpVal : null)?.toFixed(1) ?? '---';
-  const ceAsk = (ceHasSpread ? ceAskVal : ceLtpVal ? ceLtpVal : null)?.toFixed(1) ?? '---';
-  const peBid = (peHasSpread ? peBidVal : peLtpVal ? peLtpVal : null)?.toFixed(1) ?? '---';
-  const peAsk = (peHasSpread ? peAskVal : peLtpVal ? peLtpVal : null)?.toFixed(1) ?? '---';
+  const ceBid = ceBidVal != null ? ceBidVal.toFixed(1) : '---';
+  const ceAsk = ceAskVal != null ? ceAskVal.toFixed(1) : '---';
+  const peBid = peBidVal != null ? peBidVal.toFixed(1) : '---';
+  const peAsk = peAskVal != null ? peAskVal.toFixed(1) : '---';
   const ceLtp = ceLtpVal ? `₹${ceLtpVal.toFixed(1)}` : '---';
   const peLtp = peLtpVal ? `₹${peLtpVal.toFixed(1)}` : '---';
 
@@ -209,12 +209,12 @@ export default function OptionChainTable({
     if (id && quotes[id]) return quotes[id];
     if (token && quotes[String(token)]) return quotes[String(token)];
     if (id) {
-      const s = id.split(':').pop();
+      const parts = id.split(':');
+      const exchange = parts.length > 1 ? parts[0] : null;
+      const s = parts[parts.length - 1];
       if (s) {
+        if (exchange && quotes[`${exchange}:${s}`]) return quotes[`${exchange}:${s}`];
         if (quotes[s]) return quotes[s];
-        if (quotes[`MCX:${s}`]) return quotes[`MCX:${s}`];
-        if (quotes[`NCO:${s}`]) return quotes[`NCO:${s}`];
-        if (quotes[`NFO:${s}`]) return quotes[`NFO:${s}`];
       }
     }
     return null;
@@ -251,7 +251,7 @@ export default function OptionChainTable({
               ))
             : centeredStrikes.map((s, index) => (
                 <StrikeRow
-                  key={s.strike}
+                  key={`${s.strike}_${s.ce?.symbol || ''}_${s.pe?.symbol || ''}`}
                   strike={s.strike}
                   ceSymbol={s.ce?.symbol} ceStaticPrice={s.ce?.price}
                   peSymbol={s.pe?.symbol} peStaticPrice={s.pe?.price}

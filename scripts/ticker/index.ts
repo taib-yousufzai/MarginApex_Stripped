@@ -253,11 +253,9 @@ class TickerDaemon {
     // Setup periodic matching engine cache sync (every 60 seconds) to self-heal state if Supabase Realtime drops.
     // Run non-blocking — never await in the critical tick path.
     this.matchingEngineSyncTimer = setInterval(() => {
-      if (matchingEngine && typeof (matchingEngine as any).initialize === 'function') {
-        (matchingEngine as any).initialize().catch((err: any) => {
-          logger.error({ err }, 'Periodic matching engine cache sync failed');
-        });
-      }
+      processPendingOrdersAndPositions().catch((err: any) => {
+        logger.error({ err }, 'Periodic matching engine cache sync failed');
+      });
     }, 60000);
 
     // Setup realtime listener for instant subscription sync on DB change events

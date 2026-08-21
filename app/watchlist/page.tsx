@@ -242,7 +242,7 @@ export function getTabForItem(item: WatchlistItem): TabLabel {
     return 'MCX-FUT';
   }
   if (n.includes('BTC') || n.includes('ETH') || n.includes('DOGE') || n.includes('USDT') || n.includes('CRYPTO')) return 'CRYPTO';
-  if (n.includes('USDINR') || n.includes('EURINR') || n.includes('GBPINR') || n.includes('JPYINR') || n.includes('GBPUSD') || n.includes('EURUSD') || n.includes('USDJPY') || n.includes('CDS') || n.includes('FOREX')) return 'FOREX';
+  if (n.includes('USDINR') || n.includes('EURINR') || n.includes('GBPINR') || n.includes('JPYINR') || n.includes('GBPUSD') || n.includes('EURUSD') || n.includes('USDJPY') || n.includes('USDCHF') || n.includes('USDCAD') || n.includes('AUDUSD') || n.includes('NZDUSD') || n.includes('CDS') || n.includes('FOREX')) return 'FOREX';
   if (n.includes('RELIANCE') || n.includes('HDFC') || n.includes('TCS') || n.includes('INFY') || n.includes('STK')) {
     if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) return 'STOCK-OPT';
     return 'STOCK-FUT';
