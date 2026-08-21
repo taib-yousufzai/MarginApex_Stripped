@@ -14,6 +14,17 @@ export interface EffectivePrices {
 }
 
 /**
+ * Normalizes buffer values into a decimal fraction multiplier.
+ * e.g. 0.3 (0.3%) -> 0.003, 0.003 (already fraction) -> 0.003
+ */
+function toDecimalBuffer(val: number | undefined | null): number {
+  if (val === undefined || val === null || isNaN(Number(val))) return 0;
+  const num = Number(val);
+  if (num === 0) return 0;
+  return num > 0.005 ? num / 100 : num;
+}
+
+/**
  * Resolves the Effective Ask and Effective Bid prices according to explicit market feed type.
  *
  * Zerodha / Real Feed (with real bid & ask):
@@ -21,8 +32,8 @@ export interface EffectivePrices {
  *   Effective Bid = Zerodha Bid - bidBuffer
  *
  * Crypto / Synthetic Feed (where data feed has no real bid/ask):
- *   Effective Ask = LTP + askBuffer
- *   Effective Bid = LTP - bidBuffer
+ *   Effective Ask = LTP * (1 + askBufferPct)
+ *   Effective Bid = LTP * (1 - bidBufferPct)
  */
 export function resolveEffectivePrices({
   ltp,
@@ -52,11 +63,11 @@ export function resolveEffectivePrices({
     effectiveAsk = Number(rawAsk) + (Number(askBuffer) || 0);
     effectiveBid = Number(rawBid) - (Number(bidBuffer) || 0);
   } else {
-    const aBuf = Number(askBuffer) || 0;
-    const bBuf = Number(bidBuffer) || 0;
+    const askPct = toDecimalBuffer(askBuffer);
+    const bidPct = toDecimalBuffer(bidBuffer);
 
-    effectiveAsk = baseLtp + (Number(askBuffer) || 0);
-    effectiveBid = baseLtp - (Number(bidBuffer) || 0);
+    effectiveAsk = askPct > 0 ? baseLtp * (1 + askPct) : baseLtp;
+    effectiveBid = bidPct > 0 ? baseLtp * (1 - bidPct) : baseLtp;
   }
 
   return {
@@ -65,3 +76,4 @@ export function resolveEffectivePrices({
     hasRealBidAsk: Boolean(validRealSpread),
   };
 }
+

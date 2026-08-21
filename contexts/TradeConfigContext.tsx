@@ -106,12 +106,16 @@ function buildCache(
   scripts: ScriptSetting[],
   mode: string,
 ): ConfigCache {
-  const frozenSegments = Object.freeze(segments.map(s => Object.freeze({ ...s })));
+  const frozenSegments = Object.freeze(segments.map(s => Object.freeze({
+    ...s,
+    entry_buffer: (s.entry_buffer != null && Number(s.entry_buffer) !== 0) ? Number(s.entry_buffer) : 0.3,
+    bid_buffer: (s.bid_buffer != null && Number(s.bid_buffer) !== 0) ? Number(s.bid_buffer) : (s.entry_buffer != null && Number(s.entry_buffer) !== 0 ? Number(s.entry_buffer) : 0.3),
+  })));
   const frozenScripts = Object.freeze(scripts.map(s => Object.freeze({ ...s })));
 
   const segmentIndex = new Map<string, SegmentSetting>();
   for (const s of frozenSegments) {
-    segmentIndex.set(`${s.segment}|${s.side}`, s);
+    segmentIndex.set(`${s.segment.toUpperCase()}|${s.side.toUpperCase()}`, s);
   }
 
   const scriptsSorted = Object.freeze(
@@ -223,7 +227,7 @@ export const TradeConfigProvider = ({
 
   const getSegment = useCallback(
     (segment: string, side: 'BUY' | 'SELL'): SegmentSetting | undefined =>
-      cache?.segmentIndex.get(`${segment}|${side}`),
+      cache?.segmentIndex.get(`${(segment || '').toUpperCase()}|${(side || '').toUpperCase()}`),
     [cache],
   );
 

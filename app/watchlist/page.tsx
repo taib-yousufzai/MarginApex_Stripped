@@ -1849,11 +1849,17 @@ function WatchlistContent() {
                 const isDetailComex = dbSeg === 'COMEX' || !!selectedItem.comexSymbol;
                 const isDetailIndian = !isDetailCrypto && !isDetailComex;
 
-                const buySegSetting = segmentSettings.find((s: any) => (s.segment === dbSeg || s.segment === selectedItem.segment) && s.side === 'BUY');
-                const sellSegSetting = segmentSettings.find((s: any) => (s.segment === dbSeg || s.segment === selectedItem.segment) && s.side === 'SELL');
+                const buySegSetting = segmentSettings.find((s: any) => 
+                  ((s.segment || '').toUpperCase() === (dbSeg || '').toUpperCase() || (s.segment || '').toUpperCase() === (selectedItem.segment || '').toUpperCase()) && 
+                  (s.side || '').toUpperCase() === 'BUY'
+                );
+                const sellSegSetting = segmentSettings.find((s: any) => 
+                  ((s.segment || '').toUpperCase() === (dbSeg || '').toUpperCase() || (s.segment || '').toUpperCase() === (selectedItem.segment || '').toUpperCase()) && 
+                  (s.side || '').toUpperCase() === 'SELL'
+                );
 
-                const activeAskBuf = isDetailIndian ? 0 : (buySegSetting?.entry_buffer ?? buySegSetting?.bid_buffer ?? 0.003);
-                const activeBidBuf = isDetailIndian ? 0 : (sellSegSetting?.entry_buffer ?? sellSegSetting?.bid_buffer ?? 0.003);
+                const activeAskBuf = isDetailIndian ? 0 : (Number(buySegSetting?.entry_buffer) || Number(buySegSetting?.bid_buffer) || 0.3);
+                const activeBidBuf = isDetailIndian ? 0 : (Number(sellSegSetting?.entry_buffer) || Number(sellSegSetting?.bid_buffer) || 0.3);
 
                 const effective = resolveEffectivePrices({
                   ltp: currentLtp,

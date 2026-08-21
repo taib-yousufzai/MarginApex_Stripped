@@ -42,8 +42,8 @@ describe('Demo User Buffer Application & Audit Verification', () => {
       isBasePriceRealBidAsk: true,
     });
 
-    // 200 + 0.2 = 200.2
-    expect(fillPrice).toBe(200.2);
+    // 200 * (1 + 0.002) = 200.4
+    expect(fillPrice).toBe(200.4);
   });
 
   it('C. Calculates fill price for MARKET SELL order using entry_buffer markdown', () => {
@@ -66,8 +66,8 @@ describe('Demo User Buffer Application & Audit Verification', () => {
       isBasePriceRealBidAsk: true,
     });
 
-    // 200 - 0.4 = 199.6
-    expect(fillPrice).toBe(199.6);
+    // 200 * (1 - 0.004) = 199.2
+    expect(fillPrice).toBe(199.2);
   });
 
   it('D. Validates percentage-style decimal conversion for values > 0.005 (e.g. 0.3 -> 0.003 multiplier)', () => {

@@ -51,7 +51,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
-  let finalSettings = currentSettings ?? [];
+  let finalSettings = (currentSettings ?? []).map(s => ({
+    ...s,
+    entry_buffer: (s.entry_buffer != null && Number(s.entry_buffer) !== 0) ? Number(s.entry_buffer) : 0.3,
+    bid_buffer: (s.bid_buffer != null && Number(s.bid_buffer) !== 0) ? Number(s.bid_buffer) : (s.entry_buffer != null && Number(s.entry_buffer) !== 0 ? Number(s.entry_buffer) : 0.3),
+    exit_buffer: s.exit_buffer != null ? Number(s.exit_buffer) : 0.17,
+  }));
 
   // 3. Find which of the allowed segments are missing settings in the database and auto-initialize them
   const existingSegmentKeys = new Set(finalSettings.map(s => `${s.segment.toUpperCase()}-${s.side.toUpperCase()}`));
@@ -102,7 +107,7 @@ export async function GET(request: NextRequest) {
           entry_buffer: 0.3,
           bid_buffer: 0.3,
           exit_buffer: 0.17,
-          trade_allowed: segUpper.includes('CRYPTO') ? false : true,
+          trade_allowed: true,
         });
       }
     }
@@ -116,7 +121,13 @@ export async function GET(request: NextRequest) {
       .select();
 
     if (!insertErr && insertedData) {
-      finalSettings = [...finalSettings, ...insertedData];
+      const mappedInserted = insertedData.map(s => ({
+        ...s,
+        entry_buffer: (s.entry_buffer != null && Number(s.entry_buffer) !== 0) ? Number(s.entry_buffer) : 0.3,
+        bid_buffer: (s.bid_buffer != null && Number(s.bid_buffer) !== 0) ? Number(s.bid_buffer) : 0.3,
+        exit_buffer: s.exit_buffer != null ? Number(s.exit_buffer) : 0.17,
+      }));
+      finalSettings = [...finalSettings, ...mappedInserted];
     } else {
       console.error(`[GET /api/user/segments] Failed to initialize default settings in ${settingsTable}:`, insertErr);
     }

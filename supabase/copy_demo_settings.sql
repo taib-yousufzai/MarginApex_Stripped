@@ -18,13 +18,13 @@ BEGIN
     INSERT INTO public.segment_settings (
       user_id, segment, side, commission_type, commission_value, profit_hold_sec, loss_hold_sec, 
       strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, 
-      entry_buffer, holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
+      entry_buffer, bid_buffer, holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
       gtt_commission_type, gtt_commission_value, carry_commission_type, carry_commission_value
     )
     SELECT 
       NEW.id, segment, side, commission_type, commission_value, profit_hold_sec, loss_hold_sec, 
       strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, 
-      entry_buffer, holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
+      entry_buffer, COALESCE(bid_buffer, entry_buffer, 0.3), holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
       gtt_commission_type, gtt_commission_value, carry_commission_type, carry_commission_value
     FROM public.segment_settings
     WHERE user_id = v_demo_id
@@ -34,13 +34,13 @@ BEGIN
     INSERT INTO public.scalper_segment_settings (
       user_id, segment, side, commission_type, commission_value, profit_hold_sec, loss_hold_sec, 
       strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, 
-      entry_buffer, holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
+      entry_buffer, bid_buffer, holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
       gtt_commission_type, gtt_commission_value, carry_commission_type, carry_commission_value
     )
     SELECT 
       NEW.id, segment, side, commission_type, commission_value, profit_hold_sec, loss_hold_sec, 
       strike_range, max_lot, max_order_lot, intraday_leverage, intraday_type, holding_leverage, 
-      entry_buffer, holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
+      entry_buffer, COALESCE(bid_buffer, entry_buffer, 0.3), holding_type, exit_buffer, trade_allowed, top_limit, min_limit,
       gtt_commission_type, gtt_commission_value, carry_commission_type, carry_commission_value
     FROM public.scalper_segment_settings
     WHERE user_id = v_demo_id

@@ -19,8 +19,8 @@ describe('Crypto & Non-Indian Market Quote Buffering', () => {
 
     expect(effective.effectiveAsk).toBeGreaterThan(2400.0);
     expect(effective.effectiveBid).toBeLessThan(2400.0);
-    expect(effective.effectiveAsk).toBe(2400.3);
-    expect(effective.effectiveBid).toBe(2399.7);
+    expect(effective.effectiveAsk).toBe(2407.2);
+    expect(effective.effectiveBid).toBe(2392.8);
   });
 
   it('B. normalizeOptionQuoteDepth generates synthetic spread for Crypto when forceSynthetic is true', () => {
