@@ -120,7 +120,7 @@ export default function ChartContainer({
     loadStartTimeRef.current = startTime;
     console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=CHART_CONTAINER_MOUNT elapsed=0.0ms mountCount=${globalMountCount} unmountCount=${globalUnmountCount}`);
 
-    const armWatchdog = (ms = 8000) => {
+    const armWatchdog = (ms = 15000) => {
       if (initTimerRef.current) clearTimeout(initTimerRef.current);
       initTimerRef.current = setTimeout(() => {
         const elapsed = (performance.now() - startTime).toFixed(1);
@@ -149,7 +149,7 @@ export default function ChartContainer({
 
       datafeedRef.current.onProgress = (_event: string) => {
         // Reset/extend the watchdog whenever meaningful datafeed progress occurs
-        armWatchdog(6000);
+        armWatchdog(12000);
       };
 
       datafeedRef.current.onError = (errText: string) => {

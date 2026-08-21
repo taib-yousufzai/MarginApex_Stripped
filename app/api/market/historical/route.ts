@@ -130,18 +130,23 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
     return result;
   };
 
-  // Fast path: symbol contains ':' (e.g. "NFO:NIFTY2661623700CE") — exact id match
-  // We already know the canonical ID; no reverse lookup needed.
-  if (symbol.includes(':')) {
+  const rawSymbol = symbol;
+  let normalizedSymbol = symbol;
+  if (normalizedSymbol.startsWith('NCO:')) {
+    normalizedSymbol = 'MCX:' + normalizedSymbol.slice(4);
+  }
+
+  // Fast path: symbol contains ':' (e.g. "MCX:GOLD26AUG161500CE") — exact id match
+  if (normalizedSymbol.includes(':')) {
     const { data } = await getSupabase()
       .from('instruments')
       .select('instrument_token')
-      .eq('id', symbol)
+      .eq('id', normalizedSymbol)
       .single();
-    if (data?.instrument_token) return save(data.instrument_token, symbol);
+    if (data?.instrument_token) return save(data.instrument_token, normalizedSymbol);
   }
 
-  const cleanSymbol = (symbol.includes(':') ? symbol.split(':')[1] : symbol).replace(/\//g, '');
+  const cleanSymbol = (normalizedSymbol.includes(':') ? normalizedSymbol.split(':')[1] : normalizedSymbol).replace(/\//g, '');
   const upperSymbol = cleanSymbol.toUpperCase().trim();
 
   // Handle index shortcuts (e.g. NIFTY, BANKNIFTY)

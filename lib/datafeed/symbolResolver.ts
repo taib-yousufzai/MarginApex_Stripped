@@ -9,6 +9,7 @@ export function deriveExchange(symbolName: string): string {
   if (symbolName.startsWith('NSE:')) return 'NSE';
   if (symbolName.startsWith('BSE:')) return 'BSE';
   if (symbolName.startsWith('MCX:')) return 'MCX';
+  if (symbolName.startsWith('NCO:')) return 'MCX';
   if (symbolName.startsWith('NFO:')) return 'NFO';
   if (symbolName.startsWith('BFO:')) return 'BFO';
   if (symbolName.startsWith('CDS:')) return 'CDS';
