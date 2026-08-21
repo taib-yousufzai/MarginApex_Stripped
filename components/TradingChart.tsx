@@ -723,14 +723,14 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     setError(null);
     hasLoadedData.current = false;
 
-    // Backstop: if onFirstBar hasn't fired within 6.0 seconds (e.g. noData response,
+    // Backstop: if onFirstBar hasn't fired within 2.0 seconds (e.g. noData response,
     // Kite session expired, or instrument not found), clear the loading spinner so
     // the chart UI is at least usable rather than stuck.
     const loadingTimeout = setTimeout(() => {
       if (!hasLoadedData.current) {
         setLoading(false);
       }
-    }, 6000);
+    }, 2000);
 
     return () => clearTimeout(loadingTimeout);
   }, [symbol, timeframe, isCrypto]);

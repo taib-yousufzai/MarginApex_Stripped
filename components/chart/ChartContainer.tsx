@@ -145,11 +145,26 @@ export default function ChartContainer({
       }
       datafeedRef.current.onFirstBar = (lastClose, prevClose) => {
         onFirstBarRef.current?.(lastClose, prevClose);
+        if (initTimerRef.current) {
+          clearTimeout(initTimerRef.current);
+          initTimerRef.current = null;
+        }
+        isReadyRef.current = true;
+        setChartStatus('ready');
       };
 
-      datafeedRef.current.onProgress = (_event: string) => {
-        // Reset/extend the watchdog whenever meaningful datafeed progress occurs
-        armWatchdog(12000);
+      datafeedRef.current.onProgress = (event: string) => {
+        if (event.startsWith('getBars_end')) {
+          if (initTimerRef.current) {
+            clearTimeout(initTimerRef.current);
+            initTimerRef.current = null;
+          }
+          isReadyRef.current = true;
+          setChartStatus('ready');
+        } else {
+          // Reset/extend the watchdog whenever datafeed fetch starts
+          armWatchdog(8000);
+        }
       };
 
       datafeedRef.current.onError = (errText: string) => {
