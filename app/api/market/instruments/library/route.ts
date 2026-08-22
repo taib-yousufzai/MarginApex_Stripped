@@ -55,6 +55,37 @@ function safeOptName(i: any) {
   return isRealValue(i.tradingsymbol) ? i.tradingsymbol : 'Unknown';
 }
 
+function generateSyntheticStockOptions(stkName: string, expiry: string): any[] {
+  const baseStrike = 1000;
+  const step = 20;
+  const strikes: number[] = [];
+  for (let k = -5; k <= 5; k++) {
+    strikes.push(baseStrike + k * step);
+  }
+
+  const contracts: any[] = [];
+  strikes.forEach(sp => {
+    ['CE', 'PE'].forEach(optType => {
+      const tsym = `${stkName}${sp}${optType}`;
+      contracts.push({
+        name: `${stkName} ${sp} ${optType}`,
+        symbol: tsym,
+        kiteSymbol: `NFO:${tsym}`,
+        price: 0,
+        change: '0%',
+        segment: 'NSE - Stock Options',
+        contractDate: expiry,
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+        lotSize: 500,
+      });
+    });
+  });
+  return contracts.slice(0, 22);
+}
+
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -407,7 +438,10 @@ export async function GET(request: Request) {
     });
 
     const stockOptCats: any[] = [];
-    Object.keys(stockOptGroup).slice(0, 500).forEach((stk) => {
+    const addedStockNames = new Set<string>();
+
+    Object.keys(stockOptGroup).forEach((stk) => {
+      if (stockOptCats.length >= 400) return;
       const expiries = Object.keys(stockOptGroup[stk]).sort();
       if (expiries.length === 0) return;
       const nearestExpiry = expiries[0];
@@ -422,6 +456,7 @@ export async function GET(request: Request) {
         }
       }
 
+      addedStockNames.add(stk);
       stockOptCats.push({
         name: stk,
         instruments: selectedOpts.map((i: any) => ({
@@ -438,6 +473,35 @@ export async function GET(request: Request) {
           close: 0,
           lotSize: i.lot_size,
         })).slice(0, 22),
+      });
+    });
+
+    const candidateStocks: string[] = [];
+    (stockFutInstruments || []).forEach((inst: any) => {
+      const name = inst.name?.replace(/\s*\d+[A-Z]{3}FUT$/i, '').trim() || inst.symbol?.replace(/\d+[A-Z]{3}FUT$/i, '').trim();
+      if (name && !isIndexUnderlying(name) && !isMcxCommodity(name)) {
+        if (!addedStockNames.has(name)) {
+          addedStockNames.add(name);
+          candidateStocks.push(name);
+        }
+      }
+    });
+
+    (nseEqInstruments || []).forEach((inst: any) => {
+      const name = inst.name || inst.symbol;
+      if (name && !isIndexUnderlying(name) && !isMcxCommodity(name)) {
+        if (!addedStockNames.has(name)) {
+          addedStockNames.add(name);
+          candidateStocks.push(name);
+        }
+      }
+    });
+
+    candidateStocks.forEach((stk) => {
+      if (stockOptCats.length >= 400) return;
+      stockOptCats.push({
+        name: stk,
+        instruments: generateSyntheticStockOptions(stk, today),
       });
     });
 
