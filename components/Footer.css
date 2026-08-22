@@ -59,15 +59,7 @@ body.dark .footer-section::after {
    Sits above the nav background, below tab content.
    Always present — no per-tab toggling, no flicker. */
 .footer-nav::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 2.5rem;
-  background: linear-gradient(to top, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.10) 50%, rgba(0,0,0,0.02) 100%);
-  pointer-events: none;
-  z-index: 0;
+  display: none;
 }
 
 body.dark .footer-nav::after {
