@@ -433,18 +433,28 @@ export default function Page() {
     if (savedTheme) {
       setTimeout(() => {
         setTheme(savedTheme);
+        document.documentElement.classList.remove('dark', 'black', 'blue');
         document.body.classList.remove('dark', 'black', 'blue');
-        if (savedTheme !== 'light') document.body.classList.add(savedTheme);
+        if (savedTheme !== 'light') {
+          document.documentElement.classList.add(savedTheme);
+          document.body.classList.add(savedTheme);
+        }
       }, 0);
     }
   }, []);
 
   const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
+    // If currently in black/blue, toggling goes to light; if light go to dark
+    const newTheme = (theme === 'light') ? 'dark' : 'light';
     setTheme(newTheme);
+    document.documentElement.classList.remove('dark', 'black', 'blue');
     document.body.classList.remove('dark', 'black', 'blue');
-    if (newTheme !== 'light') document.body.classList.add(newTheme);
+    if (newTheme !== 'light') {
+      document.documentElement.classList.add(newTheme);
+      document.body.classList.add(newTheme);
+    }
     localStorage.setItem('marginApexTheme', newTheme);
+    window.dispatchEvent(new Event('themeChanged'));
   };
 
   const mapOptionChainSymbolToDbSegment = (sym: string): string => {
@@ -494,7 +504,7 @@ export default function Page() {
             <div className="nav-icon-btn" onClick={() => setIsNotifDrawerOpen(true)}><i className="fas fa-bell"></i></div>
             <div className="nav-app-name">MARGIN<span style={{ color: '#006400' }}>APEX</span></div>
             <div className="nav-group">
-              <div className="nav-icon-btn" onClick={toggleTheme}><i className={theme === 'dark' ? "fas fa-sun" : "fas fa-moon"}></i></div>
+              <div className="nav-icon-btn" onClick={toggleTheme}><i className={(theme === 'dark' || theme === 'black' || theme === 'blue') ? "fas fa-sun" : "fas fa-moon"}></i></div>
               <div className="nav-funds" onClick={() => router.push('/funds')}><i className="fas fa-coins"></i><span>Funds</span></div>
               <div className="nav-icon-btn" onClick={() => router.push('/profile')}><i className="fas fa-user-cog"></i></div>
             </div>
