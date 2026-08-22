@@ -5,14 +5,23 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background-color: #ffffff;
+  background-color: var(--container-bg, #ffffff);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #333333;
+  color: var(--text-primary, #333333);
 }
 
+.tc-wrapper.dark,
 .dark .tc-wrapper {
   background-color: #071824;
   color: #b1bad3;
+  --container-bg: #071824;
+}
+
+.tc-wrapper.black,
+.black .tc-wrapper {
+  background-color: #000000;
+  color: #b1bad3;
+  --container-bg: #000000;
 }
 
 @media (max-width: 950px) {
@@ -29,6 +38,7 @@
   padding: 0 0.5rem;
   height: 2.875rem;
   border-bottom: 1px solid #E0E3EB;
+  background-color: var(--container-bg, #ffffff);
   gap: 0.25rem;
   flex-shrink: 0;
   overflow: visible;
@@ -36,8 +46,12 @@
   z-index: 100;
 }
 
-.dark .tc-top-toolbar {
-  border-bottom-color: #213743;
+.dark .tc-top-toolbar,
+.black .tc-top-toolbar,
+.tc-wrapper.dark .tc-top-toolbar,
+.tc-wrapper.black .tc-top-toolbar {
+  border-bottom-color: var(--border, #213743);
+  background-color: var(--container-bg, #071824);
 }
 
 /* Symbol button */

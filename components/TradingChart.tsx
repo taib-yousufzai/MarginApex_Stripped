@@ -45,9 +45,21 @@ const getUnderlyingSymbol = (sym: string) => {
   if (futMatch) {
     return futMatch[1].toUpperCase();
   }
-
   return clean;
-};
+}
+
+function getAppTheme(): 'dark' | 'black' | 'light' {
+  if (typeof document === 'undefined') return 'dark';
+  if (document.documentElement.classList.contains('black') || document.body.classList.contains('black')) return 'black';
+  if (document.documentElement.classList.contains('dark') || document.body.classList.contains('dark')) return 'dark';
+  if (document.documentElement.classList.contains('light') || document.body.classList.contains('light')) return 'light';
+  try {
+    const saved = localStorage.getItem('marginApexTheme');
+    if (saved === 'black') return 'black';
+    if (saved === 'light') return 'light';
+  } catch (e) {}
+  return 'dark';
+}
 
 interface TradingChartProps {
   symbol: string;         // e.g., "BTCUSDT" or "NSE:INFY"
@@ -379,6 +391,29 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     setSegment(propSegment);
     console.log(`[CHART PERF ${newId}] +0.0ms TradingChart propSymbol change: ${propSymbol}`);
   }, [propSymbol, propSegment]);
+
+  const [themeMode, setThemeMode] = useState<'dark' | 'black' | 'light'>(getAppTheme);
+
+  useEffect(() => {
+    const updateTheme = () => {
+      const current = getAppTheme();
+      setThemeMode(current);
+    };
+    updateTheme();
+
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+    window.addEventListener('themeChanged', updateTheme);
+    window.addEventListener('storage', updateTheme);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('themeChanged', updateTheme);
+      window.removeEventListener('storage', updateTheme);
+    };
+  }, []);
 
   const [timeframe, setTimeframe] = useState<Timeframe>('5m');
   const [chartType, setChartType] = useState<'candle' | 'area' | 'bar' | 'baseline'>('candle');
@@ -1843,7 +1878,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   return (
     <div
       suppressHydrationWarning
-      className={`tc-wrapper ${isPanelExpanded && !(isLandscape || isCssLandscape) ? 'panel-expanded' : ''}`}
+      className={`tc-wrapper ${themeMode} ${isPanelExpanded && !(isLandscape || isCssLandscape) ? 'panel-expanded' : ''}`}
       style={(isLandscape || isCssLandscape) ? {
         position: 'fixed',
         top: 0,
@@ -1858,7 +1893,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
         overflow: 'hidden',
         transform: isCssLandscape ? 'rotate(90deg) translateY(-100%)' : 'none',
         transformOrigin: isCssLandscape ? 'top left' : 'center',
-        background: 'var(--container-bg, #FFFFFF)',
+        background: 'var(--container-bg, #071824)',
       } : undefined}
     >
       {/* Top Toolbar */}
