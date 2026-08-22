@@ -13,10 +13,43 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+const INDEX_NAMES = new Set([
+  'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50', 'NIFTYFPI',
+  'SENSEX', 'BANKEX', 'SENSEX50',
+]);
+
+function isIndexUnderlying(name: string): boolean {
+  if (!name) return false;
+  const upper = name.trim().toUpperCase();
+  if (INDEX_NAMES.has(upper)) return true;
+  if (
+    upper.startsWith('NIFTY') ||
+    upper.startsWith('SENSEX') ||
+    upper.startsWith('BANKEX') ||
+    upper.startsWith('BANKNIFTY') ||
+    upper.startsWith('FINNIFTY') ||
+    upper.startsWith('MIDCP')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+const COMMODITY_NAMES = new Set([
+  'CRUDEOIL', 'CRUDEOILM', 'GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'SILVERMIC',
+  'NATURALGAS', 'NATGASMINI', 'ALUMINIUM', 'ALUMINI', 'ZINC', 'ZINCMINI',
+  'LEAD', 'LEADMINI', 'COPPER'
+]);
+
+function isMcxCommodity(name: string): boolean {
+  if (!name) return false;
+  return COMMODITY_NAMES.has(name.trim().toUpperCase());
+}
+
 function safeOptName(i: any) {
   const isRealValue = (v: any) => v !== null && v !== undefined && String(v).toLowerCase() !== 'null' && String(v).trim() !== '';
   if (isRealValue(i.strike_price) && isRealValue(i.option_type)) {
-    const underlying = isRealValue(i.underlying_symbol) ? i.underlying_symbol : (isRealValue(i.tradingsymbol) ? i.tradingsymbol : '');
+    const underlying = isRealValue(i.name) ? i.name : (isRealValue(i.underlying_symbol) ? i.underlying_symbol : '');
     return `${underlying} ${i.strike_price} ${i.option_type}`.trim();
   }
   return isRealValue(i.tradingsymbol) ? i.tradingsymbol : 'Unknown';
@@ -61,11 +94,11 @@ export async function GET(request: Request) {
     const { data: indexFuts } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, instrument_type, segment, expiry')
-      .in('name', ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'])
+      .in('name', ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 'SENSEX50', 'NIFTYNXT50'])
       .in('instrument_type', ['FUTIDX', 'FUT', 'MAPPED_FUT'])
       .gte('expiry', today)
       .order('expiry', { ascending: true })
-      .limit(30);
+      .limit(50);
 
     const indexFutInstruments: any[] = [];
     const foundNames = new Set<string>();
@@ -100,9 +133,10 @@ export async function GET(request: Request) {
     const indexFutDefaults: Record<string, any> = {
       'SENSEX': { name: 'SENSEX FUT', symbol: 'SENSEX_FUT', kiteSymbol: 'BSE:SENSEX_FUT', segment: 'BSE - Futures', price: 0, change: '0%', contractDate: '', open: 0, high: 0, low: 0, close: 0, lotSize: 10 },
       'BANKEX': { name: 'BANKEX FUT', symbol: 'BANKEX_FUT', kiteSymbol: 'BSE:BANKEX_FUT', segment: 'BSE - Futures', price: 0, change: '0%', contractDate: '', open: 0, high: 0, low: 0, close: 0, lotSize: 15 },
+      'SENSEX50': { name: 'SENSEX50 FUT', symbol: 'SENSEX50_FUT', kiteSymbol: 'BSE:SENSEX50_FUT', segment: 'BSE - Futures', price: 0, change: '0%', contractDate: '', open: 0, high: 0, low: 0, close: 0, lotSize: 10 },
     };
 
-    ['SENSEX', 'BANKEX'].forEach(name => {
+    ['SENSEX', 'BANKEX', 'SENSEX50'].forEach(name => {
       if (!foundNames.has(name) && indexFutDefaults[name]) {
         indexFutInstruments.push(indexFutDefaults[name]);
       }
@@ -124,9 +158,11 @@ export async function GET(request: Request) {
       'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',
       'SENSEX': 'BSE:SENSEX',
       'BANKEX': 'BSE:BANKEX',
+      'SENSEX50': 'BSE:SENSEX50',
+      'NIFTYNXT50': 'NSE:NIFTY NEXT 50',
     };
 
-    const indexOptCats = (await Promise.all(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].map(async (idx) => {
+    const indexOptCats = (await Promise.all(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 'SENSEX50'].map(async (idx) => {
       const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: idx, p_min_date: today });
       if (!expData || expData.length === 0) return null;
 
@@ -296,20 +332,22 @@ export async function GET(request: Request) {
       .order('tradingsymbol', { ascending: true })
       .limit(500);
 
-    const nseEqInstruments = (nseEqData || []).map((i: any) => ({
-      name: `${i.tradingsymbol} (EQ)`,
-      symbol: i.tradingsymbol,
-      kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
-      price: 0,
-      change: '0%',
-      segment: `${i.exchange} - Equity`,
-      contractDate: '',
-      open: 0,
-      high: 0,
-      low: 0,
-      close: 0,
-      lotSize: i.lot_size || 1,
-    }));
+    const nseEqInstruments = (nseEqData || [])
+      .filter((i: any) => !isIndexUnderlying(i.tradingsymbol) && !isIndexUnderlying(i.name))
+      .map((i: any) => ({
+        name: `${i.tradingsymbol} (EQ)`,
+        symbol: i.tradingsymbol,
+        kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+        price: 0,
+        change: '0%',
+        segment: `${i.exchange} - Equity`,
+        contractDate: '',
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+        lotSize: i.lot_size || 1,
+      }));
 
     // b. Stock-FUT: batch fetch up to 500 Stock Futures
     const { data: stockFutData } = await getSupabase()
@@ -325,7 +363,7 @@ export async function GET(request: Request) {
     const stockFutMap = new Map<string, number>();
     const seenFutSymbols = new Set<string>();
     (stockFutData || []).forEach((i: any) => {
-      if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 'CRUDEOIL', 'GOLD', 'SILVER'].includes(i.name)) return;
+      if (isIndexUnderlying(i.name) || isMcxCommodity(i.name)) return;
       if (seenFutSymbols.has(i.tradingsymbol)) return;
       const count = stockFutMap.get(i.name) || 0;
       if (count < 2) {
@@ -352,14 +390,15 @@ export async function GET(request: Request) {
     const { data: stockOptData } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, instrument_type, strike_price, option_type, expiry, lot_size')
-      .in('segment', ['NFO-OPT', 'BFO-OPT'])
+      .in('segment', ['NFO-OPT', 'BFO-OPT', 'NFO', 'BFO'])
       .in('option_type', ['CE', 'PE'])
       .gte('expiry', today)
+      .not('name', 'in', '("NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX","SENSEX50","NIFTYNXT50")')
       .limit(5000);
 
     const stockOptGroup: Record<string, Record<string, Instrument[]>> = {};
     (stockOptData || []).forEach((i: any) => {
-      if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 'CRUDEOIL', 'GOLD', 'SILVER'].includes(i.name)) return;
+      if (isIndexUnderlying(i.name) || isMcxCommodity(i.name)) return;
       const stk = i.name;
       if (!stk || !i.expiry) return;
       if (!stockOptGroup[stk]) stockOptGroup[stk] = {};

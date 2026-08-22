@@ -28,7 +28,9 @@ const INDEX_KITE_MAP: Record<string, string> = {
   'FINNIFTY':   'NSE:NIFTY FIN SERVICE',
   'MIDCPNIFTY': 'NSE:NIFTY MID SELECT',
   'SENSEX':     'BSE:SENSEX',
+  'SENSEX50':   'BSE:SENSEX50',
   'BANKEX':     'BSE:BANKEX',
+  'NIFTYNXT50': 'NSE:NIFTY NEXT 50',
 };
 
 const MCX_BASE_MAP: Record<string, string> = {

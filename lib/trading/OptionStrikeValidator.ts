@@ -24,8 +24,8 @@ const MCX_BASE_MAP: Record<string, string> = {
   'ALUMINI': 'ALUMINIUM', 'ZINCMINI': 'ZINC', 'LEADMINI': 'LEAD',
 };
 
-const INDEX_UNDERLYINGS = new Set(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY']);
-const BSE_INDEX_UNDERLYINGS = new Set(['SENSEX', 'BANKEX']);
+const INDEX_UNDERLYINGS = new Set(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50', 'NIFTYFPI']);
+const BSE_INDEX_UNDERLYINGS = new Set(['SENSEX', 'BANKEX', 'SENSEX50']);
 
 /**
  * Resolves the target exchange for a given option symbol or underlying name.
@@ -74,8 +74,10 @@ export async function resolveUnderlyingKiteId(symbol: string, underlying: string
   if (undUpper === 'BANKNIFTY') return 'NSE:NIFTY BANK';
   if (undUpper === 'FINNIFTY') return 'NSE:NIFTY FIN SERVICE';
   if (undUpper === 'SENSEX') return 'BSE:SENSEX';
+  if (undUpper === 'SENSEX50') return 'BSE:SENSEX50';
   if (undUpper === 'BANKEX') return 'BSE:BANKEX';
   if (undUpper === 'MIDCPNIFTY') return 'NSE:NIFTY MID SELECT';
+  if (undUpper === 'NIFTYNXT50') return 'NSE:NIFTY NEXT 50';
   if (undUpper === 'NIFTY') return 'NSE:NIFTY 50';
   return `NSE:${undUpper}`;
 }

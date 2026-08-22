@@ -29,6 +29,7 @@ const UNDERLYING_QUOTE_KEYS = [
   'NSE:NIFTY BANK',
   'BSE:SENSEX',
   'BSE:BANKEX',
+  'BSE:SENSEX50',
   'NSE:NIFTY FIN SERVICE',
   'NSE:NIFTY MID SELECT',
   'MCX:GOLD',
@@ -40,6 +41,7 @@ const OPTION_SUBCAT_MAP: Record<string, { underlying: string; tab: string; key: 
   'NIFTY Options': { underlying: 'NIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY 50' },
   'SENSEX Options': { underlying: 'SENSEX', tab: 'INDEX-OPT', key: 'BSE:SENSEX' },
   'BANKEX Options': { underlying: 'BANKEX', tab: 'INDEX-OPT', key: 'BSE:BANKEX' },
+  'SENSEX50 Options': { underlying: 'SENSEX50', tab: 'INDEX-OPT', key: 'BSE:SENSEX50' },
   'BANKNIFTY Options': { underlying: 'BANKNIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY BANK' },
   'FINNIFTY Options': { underlying: 'FINNIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY FIN SERVICE' },
   'MID CAP NIFTY Options': { underlying: 'MIDCPNIFTY', tab: 'INDEX-OPT', key: 'NSE:NIFTY MID SELECT' },
@@ -205,6 +207,19 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
   }
 ];
 
+const DISPLAY_NAME_MAP: Record<string, { name: string; icon: string }> = {
+  'INDEX-FUT': { name: 'Index-fut', icon: 'fa-chart-line' },
+  'INDEX-OPT': { name: 'Index-opt', icon: 'fa-chart-gantt' },
+  'MCX-FUT':   { name: 'Mcx-fut', icon: 'fa-coins' },
+  'MCX-OPT':   { name: 'Mcx-opt', icon: 'fa-circle-dot' },
+  'STOCK-FUT': { name: 'Stock-fut', icon: 'fa-building' },
+  'STOCK-OPT': { name: 'Stock-opt', icon: 'fa-layer-group' },
+  'NSE-EQ':    { name: 'Nse-eq', icon: 'fa-landmark' },
+  'CRYPTO':    { name: 'Crypto', icon: 'fa-bitcoin-sign' },
+  'COMEX':     { name: 'Comex', icon: 'fa-gem' },
+  'FOREX':     { name: 'Forex', icon: 'fa-globe' },
+};
+
 interface TradingSegmentsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -217,6 +232,7 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
   const [expandedSubcategories, setExpandedSubcategories] = useState<Record<string, boolean>>({});
   const [allowedSegments, setAllowedSegments] = useState<string[]>([]);
   const [rawOptionInstruments, setRawOptionInstruments] = useState<Record<string, Instrument[]>>({});
+  const [librarySegments, setLibrarySegments] = useState<Segment[] | null>(null);
 
   const { quotes } = useMarketQuotes(UNDERLYING_QUOTE_KEYS);
 
@@ -234,6 +250,61 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
     };
     fetchAllowedSegments();
   }, []);
+
+  // Fetch full instrument hierarchy from library endpoint when drawer opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let isSubscribed = true;
+
+    async function loadLibrary() {
+      try {
+        const res = await api.get<{ success: boolean; segments: any[] }>('/api/market/instruments/library');
+        if (res && res.success && Array.isArray(res.segments) && isSubscribed) {
+          const mapped: Segment[] = res.segments.map(s => {
+            const display = DISPLAY_NAME_MAP[s.name] || { name: s.name, icon: s.icon || 'fa-folder' };
+            const subCats = s.subCategories?.map((sc: any) => ({
+              name: sc.name,
+              instruments: (sc.instruments || []).map((i: any) => ({
+                name: i.name || i.symbol,
+                symbol: i.symbol,
+                segment: i.segment || 'NSE - Stock Options',
+                kiteSymbol: i.kiteSymbol || i.symbol,
+                price: i.price || 0,
+                strike: i.strike !== undefined ? Number(i.strike) : (i.strike_price !== undefined ? Number(i.strike_price) : undefined),
+                optionType: i.optionType || i.option_type,
+                contractDate: i.contractDate || i.expiry,
+                lotSize: i.lotSize || i.lot_size,
+              })),
+            }));
+
+            const insts = s.instruments?.map((i: any) => ({
+              name: i.name || i.symbol,
+              symbol: i.symbol,
+              segment: i.segment || s.name,
+              kiteSymbol: i.kiteSymbol || i.symbol,
+              price: i.price || 0,
+              contractDate: i.contractDate || i.expiry,
+              lotSize: i.lotSize || i.lot_size,
+            }));
+
+            return {
+              name: display.name,
+              icon: display.icon,
+              count: subCats ? subCats.length : (insts?.length || 0),
+              subCategories: subCats,
+              instruments: insts,
+            };
+          });
+          setLibrarySegments(mapped);
+        }
+      } catch (err) {
+        console.error('Failed to load library segments', err);
+      }
+    }
+
+    loadLibrary();
+    return () => { isSubscribed = false; };
+  }, [isOpen]);
 
   // Fetch live option contracts for option subcategories when drawer opens
   useEffect(() => {
@@ -276,28 +347,32 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
   // Compute dynamic segments with 11-strike window re-centered around live spot prices
   const tradingSegments = useMemo(() => {
-    return BASE_TRADING_SEGMENTS.map(seg => {
+    const baseSegments = librarySegments || BASE_TRADING_SEGMENTS;
+    return baseSegments.map(seg => {
       if (!seg.subCategories) return seg;
 
       const subCategories = seg.subCategories.map(sub => {
-        const rawItems = rawOptionInstruments[sub.name] || [];
+        const rawItems = rawOptionInstruments[sub.name] || sub.instruments;
         const cfg = OPTION_SUBCAT_MAP[sub.name];
-        const liveSpot = cfg ? (quotes[cfg.key]?.lastPrice || 0) : 0;
-
-        const rangeCount = 11;
-        const filtered = filterOptionStrikesBySpot(rawItems, liveSpot, rangeCount).slice(0, 22);
-        return {
-          ...sub,
-          instruments: filtered.length > 0 ? filtered : sub.instruments,
-        };
+        if (cfg) {
+          const liveSpot = quotes[cfg.key]?.lastPrice || 0;
+          const rangeCount = 11;
+          const filtered = filterOptionStrikesBySpot(rawItems, liveSpot, rangeCount).slice(0, 22);
+          return {
+            ...sub,
+            instruments: filtered.length > 0 ? filtered : sub.instruments,
+          };
+        }
+        return sub;
       });
 
       return {
         ...seg,
         subCategories,
+        count: subCategories.length,
       };
     });
-  }, [rawOptionInstruments, quotes]);
+  }, [librarySegments, rawOptionInstruments, quotes]);
 
   if (!mounted) return null;
 
@@ -379,9 +454,10 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
                           className={`fas fa-chevron-right lib-arrow ${isSubOpen ? 'is-down' : ''}`}
                           style={{ fontSize: '0.55rem', marginRight: '6px' }}
                         ></i>
-                        {sub.name}
+                        <span className="lib-subcat-title">{sub.name}</span>
+                        <span className="lib-subcat-count">{sub.instruments?.length || 0}</span>
                       </div>
-                      {isSubOpen && sub.instruments.map((inst, idx) => (
+                      {isSubOpen && sub.instruments?.map((inst, idx) => (
                         <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
                           <span className="lib-inst-name">{inst.name}</span>
                           <button className="lib-add-btn">+ Add</button>
@@ -523,16 +599,27 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
         .lib-subcat-header {
           padding: 12px 20px 8px 40px;
-          font-size: 0.7rem;
-          font-weight: 800;
-          color: #9ca3af;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: #4b5563;
           display: flex;
           align-items: center;
           cursor: pointer;
+          transition: color 0.2s;
         }
-        .lib-subcat-header:hover { color: #6b7280; }
+        .lib-subcat-header:hover { color: #111827; }
+        .lib-subcat-title {
+          flex: 1;
+        }
+        .lib-subcat-count {
+          background: #f3f4f6;
+          color: #6b7280;
+          font-size: 0.7rem;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 10px;
+          margin-left: auto;
+        }
 
         .lib-inst-item {
           padding: 12px 20px 12px 58px;
@@ -577,6 +664,11 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
         :global(.dark) .lib-main-title,
         :global(.dark) .lib-seg-name { color: #f9fafb !important; }
         
+        :global(.dark) .lib-subcat-header { color: #9ca3af; }
+        :global(.dark) .lib-subcat-header:hover { color: #f9fafb; }
+        :global(.dark) .lib-subcat-title { color: #e5e7eb; }
+        :global(.dark) .lib-subcat-count { background: #374151; color: #9ca3af; }
+
         :global(.dark) .lib-inst-name { color: #d1d5db; }
         :global(.dark) .lib-seg-header:hover { background: #1f2937; }
         :global(.dark) .lib-seg-children { background: #0b0f1a; border-color: #1f2937; }

@@ -131,13 +131,20 @@ export function mapSymbolToSegment(symbol: string): Segment {
     if (n.endsWith('CE') || n.endsWith('PE')) return 'MCX-OPT';
     return 'MCX-FUT';
   }
+  const isIndexName = n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP');
   if (n.endsWith('CE') || n.endsWith('PE')) {
-    if (n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP')) {
+    if (isIndexName) {
       return 'INDEX-OPT';
     }
     return 'STOCK-OPT';
   }
-  if (n.endsWith('FUT') || n.includes('FUTURES') || n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP')) {
+  if (n.endsWith('FUT') || n.includes('FUTURES')) {
+    if (isIndexName) {
+      return 'INDEX-FUT';
+    }
+    return 'STOCK-FUT';
+  }
+  if (isIndexName) {
     return 'INDEX-FUT';
   }
   if (n.endsWith('USDT') || ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'].some(c => n === c)) {

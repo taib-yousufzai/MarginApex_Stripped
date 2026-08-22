@@ -113,8 +113,10 @@ function getUnderlyingId(symbol: string): string {
   if (u === 'BANKNIFTY') return 'NSE:NIFTY BANK';
   if (u === 'FINNIFTY') return 'NSE:NIFTY FIN SERVICE';
   if (u === 'SENSEX') return 'BSE:SENSEX';
+  if (u === 'SENSEX50') return 'BSE:SENSEX50';
   if (u === 'BANKEX') return 'BSE:BANKEX';
   if (u === 'MIDCPNIFTY') return 'NSE:NIFTY MID SELECT';
+  if (u === 'NIFTYNXT50') return 'NSE:NIFTY NEXT 50';
   if (u === 'NIFTY') return 'NSE:NIFTY 50';
   if (MCX_UNDERLYINGS.has(u)) return `MCX:${u}`; // resolved to actual fut before price lookup
   return `NSE:${u}`;
@@ -129,7 +131,7 @@ function getSupabase() {
 }
 
 // Known underlying symbols for smart parsing
-const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'BANKEX', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
+const UNDERLYINGS = ['MIDCPNIFTY', 'BANKNIFTY', 'FINNIFTY', 'NIFTY', 'SENSEX', 'SENSEX50', 'BANKEX', 'NIFTYNXT50', 'CRUDEOILM', 'CRUDEOIL', 'NATGASMINI', 'NATURALGAS', 'SILVERM', 'SILVER', 'GOLDM', 'GOLD'];
 
 const mapSegmentToDbSegment = (s: string): string => {
   if (!s) return '';
