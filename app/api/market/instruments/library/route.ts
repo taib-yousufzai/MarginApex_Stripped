@@ -46,6 +46,29 @@ function isMcxCommodity(name: string): boolean {
   return COMMODITY_NAMES.has(name.trim().toUpperCase());
 }
 
+function isValidStockSymbol(name: string): boolean {
+  if (!name) return false;
+  const clean = name.trim().toUpperCase();
+
+  // 1. Filter out index underlyings and MCX commodities
+  if (isIndexUnderlying(clean) || isMcxCommodity(clean)) return false;
+
+  // 2. Reject if starts with a digit or number (e.g. 0ABCL, 1003IIFL, 0HFL, 0IRFC, 0MOFSL)
+  if (/^\d/.test(clean)) return false;
+
+  // 3. Reject debt/bond/series hyphens (e.g. -N0, -NC, -Z4, -BW, -NV, -ZQ, -NX, -NR, -SF, -RL, -MF, -GS, -GB, -N1..9, -Y0..9, -YW)
+  if (/-(SF|RL|MF|GS|GB|NC|NR|NX|ZQ|BW|NV|YW|EQ|SG|W\d|Y\d|Z\d|N\d)$/i.test(clean)) return false;
+  if (/-\d+[A-Z0-9]*/.test(clean) || /\d+-[A-Z0-9]*/.test(clean)) return false;
+
+  // 4. Reject if contains '(EQ)' or spaces or invalid characters
+  if (clean.includes('(EQ)') || clean.includes(' ') || clean.includes('.')) return false;
+
+  // 5. Allow standard clean ticker formats (e.g. RELIANCE, TCS, INFY, TATAMOTORS, HDFCBANK, M&M, BAJAJ-AUTO)
+  if (!/^[A-Z][A-Z0-9&\-]{1,14}$/.test(clean)) return false;
+
+  return true;
+}
+
 function safeOptName(i: any) {
   const isRealValue = (v: any) => v !== null && v !== undefined && String(v).toLowerCase() !== 'null' && String(v).trim() !== '';
   if (isRealValue(i.strike_price) && isRealValue(i.option_type)) {
@@ -364,7 +387,7 @@ export async function GET(request: Request) {
       .limit(500);
 
     const nseEqInstruments = (nseEqData || [])
-      .filter((i: any) => !isIndexUnderlying(i.tradingsymbol) && !isIndexUnderlying(i.name))
+      .filter((i: any) => isValidStockSymbol(i.tradingsymbol) && isValidStockSymbol(i.name))
       .map((i: any) => ({
         name: `${i.tradingsymbol} (EQ)`,
         symbol: i.tradingsymbol,
@@ -394,7 +417,8 @@ export async function GET(request: Request) {
     const stockFutMap = new Map<string, number>();
     const seenFutSymbols = new Set<string>();
     (stockFutData || []).forEach((i: any) => {
-      if (isIndexUnderlying(i.name) || isMcxCommodity(i.name)) return;
+      const baseName = i.name || i.tradingsymbol?.replace(/\d+[A-Z]{3}FUT$/i, '');
+      if (!isValidStockSymbol(baseName)) return;
       if (seenFutSymbols.has(i.tradingsymbol)) return;
       const count = stockFutMap.get(i.name) || 0;
       if (count < 2) {
@@ -429,7 +453,7 @@ export async function GET(request: Request) {
 
     const stockOptGroup: Record<string, Record<string, Instrument[]>> = {};
     (stockOptData || []).forEach((i: any) => {
-      if (isIndexUnderlying(i.name) || isMcxCommodity(i.name)) return;
+      if (!isValidStockSymbol(i.name)) return;
       const stk = i.name;
       if (!stk || !i.expiry) return;
       if (!stockOptGroup[stk]) stockOptGroup[stk] = {};
@@ -479,7 +503,7 @@ export async function GET(request: Request) {
     const candidateStocks: string[] = [];
     (stockFutInstruments || []).forEach((inst: any) => {
       const name = inst.name?.replace(/\s*\d+[A-Z]{3}FUT$/i, '').trim() || inst.symbol?.replace(/\d+[A-Z]{3}FUT$/i, '').trim();
-      if (name && !isIndexUnderlying(name) && !isMcxCommodity(name)) {
+      if (name && isValidStockSymbol(name)) {
         if (!addedStockNames.has(name)) {
           addedStockNames.add(name);
           candidateStocks.push(name);
@@ -488,8 +512,8 @@ export async function GET(request: Request) {
     });
 
     (nseEqInstruments || []).forEach((inst: any) => {
-      const name = inst.name || inst.symbol;
-      if (name && !isIndexUnderlying(name) && !isMcxCommodity(name)) {
+      const name = inst.symbol || inst.name?.replace(/\s*\(EQ\)$/i, '').trim();
+      if (name && isValidStockSymbol(name)) {
         if (!addedStockNames.has(name)) {
           addedStockNames.add(name);
           candidateStocks.push(name);
