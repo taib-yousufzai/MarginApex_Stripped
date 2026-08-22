@@ -74,10 +74,11 @@ const STATIC_TOKENS: Record<string, ResolvedInstrument> = {
   'MCX:GOLD26OCTFUT':   { token: 123668231, canonicalId: 'MCX:GOLD26OCTFUT' },
   'SILVER':             { token: 120761607, canonicalId: 'MCX:SILVER26SEPFUT' },
   'MCX:SILVER26SEPFUT': { token: 120761607, canonicalId: 'MCX:SILVER26SEPFUT' },
-  'SILVERM':            { token: 120761607, canonicalId: 'MCX:SILVERM26SEPFUT' },
-  'MCX:SILVERM26SEPFUT':{ token: 120761607, canonicalId: 'MCX:SILVERM26SEPFUT' },
-  'CRUDEOIL':           { token: 121544455, canonicalId: 'MCX:CRUDEOIL26AUGFUT' },
-  'MCX:CRUDEOIL26AUGFUT':{ token: 121544455, canonicalId: 'MCX:CRUDEOIL26AUGFUT' },
+  'SILVERM':            { token: 120761863, canonicalId: 'MCX:SILVERM26AUGFUT' },
+  'MCX:SILVERM26AUGFUT':{ token: 120761863, canonicalId: 'MCX:SILVERM26AUGFUT' },
+  'CRUDEOIL':           { token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
+  'MCX:CRUDEOIL26AUGFUT':{ token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
+  'MCX:CRUDEOIL26SEPFUT':{ token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
 };
 
 async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | null> {
