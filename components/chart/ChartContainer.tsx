@@ -123,7 +123,7 @@ export default function ChartContainer({
     loadStartTimeRef.current = startTime;
     console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${activeLoadId} symbol=${symbol} resolution=${timeframe} event=CHART_CONTAINER_MOUNT elapsed=0.0ms mountCount=${globalMountCount} unmountCount=${globalUnmountCount}`);
 
-    const armWatchdog = (ms = 15000) => {
+    const armWatchdog = (ms = 25000) => {
       if (initTimerRef.current) clearTimeout(initTimerRef.current);
       initTimerRef.current = setTimeout(() => {
         const elapsed = (performance.now() - startTime).toFixed(1);
@@ -166,7 +166,7 @@ export default function ChartContainer({
           setChartStatus('ready');
         } else {
           // Reset/extend the watchdog whenever datafeed fetch starts
-          armWatchdog(8000);
+          armWatchdog(25000);
         }
       };
 
@@ -291,7 +291,7 @@ export default function ChartContainer({
       pendingRef.current = {};
 
       const saveChartState = () => {
-        if (!tvWidgetRef.current) return;
+        if (!tvWidgetRef.current || !isReadyRef.current) return;
         try {
           tvWidgetRef.current.save((state: any) => {
             if (state) {
@@ -310,7 +310,7 @@ export default function ChartContainer({
     };
 
     // Arm initial watchdog
-    armWatchdog(8000);
+    armWatchdog(25000);
 
     const scriptCheckTime = performance.now();
     if (window.TradingView) {
