@@ -54,7 +54,7 @@ export type SegmentKey = string;
 
 const DEFAULT_STRIKE_CONFIG: StrikeConfig = {
   indexOptionsRange: 11,
-  mcxOptionsRange: 11,
+  mcxOptionsRange: 22,
 };
 
 const CRYPTO_WHITELIST = new Set(['BTC', 'ETH', 'DOGE']);
@@ -258,7 +258,7 @@ export function applyMcxStrikeRangeFilter(
   instruments: Instrument[],
   atmPrice: number,
 ): Instrument[] {
-  return applyStrikeRangeFilter(instruments, atmPrice, 31);
+  return applyStrikeRangeFilter(instruments, atmPrice, 22);
 }
 
 // ---------------------------------------------------------------------------

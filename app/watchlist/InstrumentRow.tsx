@@ -34,6 +34,8 @@ interface InstrumentRowProps {
   onBasketSell?: (item: WatchlistItem) => void;
 }
 
+const CRYPTO_BASES = ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'];
+
 function getExchangeBadge(segment: string, name?: string, symbol?: string) {
   if (name || symbol) {
     const combined = `${name || ''} ${symbol || ''}`.toUpperCase();
@@ -44,6 +46,8 @@ function getExchangeBadge(segment: string, name?: string, symbol?: string) {
     }
   }
   if (!segment) return 'OTH';
+  if (segment === 'STOCK-FUT' || segment.includes('Stock Futures')) return 'Stock - Stock Fut';
+  if (segment === 'STOCK-OPT' || segment.includes('Stock Options')) return 'Stock - Stock Opt';
   if (segment.startsWith('NSE') && segment !== 'NSE - Equity') return 'NFO';
   if (segment.startsWith('BSE') && segment !== 'BSE - Equity') return 'BFO';
   if (segment.startsWith('MCX') || segment.includes('MCX')) return 'MCX';
@@ -61,7 +65,22 @@ function getPctClass(pct: number) {
 export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade }: InstrumentRowProps) {
   const [priceView, setPriceView] = useState<'kite' | 'comex'>('kite');
 
-  const isCrypto = !!item.binanceSymbol || item.segment === 'CRYPTO' || item.symbol.endsWith('USDT') || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c));
+  const symUp = (item.symbol || '').toUpperCase().trim();
+  const segUpper = (item.segment || '').toUpperCase();
+
+  const isCrypto = !!item.binanceSymbol ||
+                   segUpper === 'CRYPTO' ||
+                   segUpper === 'CRYPTO-FUT' ||
+                   symUp.endsWith('USDT') ||
+                   CRYPTO_BASES.some(c => symUp === c || symUp.startsWith(`${c}USDT`) || symUp.startsWith(`${c}/`));
+
+  const isStock = !isCrypto && (
+    segUpper === 'STOCK-FUT' ||
+    segUpper === 'STOCK-OPT' ||
+    segUpper.includes('STOCK') ||
+    segUpper.includes('STOCKS')
+  );
+
   const hasDualView = !!item.kiteSymbol && !!item.comexSymbol;
   const showComex = hasDualView && priceView === 'comex';
 
@@ -105,9 +124,16 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
             <span className="instr-row__name">{showComex ? (comexQuote?.contractSymbol ?? item.comexName ?? item.name) : item.name}</span>
             <span className="exchange-badge" style={
               isCrypto ? { background: '#F0A500', color: '#fff' } :
-                showComex ? { background: '#4A148C', color: '#fff' } : {}
+                showComex ? { background: '#4A148C', color: '#fff' } :
+                  isStock ? { background: '#059669', color: '#fff' } : {}
             }>
-              {isCrypto ? 'CRYPTO' : showComex ? 'COMEX' : getExchangeBadge(item.segment, item.name, item.symbol)}
+              {isCrypto
+                ? 'CRYPTO'
+                : showComex
+                  ? 'COMEX'
+                  : isStock
+                    ? (segUpper.includes('FUT') ? 'Stock - Stock Fut' : segUpper.includes('OPT') ? 'Stock - Stock Opt' : 'Stock')
+                    : getExchangeBadge(item.segment, item.name, item.symbol)}
             </span>
           </div>
           {item.contractDate && (

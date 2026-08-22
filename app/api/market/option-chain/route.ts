@@ -182,7 +182,7 @@ export async function GET(request: Request) {
 
     // ── 6. Apply strike range filter (minimum 31 strikes buffer so 5 strikes above and below ATM are always available) ───
     const baseRange = isMcx ? strikeConfig.mcxOptionsRange : strikeConfig.indexOptionsRange;
-    const fetchRange = Math.max(31, baseRange);
+    const fetchRange = isMcx ? strikeConfig.mcxOptionsRange : Math.max(11, baseRange);
     const filteredOptions: any[] = atmPrice
       ? applyStrikeRangeFilter(options as Instrument[], atmPrice, fetchRange) as any[]
       : options;

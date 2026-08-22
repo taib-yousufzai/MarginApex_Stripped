@@ -65,7 +65,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!accessToken) {
     console.log('[Kite Status] No access token found in cookie or DB — attempting auto-login...');
     try {
-      const { performKiteLogin } = await import('../../../scripts/ticker/kiteAutoLogin');
+      const { performKiteLogin } = await import('@/scripts/ticker/kiteAutoLogin');
       const session = await performKiteLogin();
       accessToken = session.accessToken;
       isAutoLogged = true;

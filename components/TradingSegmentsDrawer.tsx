@@ -48,9 +48,9 @@ const OPTION_SUBCAT_MAP: Record<string, { underlying: string; tab: string; key: 
   'CRUDEOIL Options': { underlying: 'CRUDEOIL', tab: 'MCX-OPT', key: 'MCX:CRUDEOIL' },
 };
 
-function filterOptionStrikesBySpot(items: Instrument[], spotPrice: number): Instrument[] {
+function filterOptionStrikesBySpot(items: Instrument[], spotPrice: number, strikeCount = 11): Instrument[] {
   if (!items || items.length === 0) return [];
-  if (!spotPrice || spotPrice <= 0) return items.slice(0, 22);
+  if (!spotPrice || spotPrice <= 0) return items.slice(0, strikeCount * 2);
 
   const strikeSet = new Set<number>();
   items.forEach(i => {
@@ -60,7 +60,7 @@ function filterOptionStrikesBySpot(items: Instrument[], spotPrice: number): Inst
   });
 
   const strikes = Array.from(strikeSet).sort((a, b) => a - b);
-  if (strikes.length === 0) return items.slice(0, 22);
+  if (strikes.length === 0) return items.slice(0, strikeCount * 2);
 
   let closestIdx = 0;
   let minDiff = Infinity;
@@ -72,7 +72,7 @@ function filterOptionStrikesBySpot(items: Instrument[], spotPrice: number): Inst
     }
   });
 
-  const range = 11;
+  const range = strikeCount;
   const half = Math.floor(range / 2);
   let startIdx = closestIdx - half;
   let endIdx = closestIdx + half;
@@ -97,10 +97,11 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
   {
     name: 'Index-fut',
     icon: 'fa-chart-line',
-    count: 5,
+    count: 6,
     instruments: [
       { name: 'NIFTY FUT', symbol: 'NIFTY_FUT', segment: 'NSE - Futures' },
       { name: 'SENSEX FUT', symbol: 'SENSEX_FUT', segment: 'BSE - Futures' },
+      { name: 'BANKEX FUT', symbol: 'BANKEX_FUT', segment: 'BSE - Futures' },
       { name: 'BANKNIFTY FUT', symbol: 'BANKNIFTY_FUT', segment: 'NSE - Futures' },
       { name: 'FINNIFTY FUT', symbol: 'FINNIFTY_FUT', segment: 'NSE - Futures' },
       { name: 'MIDCAP NIFTY FUT', symbol: 'MIDCP_FUT', segment: 'NSE - Futures' },
@@ -283,7 +284,8 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
         const cfg = OPTION_SUBCAT_MAP[sub.name];
         const liveSpot = cfg ? (quotes[cfg.key]?.lastPrice || 0) : 0;
 
-        const filtered = filterOptionStrikesBySpot(rawItems, liveSpot);
+        const rangeCount = 11;
+        const filtered = filterOptionStrikesBySpot(rawItems, liveSpot, rangeCount).slice(0, 22);
         return {
           ...sub,
           instruments: filtered.length > 0 ? filtered : sub.instruments,
@@ -356,8 +358,8 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
               {expandedSegment === seg.name && (
                 <div className="lib-seg-children">
-                  {seg.instruments?.map(inst => (
-                    <div key={inst.symbol} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
+                  {seg.instruments?.map((inst, idx) => (
+                    <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
                       <span className="lib-inst-name">{inst.name}</span>
                       <button className="lib-add-btn">+ Add</button>
                     </div>
@@ -379,8 +381,8 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
                         ></i>
                         {sub.name}
                       </div>
-                      {isSubOpen && sub.instruments.map(inst => (
-                        <div key={inst.symbol} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
+                      {isSubOpen && sub.instruments.map((inst, idx) => (
+                        <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
                           <span className="lib-inst-name">{inst.name}</span>
                           <button className="lib-add-btn">+ Add</button>
                         </div>

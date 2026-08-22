@@ -67,20 +67,52 @@ export async function GET(request: Request) {
       .order('expiry', { ascending: true })
       .limit(30);
 
+    const indexFutInstruments: any[] = [];
+    const foundNames = new Set<string>();
+
     if (indexFuts && indexFuts.length > 0) {
-      const earliestExpiries = new Map();
+      const earliestExpiries = new Map<string, any>();
       indexFuts.forEach(f => {
         if (!earliestExpiries.has(f.name) || f.expiry < earliestExpiries.get(f.name).expiry) {
           earliestExpiries.set(f.name, f);
         }
       });
+
+      earliestExpiries.forEach((i, name) => {
+        foundNames.add(name);
+        indexFutInstruments.push({
+          name: i.tradingsymbol,
+          symbol: i.tradingsymbol,
+          kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+          price: 0,
+          change: '0%',
+          segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Futures`,
+          contractDate: i.expiry,
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+          lotSize: i.lot_size || 0
+        });
+      });
+    }
+
+    const indexFutDefaults: Record<string, any> = {
+      'SENSEX': { name: 'SENSEX FUT', symbol: 'SENSEX_FUT', kiteSymbol: 'BSE:SENSEX_FUT', segment: 'BSE - Futures', price: 0, change: '0%', contractDate: '', open: 0, high: 0, low: 0, close: 0, lotSize: 10 },
+      'BANKEX': { name: 'BANKEX FUT', symbol: 'BANKEX_FUT', kiteSymbol: 'BSE:BANKEX_FUT', segment: 'BSE - Futures', price: 0, change: '0%', contractDate: '', open: 0, high: 0, low: 0, close: 0, lotSize: 15 },
+    };
+
+    ['SENSEX', 'BANKEX'].forEach(name => {
+      if (!foundNames.has(name) && indexFutDefaults[name]) {
+        indexFutInstruments.push(indexFutDefaults[name]);
+      }
+    });
+
+    if (indexFutInstruments.length > 0) {
       segments.push({
         name: 'INDEX-FUT',
         icon: 'fa-chart-line',
-        instruments: Array.from(earliestExpiries.values()).map(i => ({
-          name: i.tradingsymbol, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
-          price: 0, change: '0%', segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Futures`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size
-        }))
+        instruments: indexFutInstruments,
       });
     }
 
@@ -180,7 +212,7 @@ export async function GET(request: Request) {
         instruments: selectedOpts.map((i: any) => ({
           name: safeOptName(i), symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
           price: 0, change: '0%', segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Options`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size
-        }))
+        })).slice(0, 22)
       };
     }))).filter(Boolean);
     if (indexOptCats.length > 0) segments.push({ name: 'INDEX-OPT', icon: 'fa-chart-pie', subCategories: indexOptCats });
@@ -245,7 +277,7 @@ export async function GET(request: Request) {
 
           mcxOptCats.push({
             name: cmd,
-            instruments: selectedOpts.map((i: any) => ({ name: safeOptName(i), symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`, price: 0, change: '0%', segment: `${i.exchange} - Options`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size }))
+            instruments: selectedOpts.map((i: any) => ({ name: safeOptName(i), symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`, price: 0, change: '0%', segment: `${i.exchange} - Options`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size })).slice(0, 22)
           });
         }
       }
@@ -254,72 +286,121 @@ export async function GET(request: Request) {
     if (mcxFutInstruments.length > 0) segments.push({ name: 'MCX-FUT', icon: 'fa-oil-well', instruments: mcxFutInstruments });
     if (mcxOptCats.length > 0) segments.push({ name: 'MCX-OPT', icon: 'fa-oil-well', subCategories: mcxOptCats });
 
-    // 4. Stock-FUT, Stock-OPT, Nse-EQ
-    const topStocks = ['RELIANCE', 'HDFCBANK', 'ICICIBANK', 'INFY', 'ITC', 'TCS', 'LT', 'BHARTIARTL', 'SBIN', 'BAJFINANCE', 'AXISBANK', 'KOTAKBANK', 'M&M', 'TATAMOTORS', 'MARUTI', 'SUNPHARMA', 'ASIANPAINT', 'HCLTECH', 'TITAN', 'ULTRACEMCO'];
-    const stockFutInstruments: any[] = [];  // flat
-    const stockOptCats: any[] = [];
-    const nseEqInstruments: any[] = [];     // flat
+    // 4. Stock-FUT, Stock-OPT, Nse-EQ (500 stocks)
+    // a. NSE-EQ: batch fetch up to 500 NSE equities
+    const { data: nseEqData } = await getSupabase()
+      .from('instruments')
+      .select('tradingsymbol, name, exchange, instrument_type, lot_size')
+      .eq('exchange', 'NSE')
+      .eq('instrument_type', 'EQ')
+      .order('tradingsymbol', { ascending: true })
+      .limit(500);
 
-    await Promise.all(topStocks.map(async (stk) => {
-      // FUT — flat into instruments array
-      const { data: futs } = await getSupabase().from('instruments').select('*').eq('name', stk).in('instrument_type', ['FUTSTK', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
-      if (futs && futs.length > 0) {
-        futs.forEach((i: any) => stockFutInstruments.push({
-          name: i.tradingsymbol, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
-          price: 0, change: '0%', segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Stock Futures`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size
-        }));
+    const nseEqInstruments = (nseEqData || []).map((i: any) => ({
+      name: `${i.tradingsymbol} (EQ)`,
+      symbol: i.tradingsymbol,
+      kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+      price: 0,
+      change: '0%',
+      segment: `${i.exchange} - Equity`,
+      contractDate: '',
+      open: 0,
+      high: 0,
+      low: 0,
+      close: 0,
+      lotSize: i.lot_size || 1,
+    }));
+
+    // b. Stock-FUT: batch fetch up to 500 Stock Futures
+    const { data: stockFutData } = await getSupabase()
+      .from('instruments')
+      .select('tradingsymbol, name, exchange, instrument_type, segment, expiry, lot_size')
+      .in('instrument_type', ['FUTSTK', 'FUT', 'MAPPED_FUT'])
+      .in('segment', ['NFO-FUT', 'BFO-FUT'])
+      .gte('expiry', today)
+      .order('expiry', { ascending: true })
+      .limit(1000);
+
+    const stockFutInstruments: any[] = [];
+    const stockFutMap = new Map<string, number>();
+    const seenFutSymbols = new Set<string>();
+    (stockFutData || []).forEach((i: any) => {
+      if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 'CRUDEOIL', 'GOLD', 'SILVER'].includes(i.name)) return;
+      if (seenFutSymbols.has(i.tradingsymbol)) return;
+      const count = stockFutMap.get(i.name) || 0;
+      if (count < 2) {
+        seenFutSymbols.add(i.tradingsymbol);
+        stockFutMap.set(i.name, count + 1);
+        stockFutInstruments.push({
+          name: i.tradingsymbol,
+          symbol: i.tradingsymbol,
+          kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+          price: 0,
+          change: '0%',
+          segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Stock Futures`,
+          contractDate: i.expiry,
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+          lotSize: i.lot_size || 0,
+        });
       }
-      // OPT
-      const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: stk, p_min_date: today });
-      if (expData && expData.length > 0) {
-        const nearestExpiry = expData[0].expiry;
-        const { data: opts } = await getSupabase().from('instruments').select('*').eq('name', stk).eq('expiry', nearestExpiry).in('option_type', ['CE', 'PE']).order('strike_price', { ascending: true });
-        if (opts && opts.length > 0) {
-          let selectedOpts: Instrument[] = opts as Instrument[];
-          try {
-            const kiteId = `NSE:${stk}`;
-            const cached = await redis.hget('market:quotes', kiteId);
-            let atmPrice = 0;
-            if (cached) {
-              const q = JSON.parse(cached);
-              atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-            }
-            if (!atmPrice) {
-              const altKey = stk;
-              const altCached = await redis.hget('market:quotes', altKey);
-              if (altCached) {
-                const q = JSON.parse(altCached);
-                atmPrice = q.last_price || q.ohlc?.close || q.close || 0;
-              }
-            }
-            if (!atmPrice && opts.length > 0) {
-              console.warn(`[library] No ATM price for Stock ${stk}, falling back to median strike`);
-              usedFallback = true;
-              const middleIndex = Math.floor(opts.length / 2);
-              atmPrice = (opts as Instrument[])[middleIndex]?.strike_price || 0;
-            }
-            if (atmPrice) {
-              selectedOpts = applyStrikeRangeFilter(opts as Instrument[], atmPrice, strikeConfig.indexOptionsRange);
-            }
-          } catch (e) {
-            console.error(`[library] Failed to apply strike range filter for Stock ${stk}:`, e);
-          }
+    });
 
-          stockOptCats.push({
-            name: stk,
-            instruments: selectedOpts.map((i: any) => ({ name: safeOptName(i), symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`, price: 0, change: '0%', segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Stock Options`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size }))
-          });
+    // c. Stock-OPT: batch fetch Stock Options (up to 500 underlyings)
+    const { data: stockOptData } = await getSupabase()
+      .from('instruments')
+      .select('tradingsymbol, name, exchange, instrument_type, strike_price, option_type, expiry, lot_size')
+      .in('segment', ['NFO-OPT', 'BFO-OPT'])
+      .in('option_type', ['CE', 'PE'])
+      .gte('expiry', today)
+      .limit(5000);
+
+    const stockOptGroup: Record<string, Record<string, Instrument[]>> = {};
+    (stockOptData || []).forEach((i: any) => {
+      if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 'CRUDEOIL', 'GOLD', 'SILVER'].includes(i.name)) return;
+      const stk = i.name;
+      if (!stk || !i.expiry) return;
+      if (!stockOptGroup[stk]) stockOptGroup[stk] = {};
+      if (!stockOptGroup[stk][i.expiry]) stockOptGroup[stk][i.expiry] = [];
+      stockOptGroup[stk][i.expiry].push(i as Instrument);
+    });
+
+    const stockOptCats: any[] = [];
+    Object.keys(stockOptGroup).slice(0, 500).forEach((stk) => {
+      const expiries = Object.keys(stockOptGroup[stk]).sort();
+      if (expiries.length === 0) return;
+      const nearestExpiry = expiries[0];
+      const opts = stockOptGroup[stk][nearestExpiry].sort((a, b) => (a.strike_price || 0) - (b.strike_price || 0));
+
+      let selectedOpts: Instrument[] = opts;
+      if (opts.length > 0) {
+        const middleIndex = Math.floor(opts.length / 2);
+        const atmPrice = opts[middleIndex]?.strike_price || 0;
+        if (atmPrice) {
+          selectedOpts = applyStrikeRangeFilter(opts, atmPrice, strikeConfig.indexOptionsRange);
         }
       }
-      // EQ — flat into instruments array
-      const { data: eq } = await getSupabase().from('instruments').select('*').eq('instrument_type', 'EQ').eq('tradingsymbol', stk).limit(1);
-      if (eq && eq.length > 0) {
-        eq.forEach((i: any) => nseEqInstruments.push({
-          name: `${i.tradingsymbol} (EQ)`, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
-          price: 0, change: '0%', segment: `${i.exchange} - Equity`, contractDate: '', open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size
-        }));
-      }
-    }));
+
+      stockOptCats.push({
+        name: stk,
+        instruments: selectedOpts.map((i: any) => ({
+          name: safeOptName(i),
+          symbol: i.tradingsymbol,
+          kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+          price: 0,
+          change: '0%',
+          segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Stock Options`,
+          contractDate: i.expiry,
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+          lotSize: i.lot_size,
+        })).slice(0, 22),
+      });
+    });
 
     if (stockFutInstruments.length > 0) segments.push({ name: 'STOCK-FUT', icon: 'fa-building', instruments: stockFutInstruments });
     if (stockOptCats.length > 0) segments.push({ name: 'STOCK-OPT', icon: 'fa-building', subCategories: stockOptCats });

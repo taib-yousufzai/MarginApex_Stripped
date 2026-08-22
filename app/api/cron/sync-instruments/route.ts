@@ -69,7 +69,7 @@ export async function GET(request: Request) {
     // b. Group futures by exchange+name to find the earliest expiry (front-month)
     const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     const futures = parsed.data.filter((row: any) => 
-      (row.segment === 'MCX-FUT' || row.segment === 'CDS-FUT' || row.segment === 'NFO-FUT') && 
+      (row.segment === 'MCX-FUT' || row.segment === 'CDS-FUT' || row.segment === 'NFO-FUT' || row.segment === 'BFO-FUT') && 
       (row.instrument_type === 'FUT' || row.instrument_type === 'FUTCOM' || row.instrument_type === 'FUTCUR') &&
       MONTHS.some(m => row.tradingsymbol.includes(m))
     );
@@ -115,36 +115,13 @@ export async function GET(request: Request) {
     }
 
     // c. Add Options (NFO, BFO, MCX-OPT, CDS-OPT)
-    const ALLOWED_NAMES = [
-      'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX', 
-      'CRUDEOILM', 'CRUDEOIL', 'GOLDM', 'GOLD', 'SILVERM', 'SILVER', 'NATGASMINI', 'NATURALGAS',
-      'RELIANCE', 'HDFCBANK', 'ICICIBANK', 'INFY', 'ITC', 'TCS', 'LT', 'BHARTIARTL',
-      'SBIN', 'BAJFINANCE', 'AXISBANK', 'KOTAKBANK', 'M&M', 'TATAMOTORS', 'MARUTI',
-      'SUNPHARMA', 'ASIANPAINT', 'HCLTECH', 'TITAN', 'ULTRACEMCO',
-      'USDINR', 'EURINR', 'GBPINR', 'JPYINR'
-    ];
-    
     const options = parsed.data.filter((row: any) => {
-      const isOption = row.instrument_type === 'CE' || row.instrument_type === 'PE';
-      if (!isOption) return false;
-
-      // Handle both possible header names
-      const symbol = row.tradingsymbol || row.trading_symbol || '';
-      return ALLOWED_NAMES.some(n => symbol.startsWith(n));
+      return row.instrument_type === 'CE' || row.instrument_type === 'PE';
     });
 
     for (const row of options as any[]) {
       const symbol = (row.tradingsymbol || row.trading_symbol || '').toUpperCase();
-      let underlying = '';
-      
-      for (const name of ALLOWED_NAMES) {
-        if (symbol.startsWith(name)) {
-          underlying = name;
-          break;
-        }
-      }
-
-      if (!underlying) continue;
+      const underlying = row.name || symbol.replace(/(CE|PE)$/, '').replace(/\d+.*$/, '');
 
       finalInstruments.push({
         id: `${row.exchange}:${symbol}`,
