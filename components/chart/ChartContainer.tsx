@@ -205,7 +205,8 @@ export default function ChartContainer({
           'header_widget',
           'header_symbol_search',
           'header_compare',
-          'use_localstorage_for_settings_saved'
+          'use_localstorage_for_settings_saved',
+          'timeframes_toolbar'
         ],
         enabled_features: [
           'study_templates'
