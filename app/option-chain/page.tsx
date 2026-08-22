@@ -401,26 +401,28 @@ function OptionChainContent() {
               {/* Divider */}
               <div className="expiry-divider"></div>
               {/* Chart Button */}
-              <button
-                className="oc-chart-btn"
-                onClick={() => {
-                  const isMcxOpt = symbol.includes('GOLD') || symbol.includes('SILVER') || symbol.includes('CRUDE') || symbol.includes('NATGAS') || symbol.includes('NATURALGAS');
-                  const isBfoOpt = symbol.includes('SENSEX') || symbol.includes('BANKEX');
-                  const optSegment = isMcxOpt ? 'MCX - Options' : (isBfoOpt ? 'BFO' : 'NFO');
-                  setChartItem({
-                    symbol: symbol,
-                    kiteSymbol: data?.underlyingSymbol || symbol,
-                    segment: optSegment
-                  });
-                  const chartSheet = document.getElementById('chartSheet');
-                  const chartOverlay = document.getElementById('chartSheetOverlay');
-                  if (chartSheet) chartSheet.classList.add('open');
-                  if (chartOverlay) chartOverlay.classList.add('active');
-                }}
-                title="Open Chart"
-              >
-                <i className="fas fa-chart-line"></i>
-              </button>
+              <div className="oc-mode-toggle" style={{ marginLeft: 'auto', marginRight: '4px' }}>
+                <button
+                  className="oc-mode-btn active"
+                  onClick={() => {
+                    const isMcxOpt = symbol.includes('GOLD') || symbol.includes('SILVER') || symbol.includes('CRUDE') || symbol.includes('NATGAS') || symbol.includes('NATURALGAS');
+                    const isBfoOpt = symbol.includes('SENSEX') || symbol.includes('BANKEX');
+                    const optSegment = isMcxOpt ? 'MCX - Options' : (isBfoOpt ? 'BFO' : 'NFO');
+                    setChartItem({
+                      symbol: symbol,
+                      kiteSymbol: data?.underlyingSymbol || symbol,
+                      segment: optSegment
+                    });
+                    const chartSheet = document.getElementById('chartSheet');
+                    const chartOverlay = document.getElementById('chartSheetOverlay');
+                    if (chartSheet) chartSheet.classList.add('open');
+                    if (chartOverlay) chartOverlay.classList.add('active');
+                  }}
+                  title="Open Chart"
+                >
+                  CHART
+                </button>
+              </div>
               {/* Date pills — inner capsule like B/A toggle */}
               <div className="expiry-dates-inner-capsule">
                 <div className="expiry-dates-scroll">
