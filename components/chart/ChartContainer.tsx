@@ -47,7 +47,10 @@ function getIsDark(): boolean {
   if (typeof document === 'undefined') return true;
   return (
     document.body.classList.contains('dark') ||
-    document.body.classList.contains('black')
+    document.body.classList.contains('black') ||
+    document.documentElement.classList.contains('dark') ||
+    document.documentElement.classList.contains('black') ||
+    !document.body.classList.contains('light')
   );
 }
 
@@ -199,6 +202,7 @@ export default function ChartContainer({
         client_id: 'marginapexx',
         user_id: 'public_user',
         disabled_features: [
+          'header_widget',
           'header_symbol_search',
           'header_compare',
           'use_localstorage_for_settings_saved'
