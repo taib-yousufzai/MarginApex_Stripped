@@ -376,19 +376,63 @@ export async function GET(request: Request) {
     if (mcxFutInstruments.length > 0) segments.push({ name: 'MCX-FUT', icon: 'fa-oil-well', instruments: mcxFutInstruments });
     if (mcxOptCats.length > 0) segments.push({ name: 'MCX-OPT', icon: 'fa-oil-well', subCategories: mcxOptCats });
 
-    // 4. Stock-FUT, Stock-OPT, Nse-EQ (500 stocks)
-    // a. NSE-EQ: batch fetch up to 500 NSE equities (pure cash market equities only)
-    const { data: nseEqData } = await getSupabase()
+    // 4. Stock-FUT, Stock-OPT, Nse-EQ (Top 500 stocks prioritizing Nifty 50)
+    const NIFTY_50_STOCKS = [
+      "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL", "ITC", "SBIN",
+      "LTIM", "LT", "AXISBANK", "KOTAKBANK", "HCLTECH", "BAJFINANCE", "SUNPHARMA", "M&M",
+      "MARUTI", "ULTRACEMCO", "NTPC", "TITAN", "TATAMOTORS", "TATASTEEL", "ASIANPAINT",
+      "POWERGRID", "ADANIENT", "JSWSTEEL", "COALINDIA", "BAJAJFINSV", "SIEMENS", "ADANIPORTS",
+      "TRENT", "GRASIM", "TECHM", "NESTLEIND", "HINDUNILVR", "BEL", "HDFCLIFE", "BAJAJ-AUTO",
+      "CIPLA", "SHRIRAMFIN", "TATACONSUM", "DRREDDY", "WIPRO", "IOC", "BPCL", "EICHERMOT",
+      "HEROMOTOCO", "APOLLOHOSP", "INDUSINDBK", "DIVISLAB", "HINDALCO", "SBILIFE", "BRITANNIA",
+      "HAL", "ZOMATO", "JIOFIN", "VBL", "DLF", "GAIL", "PFC", "RECLTD", "TATAELXSI", "PIDILITIND", "INDIGO"
+    ];
+
+    // a. NSE-EQ: Top 500 equities prioritizing Nifty 50 and F&O underlyings first
+    const { data: futUnderlyings } = await getSupabase()
+      .from('instruments')
+      .select('name')
+      .in('instrument_type', ['FUTSTK', 'FUT'])
+      .eq('exchange', 'NFO');
+
+    const foStockSymbols = Array.from(new Set((futUnderlyings || []).map((f: any) => f.name))).filter(Boolean);
+    const prioritySymbols = Array.from(new Set([...NIFTY_50_STOCKS, ...foStockSymbols]));
+
+    const { data: prioEqData } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, instrument_type, lot_size')
       .eq('exchange', 'NSE')
       .eq('instrument_type', 'EQ')
-      .gte('tradingsymbol', 'A')
-      .order('tradingsymbol', { ascending: true })
-      .limit(1000);
+      .in('tradingsymbol', prioritySymbols);
 
-    const nseEqInstruments = (nseEqData || [])
+    const prioSet = new Set((prioEqData || []).map((i: any) => i.tradingsymbol));
+    const sortedPrioEq = (prioEqData || [])
       .filter((i: any) => isValidStockSymbol(i.tradingsymbol))
+      .sort((a: any, b: any) => {
+        const idxA = NIFTY_50_STOCKS.indexOf(a.tradingsymbol);
+        const idxB = NIFTY_50_STOCKS.indexOf(b.tradingsymbol);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.tradingsymbol.localeCompare(b.tradingsymbol);
+      });
+
+    const neededRemaining = Math.max(0, 500 - sortedPrioEq.length);
+    const { data: fillEqData } = await getSupabase()
+      .from('instruments')
+      .select('tradingsymbol, name, exchange, instrument_type, lot_size')
+      .eq('exchange', 'NSE')
+      .eq('instrument_type', 'EQ')
+      .order('tradingsymbol', { ascending: true })
+      .limit(neededRemaining * 3);
+
+    const extraEq = (fillEqData || [])
+      .filter((i: any) => isValidStockSymbol(i.tradingsymbol) && !prioSet.has(i.tradingsymbol))
+      .slice(0, neededRemaining);
+
+    const combinedEqData = [...sortedPrioEq, ...extraEq];
+
+    const nseEqInstruments = combinedEqData
       .map((i: any) => ({
         name: i.tradingsymbol,
         symbol: i.tradingsymbol,
