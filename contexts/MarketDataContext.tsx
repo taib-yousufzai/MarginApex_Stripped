@@ -492,9 +492,9 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
 
   const rawSym = (q.symbol || q.tradingsymbol || symbolKey || '').toUpperCase();
   const exchange = (q.exchange || (rawSym.includes(':') ? rawSym.split(':')[0] : '')).toUpperCase();
-  const cleanSym = rawSym.replace(/^CRYPTO:/, '').replace(/^MCX:/, '').replace(/^COMEX:/, '').replace(/^NCO:/, '').replace('USDT', '');
+  const cleanSym = rawSym.replace(/^CRYPTO:/, '').replace(/^FOREX:/, '').replace(/^MCX:/, '').replace(/^COMEX:/, '').replace(/^NCO:/, '').replace('USDT', '');
 
-  const isForexUsd = ['GBPUSD', 'EURUSD'].includes(cleanSym);
+  const isForexUsd = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'].includes(cleanSym);
   const usdInrRate = 83.85;
 
   let close = Number(q.ohlc?.close ?? q.close ?? 0);

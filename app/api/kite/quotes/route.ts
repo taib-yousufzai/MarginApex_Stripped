@@ -17,6 +17,10 @@ const CRYPTO_BASES = new Set([
   'BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC', 'LINK', 'UNI', 'SHIB'
 ]);
 
+const FOREX_PAIRS = new Set([
+  'GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'
+]);
+
 function isCryptoSymbol(sym: string): boolean {
   if (!sym) return false;
   const upper = sym.toUpperCase().replace(/^CRYPTO:/, '');
@@ -24,9 +28,90 @@ function isCryptoSymbol(sym: string): boolean {
   return CRYPTO_BASES.has(upper);
 }
 
+function isForexSymbol(sym: string): boolean {
+  if (!sym) return false;
+  if (sym.startsWith('FOREX:')) return true;
+  const clean = sym.toUpperCase().replace(/^FOREX:/, '').replace('/', '').trim();
+  return FOREX_PAIRS.has(clean);
+}
+
 function toBinancePair(sym: string): string {
   const upper = sym.toUpperCase().replace(/^CRYPTO:/, '');
   return upper.endsWith('USDT') ? upper : `${upper}USDT`;
+}
+
+async function fetchYahooQuotesBatch(forexSymbols: string[]): Promise<Record<string, any>> {
+  if (forexSymbols.length === 0) return {};
+
+  const symbolMap: Record<string, string[]> = {};
+  const yahooSymbols: string[] = [];
+
+  for (const id of forexSymbols) {
+    const clean = id.toUpperCase().replace(/^FOREX:/, '').replace('/', '').trim();
+    let yahooSym = '';
+    if (FOREX_PAIRS.has(clean)) {
+      yahooSym = `${clean}=X`;
+    } else if (clean.endsWith('=F')) {
+      yahooSym = clean;
+    }
+    if (yahooSym) {
+      if (!symbolMap[yahooSym]) {
+        symbolMap[yahooSym] = [];
+        yahooSymbols.push(yahooSym);
+      }
+      symbolMap[yahooSym].push(id);
+    }
+  }
+
+  const result: Record<string, any> = {};
+
+  await Promise.all(
+    yahooSymbols.map(async (ySym) => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?interval=1d&range=1d`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(3000),
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const chartResult = data?.chart?.result?.[0];
+          if (chartResult) {
+            const meta = chartResult.meta || {};
+            const quote = chartResult.indicators?.quote?.[0] || {};
+            const lastPrice = meta.regularMarketPrice ?? quote.close?.[0] ?? 0;
+            const close = meta.chartPreviousClose ?? lastPrice;
+            const open = quote.open?.[0] ?? lastPrice;
+            const high = meta.regularMarketDayHigh ?? quote.high?.[0] ?? lastPrice;
+            const low = meta.regularMarketDayLow ?? quote.low?.[0] ?? lastPrice;
+
+            const quoteObj = {
+              timestamp: new Date().toISOString(),
+              last_price: lastPrice,
+              volume: meta.regularMarketVolume ?? quote.volume?.[0] ?? 0,
+              ohlc: { open, high, low, close },
+              net_change: lastPrice - close,
+              bid: lastPrice,
+              ask: lastPrice,
+            };
+
+            const reqIds = symbolMap[ySym] || [];
+            reqIds.forEach(id => {
+              result[id] = quoteObj;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[Quotes API] Yahoo fetch error for', ySym, err);
+      }
+    })
+  );
+
+  return result;
 }
 
 async function fetchBinanceQuotesBatch(cryptoSymbols: string[]): Promise<Record<string, any>> {
@@ -148,11 +233,15 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
     const directKiteIds: string[] = [];
     const dbRequestIds: string[] = [];
     const cryptoRequestIds: string[] = [];
+    const forexRequestIds: string[] = [];
 
-    // Separate Crypto symbols, direct Kite IDs (NSE:RELIANCE), and DB IDs
+    // Separate Crypto symbols, Forex symbols, direct Kite IDs (NSE:RELIANCE), and DB IDs
     for (const id of instruments) {
       if (isCryptoSymbol(id)) {
         cryptoRequestIds.push(id);
+        realToRequestedMap[id] = id;
+      } else if (isForexSymbol(id)) {
+        forexRequestIds.push(id);
         realToRequestedMap[id] = id;
       } else if (id.includes(':')) {
         directKiteIds.push(id);
@@ -174,6 +263,9 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
           if (row.segment === 'CRYPTO' || isCryptoSymbol(row.tradingsymbol) || isCryptoSymbol(row.id)) {
             cryptoRequestIds.push(row.id);
             realToRequestedMap[row.id] = row.id;
+          } else if (row.segment === 'FOREX' || isForexSymbol(row.tradingsymbol) || isForexSymbol(row.id)) {
+            forexRequestIds.push(row.id);
+            realToRequestedMap[row.id] = row.id;
           } else {
             const kiteId = `${row.exchange}:${row.tradingsymbol}`;
             realToRequestedMap[kiteId] = row.id;
@@ -187,6 +279,8 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
         if (!Object.values(realToRequestedMap).includes(id)) {
           if (isCryptoSymbol(id)) {
             cryptoRequestIds.push(id);
+          } else if (isForexSymbol(id)) {
+            forexRequestIds.push(id);
           } else {
             realToRequestedMap[id] = id;
             directKiteIds.push(id);
@@ -203,7 +297,7 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
       const { getRedisClient } = await import('@/lib/redis');
       const redis = getRedisClient();
 
-      const allSearchIds = [...directKiteIds, ...cryptoRequestIds];
+      const allSearchIds = [...directKiteIds, ...cryptoRequestIds, ...forexRequestIds];
       await Promise.all(allSearchIds.map(async (searchId) => {
         const cached = await redis.hget('market:quotes', searchId);
         if (cached) {
@@ -245,6 +339,22 @@ async function handleQuotesRequest(instruments: string[], request: NextRequest):
         const quote = binanceQuotes[reqId] || binanceQuotes[toBinancePair(reqId)] || binanceQuotes[reqId.toUpperCase()];
         if (quote) {
           finalMappedData[reqId] = quote;
+          foundKiteIds.add(reqId);
+        }
+      }
+    }
+
+    // 3. Fetch missing Forex symbols directly from Yahoo Finance API
+    const missingForexIds = forexRequestIds.filter(id => !foundKiteIds.has(id));
+    if (missingForexIds.length > 0) {
+      const yahooQuotes = await fetchYahooQuotesBatch(missingForexIds);
+      for (const reqId of missingForexIds) {
+        if (yahooQuotes[reqId]) {
+          const q = yahooQuotes[reqId];
+          finalMappedData[reqId] = q;
+          const clean = reqId.replace(/^FOREX:/, '');
+          finalMappedData[clean] = q;
+          finalMappedData[`FOREX:${clean}`] = q;
           foundKiteIds.add(reqId);
         }
       }
