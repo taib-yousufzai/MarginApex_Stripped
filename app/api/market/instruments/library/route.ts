@@ -545,7 +545,7 @@ export async function GET(request: Request) {
       });
       if (uniqueCryptos.size > 0) {
         segments.push({
-          name: 'Crypto',
+          name: 'CRYPTO',
           icon: 'fa-bitcoin',
           instruments: Array.from(uniqueCryptos.values()).map((i: any) => ({
             name: i.tradingsymbol, symbol: i.tradingsymbol, kiteSymbol: i.id,

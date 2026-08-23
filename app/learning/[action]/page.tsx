@@ -43,8 +43,8 @@ const DEFAULT_WATCHLIST: WatchlistItem[] = [
   { name: 'BANKNIFTY INDEX', symbol: 'BANKNIFTY_INDEX', kiteSymbol: 'NSE:NIFTY BANK', price: 0, change: '0%', segment: 'NSE - Futures' },
   { name: 'USD/INR', symbol: 'USDINR_FUT', kiteSymbol: 'CDS:USDINR26JULFUT', price: 0, change: '0%', segment: 'CDS - Futures' },
   { name: 'Gold', symbol: 'GOLD_FUT', kiteSymbol: 'MCX:GOLD26OCTFUT', price: 0, change: '0%', segment: 'MCX - Futures' },
-  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 0, change: '0%', segment: 'Crypto' },
-  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 0, change: '0%', segment: 'Crypto' }
+  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 0, change: '0%', segment: 'CRYPTO' },
+  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 0, change: '0%', segment: 'CRYPTO' }
 ];
 
 const WATCHLIST_KEY_PREFIX = 'marginApex_watchlist';

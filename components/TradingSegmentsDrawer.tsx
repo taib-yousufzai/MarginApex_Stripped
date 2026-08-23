@@ -174,7 +174,7 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
     ]
   },
   {
-    name: 'Crypto',
+    name: 'CRYPTO',
     icon: 'fa-bitcoin-sign',
     count: 3,
     instruments: [
@@ -215,7 +215,7 @@ const DISPLAY_NAME_MAP: Record<string, { name: string; icon: string }> = {
   'STOCK-FUT': { name: 'Stock-fut', icon: 'fa-building' },
   'STOCK-OPT': { name: 'Stock-opt', icon: 'fa-layer-group' },
   'NSE-EQ': { name: 'Nse-eq', icon: 'fa-landmark' },
-  'CRYPTO': { name: 'Crypto', icon: 'fa-bitcoin-sign' },
+  'CRYPTO': { name: 'CRYPTO', icon: 'fa-bitcoin-sign' },
   'COMEX': { name: 'Comex', icon: 'fa-gem' },
   'FOREX': { name: 'Forex', icon: 'fa-globe' },
 };
