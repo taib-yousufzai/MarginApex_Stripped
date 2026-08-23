@@ -14,6 +14,7 @@ import AnimatedLoader from '@/components/AnimatedLoader';
 import dynamic from 'next/dynamic';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentToDbSegment, mapSymbolToSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
+import { isForexSymbol } from '@/lib/datafeed/symbolResolver';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 import { RiskValidation } from '@/lib/trading/RiskValidation';
 
@@ -2521,11 +2522,12 @@ function WatchlistContent() {
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
               {chartItem && (() => {
                 console.log('[CHART PERF REACTION] Rendering TradingChart for chartItem:', chartItem.symbol, chartItem.segment);
-                const isChartComex = !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
+                const isForex = chartItem.category === 'FOREX' || chartItem.segment === 'Forex' || isForexSymbol(chartItem.symbol) || isForexSymbol(chartItem.comexSymbol || '');
+                const isChartComex = !isForex && !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
                 return (
                   <TradingChart
-                    symbol={isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
-                    segment={isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
+                    symbol={isForex ? (chartItem.comexSymbol || chartItem.symbol) : isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
+                    segment={isForex ? 'FOREX' : isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
                   />
                 );
               })()}
