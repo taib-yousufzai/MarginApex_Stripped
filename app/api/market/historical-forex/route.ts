@@ -36,11 +36,19 @@ export async function GET(req: NextRequest) {
     const yahooSymbol = cleanForexSymbol(rawSymbol);
     const interval = mapResolutionToYahooInterval(rawInterval);
 
-    let period2 = Math.floor(Date.now() / 1000);
+    const nowSec = Math.floor(Date.now() / 1000);
+    let period2 = nowSec;
     let period1 = period2 - 5 * 86400; // Default 5 days for intraday
 
     const fromParam = searchParams.get('from') || searchParams.get('startTime');
     const toParam = searchParams.get('to') || searchParams.get('endTime');
+
+    if (toParam) {
+      const toMs = isNaN(Number(toParam)) ? new Date(toParam).getTime() : Number(toParam);
+      if (!isNaN(toMs) && toMs > 0) {
+        period2 = Math.min(Math.floor(toMs / 1000), nowSec);
+      }
+    }
 
     if (fromParam) {
       const fromMs = isNaN(Number(fromParam)) ? new Date(fromParam).getTime() : Number(fromParam);
@@ -48,15 +56,19 @@ export async function GET(req: NextRequest) {
         period1 = Math.floor(fromMs / 1000);
       }
     }
-    if (toParam) {
-      const toMs = isNaN(Number(toParam)) ? new Date(toParam).getTime() : Number(toParam);
-      if (!isNaN(toMs) && toMs > 0) {
-        period2 = Math.floor(toMs / 1000);
-      }
+
+    // Yahoo Finance API limits for intraday intervals relative to current time
+    if (interval === '1m') {
+      const minP1 = nowSec - 6 * 86400;
+      if (period1 < minP1) period1 = minP1;
+    } else if (['5m', '15m', '30m', '60m'].includes(interval)) {
+      const minP1 = nowSec - 58 * 86400;
+      if (period1 < minP1) period1 = minP1;
     }
 
     if (period2 <= period1) {
-      period1 = period2 - 5 * 86400;
+      period2 = nowSec;
+      period1 = interval === '1m' ? nowSec - 6 * 86400 : nowSec - 5 * 86400;
     }
 
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=${interval}&period1=${period1}&period2=${period2}`;
