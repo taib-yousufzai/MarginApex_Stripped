@@ -3114,7 +3114,7 @@ body.dark .instrument-delete-btn:hover {
     overflow: hidden;
     background: #ffffff;
     border-radius: 1rem;
-    border: 1px solid #EEF2F8;
+    border: 1px solid var(--border-card, #D8DEE6);
     cursor: pointer;
     transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
     min-height: 4.5rem;
