@@ -17,6 +17,7 @@ function cleanForexSymbol(symbol: string): string {
   let s = symbol.trim().toUpperCase();
   if (s.startsWith('FOREX:')) s = s.slice(6);
   if (s.endsWith('USDT')) s = s.slice(0, -4) + 'USD';
+  s = s.replace(/\//g, '');
   if (!s.endsWith('=X') && s.length === 6 && !s.includes('INR')) {
     s = `${s}=X`;
   }

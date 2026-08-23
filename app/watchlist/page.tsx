@@ -2522,7 +2522,7 @@ function WatchlistContent() {
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
               {chartItem && (() => {
                 console.log('[CHART PERF REACTION] Rendering TradingChart for chartItem:', chartItem.symbol, chartItem.segment);
-                const isForex = chartItem.category === 'FOREX' || chartItem.segment === 'Forex' || isForexSymbol(chartItem.symbol) || isForexSymbol(chartItem.comexSymbol || '');
+                const isForex = chartItem.category === 'FOREX' || chartItem.segment?.toUpperCase() === 'FOREX' || isForexSymbol(chartItem.symbol) || isForexSymbol(chartItem.comexSymbol || '');
                 const isChartComex = !isForex && !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
                 return (
                   <TradingChart

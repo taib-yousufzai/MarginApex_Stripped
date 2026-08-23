@@ -6,7 +6,7 @@ export function isForexSymbol(symbolName: string): boolean {
   let upper = symbolName.toUpperCase().trim();
   if (upper.startsWith('FOREX:')) return true;
   if (upper.endsWith('=X')) upper = upper.slice(0, -2);
-  const clean = upper.includes(':') ? upper.split(':')[1] : upper;
+  const clean = (upper.includes(':') ? upper.split(':')[1] : upper).replace(/\//g, '');
   const FOREX_PAIRS = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'];
   return FOREX_PAIRS.includes(clean);
 }
@@ -91,8 +91,9 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
   const colonIdx = symbolName.indexOf(':');
   const rawName = colonIdx >= 0 ? symbolName.slice(colonIdx + 1) : symbolName;
   let name = formatShortName(rawName);
-  if (isForex && name.endsWith('=X')) {
-    name = name.slice(0, -2);
+  if (isForex) {
+    if (name.endsWith('=X')) name = name.slice(0, -2);
+    name = name.replace(/\//g, '');
   }
   
   const exchange = isForex ? 'FOREX' : isCrypto ? 'BINANCE' : deriveExchange(symbolName);
