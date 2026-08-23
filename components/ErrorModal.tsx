@@ -27,7 +27,7 @@ export function ErrorModal({ error, onClose, title = 'Error' }: ErrorModalProps)
         transform: 'scale(1)',
         animation: 'slideUpFade 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
-        <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: '700', color: 'var(--sell-color, #ef4444)' }}>
+        <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: '700', color: '#000000' }}>
           {title}
         </h3>
         <p style={{ margin: '0 0 24px 0', fontSize: '14px', color: 'var(--text-secondary, #4B5563)', lineHeight: '1.5', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
