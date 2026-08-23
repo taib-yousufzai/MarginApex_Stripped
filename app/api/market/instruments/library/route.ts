@@ -403,6 +403,7 @@ export async function GET(request: Request) {
         lotSize: i.lot_size || 1,
       }));
 
+
     // b. Stock-FUT: batch fetch up to 500 Stock Futures
     const { data: stockFutData } = await getSupabase()
       .from('instruments')
