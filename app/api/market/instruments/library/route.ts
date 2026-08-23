@@ -423,8 +423,9 @@ export async function GET(request: Request) {
       .select('tradingsymbol, name, exchange, instrument_type, lot_size')
       .eq('exchange', 'NSE')
       .eq('instrument_type', 'EQ')
+      .gte('tradingsymbol', 'A')
       .order('tradingsymbol', { ascending: true })
-      .limit(neededRemaining * 3);
+      .limit(Math.max(2500, neededRemaining * 8));
 
     const extraEq = (fillEqData || [])
       .filter((i: any) => isValidStockSymbol(i.tradingsymbol) && !prioSet.has(i.tradingsymbol))
