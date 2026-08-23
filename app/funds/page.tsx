@@ -75,9 +75,6 @@ export default function FundsPage() {
     setTimeout(() => setToast(null), 2000);
   };
 
-  const handleWhatsAppSupport = () => {
-    window.open('https://wa.me/916239541970', '_blank');
-  };
 
   const downloadQRCode = () => {
     const svg = document.querySelector(".qr-container svg") as SVGGraphicsElement;
@@ -535,16 +532,6 @@ export default function FundsPage() {
                   </>
                 )}
 
-                <div className="whatsapp-community" onClick={handleWhatsAppSupport} style={{ marginTop: '24px' }}>
-                  <div className="whatsapp-inner">
-                    <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
-                    <div className="whatsapp-content">
-                      <div className="whatsapp-headline">Facing any issue? Contact Support</div>
-                      <div className="whatsapp-sub"><i className="fas fa-headset"></i> Get help on WhatsApp</div>
-                    </div>
-                    <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

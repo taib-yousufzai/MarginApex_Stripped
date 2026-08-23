@@ -24,6 +24,9 @@
 .claude
 .codex
 .github
+.agents
+.cursor
+__tests__
 
 # production
 /build

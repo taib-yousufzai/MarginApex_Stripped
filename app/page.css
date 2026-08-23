@@ -44,12 +44,8 @@
   --nav-border: #E8ECF0;
   --expiry-bg: linear-gradient(135deg, #C62828, #B71C1C);
   --footer-bg: #FFFFFF;
-  --footer-active: #006400;
-  --drawer-bg: #FFFFFF;
   --drawer-handle: #006400;
-  --whatsapp-bg: linear-gradient(135deg, #006400, #0A5F52);
   --gold-silver-gradient: linear-gradient(135deg, #E8E8E8 0%, #D4AF37 30%, #FFD700 50%, #F0C040 70%, #C0C0C0 100%);
-  --footer-nav-height: 4.0625rem;
   --expiry-drawer-bg: #FFFFFF;
   --expiry-drawer-overlay: rgba(0, 0, 0, 0.5);
 }
@@ -131,76 +127,6 @@ body.dark {
   }
 }
 
-/* ===== WHATSAPP BUTTONS ===== */
-.whatsapp-community,
-.whatsapp-support {
-  background: var(--whatsapp-bg);
-  border-radius: 2rem;
-  margin-bottom: 1.25rem;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  box-shadow: 0 0.5rem 1.5rem rgba(15, 80, 50, 0.5);
-}
-
-.whatsapp-community:last-child,
-.whatsapp-support:last-child {
-  margin-bottom: 0;
-}
-
-.whatsapp-community:active,
-.whatsapp-support:active {
-  transform: scale(0.98);
-}
-
-.whatsapp-inner {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  padding: 0.875rem 1.25rem;
-}
-
-.whatsapp-icon {
-  background: rgba(255, 255, 255, 0.2);
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 1.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.8rem;
-  color: white;
-}
-
-.whatsapp-content {
-  flex: 1;
-}
-
-.whatsapp-headline {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: white;
-  line-height: 1.3;
-  margin-bottom: 0.25rem;
-}
-
-.whatsapp-sub {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.8);
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.whatsapp-arrow {
-  background: rgba(255, 255, 255, 0.2);
-  width: 2.125rem;
-  height: 2.125rem;
-  border-radius: 1.875rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-}
 
 /* MARGIN SETTINGS ROW */
 .margin-settings-row {
@@ -890,8 +816,6 @@ body.black .market-rect-expired-badge {
     /* Tightest padding */
   }
 
-  .whatsapp-community,
-  .whatsapp-support,
   .margin-settings-row,
   .option-chain-section,
   .expiry-block {
@@ -907,14 +831,6 @@ body.black .market-rect-expired-badge {
     gap: 0.375rem !important;
   }
 
-  .whatsapp-inner {
-    padding: 0.75rem 0.875rem !important;
-    gap: 0.5rem !important;
-  }
-
-  .whatsapp-headline {
-    font-size: 0.8rem !important;
-  }
 
   .footer-nav {
     height: var(--footer-nav-height);
@@ -1032,26 +948,11 @@ body.black .market-rect-expired-badge {
     gap: 2rem;
     align-items: start;
     grid-template-areas:
-      "whatsapp whatsapp"
       "terminal learning"
       "margin learning"
       "options learning"
       "expiry expiry"
-      "markets markets"
-      "support support";
-  }
-
-  .whatsapp-community {
-    grid-area: whatsapp;
-    max-width: 100%;
-    box-shadow: 0 0.25rem 0.75rem rgba(15, 80, 50, 0.3);
-  }
-
-  .whatsapp-support {
-    grid-area: support;
-    max-width: 100%;
-    margin-top: 0 !important;
-    box-shadow: 0 0.25rem 0.75rem rgba(15, 80, 50, 0.3);
+      "markets markets";
   }
 
   .terminal-card-highlight,

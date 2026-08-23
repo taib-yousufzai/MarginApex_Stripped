@@ -514,17 +514,6 @@ export default function Page() {
             <div className="main-content">
               <div className="screen">
                 <div className="content-padded">
-                  {/* WhatsApp Community */}
-                  <div className="whatsapp-community" onClick={() => window.open(process.env.NEXT_PUBLIC_WHATSAPP_COMMUNITY_LINK || 'https://chat.whatsapp.com/BqxIlyVnRQNIJ2JB2swEVh', '_blank')}>
-                    <div className="whatsapp-inner">
-                      <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
-                      <div className="whatsapp-content">
-                        <div className="whatsapp-headline">FREE WHATSAPP COMMUNITY</div>
-                        <div className="whatsapp-sub"><i className="fas fa-lightbulb"></i> You&apos;ll get FREE tips here — join now!</div>
-                      </div>
-                      <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
-                    </div>
-                  </div>
 
                   {/* Margin Settings */}
                   <div className="margin-settings-row" onClick={() => router.push('/margin-settings')}>
@@ -664,17 +653,6 @@ export default function Page() {
                     </div>
                   </div>
 
-                  {/* WhatsApp Support */}
-                  <div className="whatsapp-support" onClick={() => window.open('https://wa.me/916239541970', '_blank')}>
-                    <div className="whatsapp-inner">
-                      <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
-                      <div className="whatsapp-content">
-                        <div className="whatsapp-headline">24/7 WHATSAPP SUPPORT</div>
-                        <div className="whatsapp-sub"><i className="fas fa-headset"></i> Get instant help anytime</div>
-                      </div>
-                      <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
