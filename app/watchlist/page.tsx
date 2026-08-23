@@ -2377,12 +2377,14 @@ function WatchlistContent() {
                     'STOCK-FUT': 'STOCK-FUT',
                     'STOCK-OPT': 'STOCK-OPT',
                     'NSE-EQ': 'NSE-EQ',
+                    'Equity': 'NSE-EQ',
+                    'EQUITY': 'NSE-EQ',
                     'CRYPTO': 'CRYPTO',
                     'COMEX': 'COMEX',
                     'FOREX': 'FOREX',
                   };
                   // Define the desired display order
-                  const SEGMENT_ORDER = ['INDEX-FUT', 'INDEX-OPT', 'MCX-FUT', 'MCX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'NSE-EQ', 'CRYPTO', 'COMEX', 'FOREX'];
+                  const SEGMENT_ORDER = ['INDEX-FUT', 'INDEX-OPT', 'MCX-FUT', 'MCX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'Equity', 'NSE-EQ', 'CRYPTO', 'COMEX', 'FOREX'];
                   const sortedSegments = [...tradingSegments].sort((a, b) => {
                     const ai = SEGMENT_ORDER.indexOf(a.name);
                     const bi = SEGMENT_ORDER.indexOf(b.name);
@@ -2395,7 +2397,7 @@ function WatchlistContent() {
                     if (allowedSegments === null) return true; // still loading — show all initially
                     if (allowedSegments.length === 0) return true;
                     const dbKey = DRAWER_SEG_TO_DB_KEY[seg.name] ?? seg.name.toUpperCase();
-                    return allowedSegments.includes(dbKey);
+                    return allowedSegments.includes(dbKey) || allowedSegments.includes(seg.name) || (seg.name.toUpperCase() === 'EQUITY' && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity')));
                   });
                   return visibleSegments.map((seg) => {
                     // Filter out blocked symbols from this segment's instruments
@@ -2701,7 +2703,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           ]
         },
         {
-          name: 'NSE-EQ',
+          name: 'Equity',
           icon: 'fa-landmark',
           instruments: [
             { name: 'RELIANCE', symbol: 'RELIANCE_EQ', kiteSymbol: 'NSE:RELIANCE', price: 0, change: '0%', segment: 'NSE - Equity', contractDate: '', open: 0, high: 0, low: 0, close: 0 },
@@ -2720,7 +2722,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
         if (n === 'STOCK-OPT') return 'STOCK-OPT';
         if (n === 'MCX-FUT') return 'MCX-FUT';
         if (n === 'MCX-OPT') return 'MCX-OPT';
-        if (n === 'NSE-EQ') return 'NSE-EQ';
+        if (n === 'NSE-EQ' || n === 'EQUITY') return 'NSE-EQ';
         if (n === 'CRYPTO') return 'CRYPTO';
         if (n === 'FOREX') return 'FOREX';
         if (n === 'COMEX') return 'COMEX';

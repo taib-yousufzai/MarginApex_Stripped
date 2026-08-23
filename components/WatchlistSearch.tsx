@@ -292,6 +292,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const { quotes: comexQuotes } = useComexQuotes(comexIds);
 
   const displayResults = React.useMemo(() => {
+    if (isSearching) return [];
     if (!results || results.length === 0) return [];
     const hasOptions = results.some((r: any) => r.strike !== undefined || r.segment?.includes('Options'));
     if (!hasOptions) return results;
@@ -341,7 +342,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
     const filteredOptions = options.filter((o: any) => selStrikes.has(Number(o.strike)));
 
     return [...nonOptions, ...filteredOptions];
-  }, [results, quotes]);
+  }, [results, quotes, isSearching]);
 
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const normalizedQuery = query.replace(/\s+/g, ' ').trim();
@@ -381,17 +382,18 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const SEGMENT_DEFAULTS: Record<string, string> = {
     'INDEX-FUT': 'NIFTY', 'INDEX-OPT': 'NIFTY',
     'STOCK-FUT': 'RELIANCE', 'STOCK-OPT': 'RELIANCE',
-    'NSE-EQ': 'RELIANCE', 'MCX-FUT': 'GOLD', 'MCX-OPT': 'GOLD',
+    'NSE-EQ': 'RELIANCE', 'Equity': 'RELIANCE', 'MCX-FUT': 'GOLD', 'MCX-OPT': 'GOLD',
     'COMEX': 'GOLD', 'CRYPTO': 'BTC', 'FOREX': 'USDINR',
   };
 
   useEffect(() => {
     if (!isOpen) return;
     setIsSearching(true);
+    setResults([]);
     const abortController = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const actualQuery = normalizedQuery.length >= 2 ? normalizedQuery : (SEGMENT_DEFAULTS[activeTab] || 'NIFTY');
+        const actualQuery = normalizedQuery.length >= 1 ? normalizedQuery : (SEGMENT_DEFAULTS[activeTab] || 'NIFTY');
         const qLower = actualQuery.toLowerCase();
 
         const localMatches = localScripts.filter(s => {
@@ -431,7 +433,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
         className="search-input"
         placeholder="Search instruments…"
         value={query}
-        onChange={(e) => { setQuery(e.target.value); if (!isOpen) setIsOpen(true); }}
+        onChange={(e) => { setQuery(e.target.value); setIsSearching(true); setResults([]); if (!isOpen) setIsOpen(true); }}
         onFocus={() => setIsOpen(true)}
         autoComplete="off"
       />

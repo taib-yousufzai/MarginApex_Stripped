@@ -126,7 +126,7 @@ export async function GET(request: Request) {
     };
 
     const redis = getRedisClient();
-    const cacheKey = 'market:library:segments:v5';
+    const cacheKey = 'market:library:segments:v7';
     // NOTE: Cache disabled to ensure strike ranges always reflect live ATM price.
     // try {
     //   const cached = await redis.get(cacheKey);
@@ -377,19 +377,20 @@ export async function GET(request: Request) {
     if (mcxOptCats.length > 0) segments.push({ name: 'MCX-OPT', icon: 'fa-oil-well', subCategories: mcxOptCats });
 
     // 4. Stock-FUT, Stock-OPT, Nse-EQ (500 stocks)
-    // a. NSE-EQ: batch fetch up to 500 NSE equities
+    // a. NSE-EQ: batch fetch up to 500 NSE equities (pure cash market equities only)
     const { data: nseEqData } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, instrument_type, lot_size')
       .eq('exchange', 'NSE')
       .eq('instrument_type', 'EQ')
+      .gte('tradingsymbol', 'A')
       .order('tradingsymbol', { ascending: true })
-      .limit(500);
+      .limit(1000);
 
     const nseEqInstruments = (nseEqData || [])
-      .filter((i: any) => isValidStockSymbol(i.tradingsymbol) && isValidStockSymbol(i.name))
+      .filter((i: any) => isValidStockSymbol(i.tradingsymbol))
       .map((i: any) => ({
-        name: `${i.tradingsymbol} (EQ)`,
+        name: i.tradingsymbol,
         symbol: i.tradingsymbol,
         kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
         price: 0,
@@ -401,7 +402,8 @@ export async function GET(request: Request) {
         low: 0,
         close: 0,
         lotSize: i.lot_size || 1,
-      }));
+      }))
+      .slice(0, 500);
 
 
     // b. Stock-FUT: batch fetch up to 500 Stock Futures
@@ -501,19 +503,10 @@ export async function GET(request: Request) {
       });
     });
 
+    // Only derive candidate stock options from verified Stock Futures (derivative segment)
     const candidateStocks: string[] = [];
     (stockFutInstruments || []).forEach((inst: any) => {
       const name = inst.name?.replace(/\s*\d+[A-Z]{3}FUT$/i, '').trim() || inst.symbol?.replace(/\d+[A-Z]{3}FUT$/i, '').trim();
-      if (name && isValidStockSymbol(name)) {
-        if (!addedStockNames.has(name)) {
-          addedStockNames.add(name);
-          candidateStocks.push(name);
-        }
-      }
-    });
-
-    (nseEqInstruments || []).forEach((inst: any) => {
-      const name = inst.symbol || inst.name?.replace(/\s*\(EQ\)$/i, '').trim();
       if (name && isValidStockSymbol(name)) {
         if (!addedStockNames.has(name)) {
           addedStockNames.add(name);
@@ -532,7 +525,7 @@ export async function GET(request: Request) {
 
     if (stockFutInstruments.length > 0) segments.push({ name: 'STOCK-FUT', icon: 'fa-building', instruments: stockFutInstruments });
     if (stockOptCats.length > 0) segments.push({ name: 'STOCK-OPT', icon: 'fa-building', subCategories: stockOptCats });
-    if (nseEqInstruments.length > 0) segments.push({ name: 'NSE-EQ', icon: 'fa-building', instruments: nseEqInstruments });
+    if (nseEqInstruments.length > 0) segments.push({ name: 'Equity', icon: 'fa-landmark', instruments: nseEqInstruments });
 
     // 5. Crypto — apply applyCryptoWhitelist
     const { data: cryptos } = await getSupabase().from('instruments').select('*').eq('segment', 'CRYPTO').order('name', { ascending: true });
@@ -645,12 +638,12 @@ export async function GET(request: Request) {
     try {
       // Cache for 60 seconds so that strikes auto-update with spot price movements
       const ttl = usedFallback ? 60 : 60;
-      await redis.set(cacheKey, JSON.stringify({ segments }), 'EX', ttl);
+      await redis.set(cacheKey, JSON.stringify({ success: true, segments }), 'EX', ttl);
     } catch (e) {
       console.error('[library] Redis set cache error:', e);
     }
 
-    return NextResponse.json({ segments });
+    return NextResponse.json({ success: true, segments });
   } catch (error: any) {
     console.error('Library API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

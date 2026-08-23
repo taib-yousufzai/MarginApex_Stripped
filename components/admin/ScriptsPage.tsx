@@ -181,7 +181,7 @@ export default function ScriptsPage() {
   // Search Instruments
   const searchInstruments = useCallback(async (segment: string, query: string) => {
     setInstrLoading(true);
-    const q = query.length >= 2 ? query : (SEGMENT_DEFAULTS[segment] || 'NIFTY');
+    const q = query.length >= 1 ? query : (SEGMENT_DEFAULTS[segment] || 'NIFTY');
     const url = `/api/admin/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(segment)}`;
     const res = await apiCall(url, { method: 'GET' });
     setInstrLoading(false);

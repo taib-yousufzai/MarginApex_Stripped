@@ -43,6 +43,8 @@ const SEGMENT_MAP: Record<string, Segment> = {
   // Equity
   'NSE - Equity':        'NSE-EQ',
   'NSE-EQ':              'NSE-EQ',
+  'Equity':              'NSE-EQ',
+  'EQUITY':              'NSE-EQ',
   'BSE - Equity':        'BSE-EQ',
   'BSE-EQ':              'BSE-EQ',
   'BSE':                 'BSE-EQ',

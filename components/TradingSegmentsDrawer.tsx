@@ -163,7 +163,7 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
     ]
   },
   {
-    name: 'Nse-eq',
+    name: 'Equity',
     icon: 'fa-landmark',
     count: 4,
     instruments: [
@@ -214,7 +214,9 @@ const DISPLAY_NAME_MAP: Record<string, { name: string; icon: string }> = {
   'MCX-OPT': { name: 'Mcx-opt', icon: 'fa-circle-dot' },
   'STOCK-FUT': { name: 'Stock-fut', icon: 'fa-building' },
   'STOCK-OPT': { name: 'Stock-opt', icon: 'fa-layer-group' },
-  'NSE-EQ': { name: 'Nse-eq', icon: 'fa-landmark' },
+  'NSE-EQ': { name: 'Equity', icon: 'fa-landmark' },
+  'EQUITY': { name: 'Equity', icon: 'fa-landmark' },
+  'Equity': { name: 'Equity', icon: 'fa-landmark' },
   'CRYPTO': { name: 'CRYPTO', icon: 'fa-bitcoin-sign' },
   'COMEX': { name: 'Comex', icon: 'fa-gem' },
   'FOREX': { name: 'Forex', icon: 'fa-globe' },
@@ -258,8 +260,8 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
     async function loadLibrary() {
       try {
-        const res = await api.get<{ success: boolean; segments: any[] }>('/api/market/instruments/library');
-        if (res && res.success && Array.isArray(res.segments) && isSubscribed) {
+        const res = await api.get<{ success?: boolean; segments: any[] }>('/api/market/instruments/library');
+        if (res && Array.isArray(res.segments) && isSubscribed) {
           const mapped: Segment[] = res.segments.map(s => {
             const display = DISPLAY_NAME_MAP[s.name] || { name: s.name, icon: s.icon || 'fa-folder' };
             const subCats = s.subCategories?.map((sc: any) => ({
@@ -387,7 +389,9 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
     'Mcx-opt': 'MCX-OPT',
     'Stock-fut': 'STOCK-FUT',
     'Stock-opt': 'STOCK-OPT',
+    'Equity': 'NSE-EQ',
     'Nse-eq': 'NSE-EQ',
+    'NSE-EQ': 'NSE-EQ',
     'Crypto': 'CRYPTO',
     'Comex': 'COMEX',
     'Forex': 'FOREX',
@@ -396,7 +400,7 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
   const visibleSegments = tradingSegments.filter(seg => {
     if (allowedSegments.length === 0) return true;
     const dbKey = SEGMENT_NAME_TO_DB_KEY[seg.name] ?? seg.name.toUpperCase();
-    return allowedSegments.includes(dbKey);
+    return allowedSegments.includes(dbKey) || allowedSegments.includes(seg.name) || (seg.name.toUpperCase() === 'EQUITY' && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity')));
   });
 
   return (

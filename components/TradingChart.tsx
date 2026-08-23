@@ -207,6 +207,7 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar 
     'STOCK-FUT': 'RELIANCE',
     'STOCK-OPT': 'RELIANCE',
     'NSE-EQ': 'RELIANCE',
+    'Equity': 'RELIANCE',
     'MCX-FUT': 'GOLD',
     'MCX-OPT': 'GOLD',
     'COMEX': 'GOLD',
@@ -219,7 +220,7 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar 
     const abortController = new AbortController();
 
     const timer = setTimeout(async () => {
-      const actualQuery = normalizedQuery.length >= 2 ? normalizedQuery : (SEGMENT_DEFAULTS[activeSearchTab] || 'NIFTY');
+      const actualQuery = normalizedQuery.length >= 1 ? normalizedQuery : (SEGMENT_DEFAULTS[activeSearchTab] || 'NIFTY');
       const qLower = actualQuery.toLowerCase();
 
       const localMatches = localScripts.filter(s => {
@@ -290,7 +291,7 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments, toggleStar 
       </div>
       <div className="tc-search-body-fs">
         <div className="tc-search-tabs">
-          {['All', 'INDEX-FUT', 'INDEX-OPT', 'MCX-FUT', 'MCX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'NSE-EQ', 'CRYPTO', 'COMEX', 'FOREX'].map(tab => (
+          {['All', 'INDEX-FUT', 'INDEX-OPT', 'MCX-FUT', 'MCX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'Equity', 'CRYPTO', 'COMEX', 'FOREX'].map(tab => (
             <div
               key={tab}
               className={`tc-search-tab ${activeSearchTab === tab ? 'active' : ''}`}
