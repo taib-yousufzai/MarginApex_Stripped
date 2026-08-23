@@ -59,17 +59,24 @@ export async function GET(req: NextRequest) {
     }
 
     // Yahoo Finance API limits for intraday intervals relative to current time
+    let minP1 = 0;
     if (interval === '1m') {
-      const minP1 = nowSec - 6 * 86400;
-      if (period1 < minP1) period1 = minP1;
+      minP1 = nowSec - 6 * 86400;
     } else if (['5m', '15m', '30m', '60m'].includes(interval)) {
-      const minP1 = nowSec - 58 * 86400;
-      if (period1 < minP1) period1 = minP1;
+      minP1 = nowSec - 58 * 86400;
+    }
+
+    if (minP1 > 0) {
+      if (period2 <= minP1) {
+        return NextResponse.json({ candles: [] });
+      }
+      if (period1 < minP1) {
+        period1 = minP1;
+      }
     }
 
     if (period2 <= period1) {
-      period2 = nowSec;
-      period1 = interval === '1m' ? nowSec - 6 * 86400 : nowSec - 5 * 86400;
+      return NextResponse.json({ candles: [] });
     }
 
     const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=${interval}&period1=${period1}&period2=${period2}`;
