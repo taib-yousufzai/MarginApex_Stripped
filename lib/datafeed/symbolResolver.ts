@@ -4,11 +4,17 @@ type ResolutionString = any;
 export function isForexSymbol(symbolName: string): boolean {
   if (!symbolName) return false;
   let upper = symbolName.toUpperCase().trim();
+  
+  // Indian currency futures (USDINR, EURINR, GBPINR, JPYINR futures) are Kite CDS instruments, NOT Yahoo Forex
+  if (upper.includes('INR') || upper.endsWith('FUT') || upper.startsWith('CDS:')) {
+    return false;
+  }
+
   if (upper.startsWith('FOREX:')) return true;
   if (upper.endsWith('=X')) upper = upper.slice(0, -2);
   const clean = (upper.includes(':') ? upper.split(':')[1] : upper).replace(/\//g, '');
-  const FOREX_PAIRS = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'];
-  return FOREX_PAIRS.includes(clean);
+  const FOREX_PAIRS = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY', 'CHFJPY', 'NZDJPY', 'EURAUD', 'EURCAD', 'EURNZD', 'GBPAUD', 'GBPCAD', 'GBPNZD'];
+  return FOREX_PAIRS.includes(clean) || (clean.length === 6 && !clean.includes('INR'));
 }
 
 /**
@@ -58,13 +64,6 @@ export function deriveExchange(symbolName: string): string {
 
 /**
  * Builds a TradingView `LibrarySymbolInfo` object for the given symbol and segment.
- *
- * - CRYPTO path: symbolName ends with "USDT" OR segment === "CRYPTO" (case-insensitive)
- *   → session "24x7", exchange "BINANCE"
- * - FOREX path: segment === "FOREX" OR isForexSymbol
- *   → session "24x7", exchange "FOREX"
- * - Indian path: all other symbols
- *   → session "0915-1530", exchange derived from kiteSymbol prefix via `deriveExchange`
  */
 export function formatShortName(name: string): string {
   // Check for Options (e.g., NIFTY2672124200CE)
@@ -84,26 +83,27 @@ export function formatShortName(name: string): string {
 }
 
 export function buildSymbolInfo(symbolName: string, segment: string): LibrarySymbolInfo {
-  const isForex = segment.toUpperCase() === 'FOREX' || isForexSymbol(symbolName);
+  const upperSym = symbolName.toUpperCase();
+  const isGlobalForex = isForexSymbol(symbolName) || (segment.toUpperCase() === 'FOREX' && !upperSym.includes('INR') && !upperSym.endsWith('FUT') && !upperSym.startsWith('CDS:'));
   const isCrypto =
-    !isForex && (symbolName.endsWith('USDT') || segment.toUpperCase() === 'CRYPTO');
+    !isGlobalForex && (symbolName.endsWith('USDT') || segment.toUpperCase() === 'CRYPTO');
 
   const colonIdx = symbolName.indexOf(':');
   const rawName = colonIdx >= 0 ? symbolName.slice(colonIdx + 1) : symbolName;
   let name = formatShortName(rawName);
-  if (isForex) {
+  if (isGlobalForex) {
     if (name.endsWith('=X')) name = name.slice(0, -2);
     name = name.replace(/\//g, '');
   }
   
-  const exchange = isForex ? 'FOREX' : isCrypto ? 'BINANCE' : deriveExchange(symbolName);
-  let ticker = (isCrypto || isForex || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
+  const exchange = isGlobalForex ? 'FOREX' : isCrypto ? 'BINANCE' : deriveExchange(symbolName);
+  let ticker = (isCrypto || isGlobalForex || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
   if (exchange === 'MCX' && ticker.startsWith('NFO:')) {
     ticker = `MCX:${ticker.slice(4)}`;
   }
   
   let session = '0915-1530';
-  if (isCrypto || isForex) session = '24x7';
+  if (isCrypto || isGlobalForex) session = '24x7';
   else if (exchange === 'MCX') session = '0900-2355';
   else if (exchange === 'CDS') session = '0900-1700';
 
@@ -112,13 +112,13 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
   return {
     name,
     ticker,
-    description: rawName, // Keep the full original name in description
-    type: isCrypto ? 'crypto' : isForex ? 'forex' : 'stock',
+    description: rawName,
+    type: isCrypto ? 'crypto' : isGlobalForex ? 'forex' : 'stock',
     exchange,
     listed_exchange: exchange,
     session,
     timezone: 'Asia/Kolkata',
-    pricescale: isCrypto ? 100000 : isJpy ? 1000 : isForex ? 100000 : 100,
+    pricescale: isCrypto ? 100000 : (isJpy && isGlobalForex) ? 1000 : isGlobalForex ? 100000 : exchange === 'CDS' ? 10000 : 100,
     minmov: 1,
     has_intraday: true,
     has_daily: true,

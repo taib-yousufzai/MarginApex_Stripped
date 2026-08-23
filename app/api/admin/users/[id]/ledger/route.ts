@@ -9,7 +9,7 @@
  * 4. Log to act_logs.
  */
 
-import { requireAdmin } from '../../../_auth';
+import { requireSuperAdmin } from '../../../_auth';
 import { getRole } from '../../../../../../lib/auth';
 import type { EntryType, Direction } from '../../../../../../lib/ledger';
 import { logAction, extractClientIp } from '@/lib/actionLogger';
@@ -26,7 +26,7 @@ export async function POST(
 
   try {
     ipAddress = extractClientIp(request.headers);
-    const authResult = await requireAdmin(request);
+    const authResult = await requireSuperAdmin(request);
     if (authResult instanceof Response) return authResult;
     
     callerUser = authResult.callerUser;

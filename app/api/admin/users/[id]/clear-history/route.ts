@@ -10,7 +10,7 @@
  * - History view and weekly metrics will exclude pre-reset closed trades/orders.
  */
 
-import { requireAdmin } from '@/app/api/admin/_auth';
+import { requireSuperAdmin } from '@/app/api/admin/_auth';
 import { auditLog } from '../../../../../../lib/audit';
 
 export async function POST(
@@ -18,8 +18,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ): Promise<Response> {
   try {
-    // 1. Authenticate and authorize caller (must be admin or super_admin)
-    const authResult = await requireAdmin(request);
+    // 1. Authenticate and authorize caller (must be super_admin)
+    const authResult = await requireSuperAdmin(request);
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 

@@ -50,18 +50,21 @@ function isValidStockSymbol(name: string): boolean {
   if (!name) return false;
   const clean = name.trim().toUpperCase();
 
-  // 1. Filter out index underlyings and MCX commodities
+  // 1. Filter out index underlyings, MCX commodities, and currency pairs
   if (isIndexUnderlying(clean) || isMcxCommodity(clean)) return false;
+  const CURRENCY_PAIRS = new Set(['USDINR', 'EURINR', 'GBPINR', 'JPYINR', 'EURUSD', 'GBPUSD', 'USDJPY']);
+  if (CURRENCY_PAIRS.has(clean)) return false;
 
   // 2. Reject if starts with a digit or number (e.g. 0ABCL, 1003IIFL, 0HFL, 0IRFC, 0MOFSL)
   if (/^\d/.test(clean)) return false;
 
-  // 3. Reject debt/bond/series hyphens (e.g. -N0, -NC, -Z4, -BW, -NV, -ZQ, -NX, -NR, -SF, -RL, -MF, -GS, -GB, -N1..9, -Y0..9, -YW)
-  if (/-(SF|RL|MF|GS|GB|NC|NR|NX|ZQ|BW|NV|YW|EQ|SG|W\d|Y\d|Z\d|N\d)$/i.test(clean)) return false;
+  // 3. Reject debt/bond/series hyphens/suffixes (e.g. -N0, -NC, -Z4, -BW, -NV, -ZQ, -NX, -NR, -SF, -RL, -MF, -GS, -GB, -SG, -SM, -NP, -YC, -BE, -BL, -ST, -W1, -Y1, -Z1)
+  if (/-(SF|RL|MF|GS|GB|NC|NR|NX|ZQ|BW|NV|YW|EQ|SG|SM|NP|YC|BE|BL|ST|W\d|Y\d|Z\d|N\d)$/i.test(clean)) return false;
   if (/-\d+[A-Z0-9]*/.test(clean) || /\d+-[A-Z0-9]*/.test(clean)) return false;
 
-  // 4. Reject if contains '(EQ)' or spaces or invalid characters
-  if (clean.includes('(EQ)') || clean.includes(' ') || clean.includes('.')) return false;
+  // 4. Reject NAV mutual funds, ETFs, indices, or junk patterns
+  if (clean.endsWith('NAV') || clean.includes('(EQ)') || clean.includes(' ') || clean.includes('.')) return false;
+  if (clean.includes('NIFTY') || clean.includes('SENSEX') || clean.includes('GOLD') || clean.includes('SILVER') || clean.includes('INV') || clean.includes('ETF') || clean.includes('LIQUID')) return false;
 
   // 5. Allow standard clean ticker formats (e.g. RELIANCE, TCS, INFY, TATAMOTORS, HDFCBANK, M&M, BAJAJ-AUTO)
   if (!/^[A-Z][A-Z0-9&\-]{1,14}$/.test(clean)) return false;
@@ -377,7 +380,9 @@ export async function GET(request: Request) {
     if (mcxOptCats.length > 0) segments.push({ name: 'MCX-OPT', icon: 'fa-oil-well', subCategories: mcxOptCats });
 
     // 4. Stock-FUT, Stock-OPT, Nse-EQ (Top 500 stocks prioritizing Nifty 50)
-    const NIFTY_50_STOCKS = [
+    // 4. Stock-FUT, Stock-OPT, Nse-EQ (Top 500 most traded / recognizable equities)
+    const TOP_RECOGNIZABLE_STOCKS = [
+      // Nifty 50
       "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL", "ITC", "SBIN",
       "LTIM", "LT", "AXISBANK", "KOTAKBANK", "HCLTECH", "BAJFINANCE", "SUNPHARMA", "M&M",
       "MARUTI", "ULTRACEMCO", "NTPC", "TITAN", "TATAMOTORS", "TATASTEEL", "ASIANPAINT",
@@ -385,10 +390,37 @@ export async function GET(request: Request) {
       "TRENT", "GRASIM", "TECHM", "NESTLEIND", "HINDUNILVR", "BEL", "HDFCLIFE", "BAJAJ-AUTO",
       "CIPLA", "SHRIRAMFIN", "TATACONSUM", "DRREDDY", "WIPRO", "IOC", "BPCL", "EICHERMOT",
       "HEROMOTOCO", "APOLLOHOSP", "INDUSINDBK", "DIVISLAB", "HINDALCO", "SBILIFE", "BRITANNIA",
-      "HAL", "ZOMATO", "JIOFIN", "VBL", "DLF", "GAIL", "PFC", "RECLTD", "TATAELXSI", "PIDILITIND", "INDIGO"
+      "HAL", "ZOMATO", "JIOFIN", "VBL", "DLF", "GAIL", "PFC", "RECLTD", "TATAELXSI", "PIDILITIND", "INDIGO",
+
+      // Nifty Next 50 & Top Large/Mid-caps
+      "ABB", "ADANIENSOL", "ADANIGREEN", "ADANIPOWER", "ATGL", "AMBUJACEM", "BANKBARODA", "BERGEPAINT",
+      "BOSCHLTD", "CANBK", "CHOLAFIN", "COLPAL", "DMART", "GODREJCP", "HAVELLS",
+      "ICICIGI", "ICICIPRULI", "IRCTC", "IRFC", "NAUKRI", "JINDALSTEL", "JSWENERGY",
+      "LICI", "LODHA", "MAXHEALTH", "MOTHERSON", "MUTHOOTFIN", "NHPC", "OIL", "ONGC", "PAYTM", "POLYCAB",
+      "PNB", "SBICARD", "SRF", "SHREECEM", "SOLARINDS", "TATACOMM", "TATAPOWER",
+      "TORNTPHARM", "TVSMOTOR", "UNITDSPR", "VEDL",
+
+      // High Volume Traded & Popular (PSU, Railways, Defense, Tech, Retail)
+      "RVNL", "SJVN", "IREDA", "MAZDOCK", "COCHINSHIP", "GRSE", "BHEL", "BDL", "DATAPATTERNS", "IDEA",
+      "SUZLON", "YESBANK", "IDFCFIRSTB", "FEDERALBNK", "IDBI", "UNIONBANK", "IOB", "UCOBANK", "CENTRALBK",
+      "BANKINDIA", "PSB", "INDIANB", "MAHABANK", "RBLBANK", "BANDHANBNK", "AUBANK", "KARURVYSYA", "CUB",
+      "NYKAA", "POLICYBZR", "DELHIVERY", "SWIGGY", "HYUNDAI", "OLAELEC", "CDSL", "BSE", "MCX", "ANGELONE",
+      "IEX", "HUDCO", "NBCC", "IRCON", "RAILTEL", "RITES", "TITAGARH", "TEXRAIL", "NLCINDIA",
+      "NMDC", "KIOCL", "HINDPETRO", "MRPL", "CHENNPETRO", "GSPL", "IGL", "MGL", "GUJGASLTD", "PETRONET",
+      "MANAPPURAM", "POONAWALLA", "L&TFH", "CREDITACC", "M&MFIN", "CHOLAHLDNG", "ABCAPITAL", "MUTHOOTMF",
+      "KAYNES", "DIXON", "AMBER", "SYRMA", "NETWEB", "CYIENT", "PERSISTENT", "COFORGE", "MPHASIS", "LTTS",
+      "TATATECH", "KPITTECH", "OFSS", "SONACOMS", "UNOMINDS", "MOTILALOFS", "NUVAMA",
+      "JUBLFOOD", "DEVYANI", "WESTLIFE", "VARUN", "CAMPUS", "BATAINDIA", "RELAXO",
+      "METROBRAND", "KALYANKJIL", "SENCO", "PAGEIND", "RAYMOND", "ARVIND", "KPRMILL", "GOCOLORS",
+      "MANKIND", "ASTRAZEN", "GLAXO", "SANOFI", "LUPIN", "ALKEM", "GLENMARK", "BIOCON",
+      "GRANULES", "LAURUSLABS", "NATCOPHARM", "NEULANDLAB", "AJANTPHARM", "JBCHEPHARM", "IPCABAL",
+      "EXIDEIND", "AMARARAJA", "SUPRAJIT", "ENDURANCE", "CRAFTSMAN", "BALKRISIND", "MRF", "APOLLOTYRE",
+      "CEATLTD", "JKTYRE", "TVSSRICHAK", "CUMMINSIND", "CGPOWER", "VOLTAS",
+      "BLUESTARCO", "WHIRLPOOL", "SYMPHONY", "CROMPTON", "KEI", "RRKABEL", "FINCABLES",
+      "APARINDS", "KEC", "PGEL", "VGUARD", "KIRLOSENG", "ELGIEQUIP"
     ];
 
-    // a. NSE-EQ: Top 500 equities prioritizing Nifty 50 and F&O underlyings first
+    // a. NSE-EQ: Top 500 equities prioritizing Nifty 50, F&O underlyings, and top recognizable stocks
     const { data: futUnderlyings } = await getSupabase()
       .from('instruments')
       .select('name')
@@ -396,59 +428,67 @@ export async function GET(request: Request) {
       .eq('exchange', 'NFO');
 
     const foStockSymbols = Array.from(new Set((futUnderlyings || []).map((f: any) => f.name))).filter(Boolean);
-    const prioritySymbols = Array.from(new Set([...NIFTY_50_STOCKS, ...foStockSymbols]));
+    const prioritySymbols = Array.from(new Set([...TOP_RECOGNIZABLE_STOCKS, ...foStockSymbols])).filter(isValidStockSymbol);
 
+    // Fetch existing EQ instruments from Supabase DB
     const { data: prioEqData } = await getSupabase()
       .from('instruments')
       .select('tradingsymbol, name, exchange, instrument_type, lot_size')
       .eq('exchange', 'NSE')
-      .eq('instrument_type', 'EQ')
-      .in('tradingsymbol', prioritySymbols);
+      .eq('instrument_type', 'EQ');
 
-    const prioSet = new Set((prioEqData || []).map((i: any) => i.tradingsymbol));
-    const sortedPrioEq = (prioEqData || [])
-      .filter((i: any) => isValidStockSymbol(i.tradingsymbol))
-      .sort((a: any, b: any) => {
-        const idxA = NIFTY_50_STOCKS.indexOf(a.tradingsymbol);
-        const idxB = NIFTY_50_STOCKS.indexOf(b.tradingsymbol);
-        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-        if (idxA !== -1) return -1;
-        if (idxB !== -1) return 1;
-        return a.tradingsymbol.localeCompare(b.tradingsymbol);
-      });
+    const dbEqMap = new Map<string, any>();
+    (prioEqData || []).forEach((i: any) => {
+      if (isValidStockSymbol(i.tradingsymbol)) {
+        dbEqMap.set(i.tradingsymbol, i);
+      }
+    });
 
-    const neededRemaining = Math.max(0, 500 - sortedPrioEq.length);
-    const { data: fillEqData } = await getSupabase()
-      .from('instruments')
-      .select('tradingsymbol, name, exchange, instrument_type, lot_size')
-      .eq('exchange', 'NSE')
-      .eq('instrument_type', 'EQ')
-      .gte('tradingsymbol', 'A')
-      .order('tradingsymbol', { ascending: true })
-      .limit(Math.max(2500, neededRemaining * 8));
+    const nseEqInstruments: any[] = [];
+    const addedEqSymbols = new Set<string>();
 
-    const extraEq = (fillEqData || [])
-      .filter((i: any) => isValidStockSymbol(i.tradingsymbol) && !prioSet.has(i.tradingsymbol))
-      .slice(0, neededRemaining);
+    // Priority 1: Add curated Nifty 50 & top recognizable / F&O stock underlyings first
+    prioritySymbols.forEach((sym) => {
+      if (!addedEqSymbols.has(sym) && nseEqInstruments.length < 500) {
+        addedEqSymbols.add(sym);
+        const existing = dbEqMap.get(sym);
+        nseEqInstruments.push({
+          name: sym,
+          symbol: sym,
+          kiteSymbol: existing ? `${existing.exchange}:${existing.tradingsymbol}` : `NSE:${sym}`,
+          price: 0,
+          change: '0%',
+          segment: `${existing ? existing.exchange : 'NSE'} - Equity`,
+          contractDate: '',
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+          lotSize: existing?.lot_size || 1,
+        });
+      }
+    });
 
-    const combinedEqData = [...sortedPrioEq, ...extraEq];
-
-    const nseEqInstruments = combinedEqData
-      .map((i: any) => ({
-        name: i.tradingsymbol,
-        symbol: i.tradingsymbol,
-        kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
-        price: 0,
-        change: '0%',
-        segment: `${i.exchange} - Equity`,
-        contractDate: '',
-        open: 0,
-        high: 0,
-        low: 0,
-        close: 0,
-        lotSize: i.lot_size || 1,
-      }))
-      .slice(0, 500);
+    // Priority 2: Fill remaining up to 500 from clean valid DB equities
+    dbEqMap.forEach((inst: any, sym: string) => {
+      if (!addedEqSymbols.has(sym) && nseEqInstruments.length < 500) {
+        addedEqSymbols.add(sym);
+        nseEqInstruments.push({
+          name: sym,
+          symbol: sym,
+          kiteSymbol: `${inst.exchange}:${inst.tradingsymbol}`,
+          price: 0,
+          change: '0%',
+          segment: `${inst.exchange} - Equity`,
+          contractDate: '',
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+          lotSize: inst.lot_size || 1,
+        });
+      }
+    });
 
 
     // b. Stock-FUT: batch fetch up to 500 Stock Futures

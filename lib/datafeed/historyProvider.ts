@@ -23,17 +23,22 @@ export async function fetchBars(
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   try {
     const canonicalSymbol = getCanonicalSymbol(symbolInfo);
-    const isForex =
-      segment.toUpperCase() === 'FOREX' ||
-      symbolInfo?.exchange === 'FOREX' ||
-      isForexSymbol(canonicalSymbol);
+    const upperSym = canonicalSymbol.toUpperCase();
+    const isGlobalYahooForex =
+      isForexSymbol(canonicalSymbol) ||
+      (segment.toUpperCase() === 'FOREX' &&
+        symbolInfo?.exchange === 'FOREX' &&
+        !upperSym.includes('INR') &&
+        !upperSym.endsWith('FUT') &&
+        !upperSym.startsWith('CDS:'));
+        
     const isCrypto =
-      !isForex &&
+      !isGlobalYahooForex &&
       (segment.toUpperCase() === 'CRYPTO' || canonicalSymbol.endsWith('USDT'));
 
     if (isCrypto) {
       return fetchBinanceBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
-    } else if (isForex) {
+    } else if (isGlobalYahooForex) {
       return fetchYahooForexBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     } else {
       return fetchKiteBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);

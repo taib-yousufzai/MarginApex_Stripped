@@ -6,7 +6,7 @@
  * Validates: Requirements 4.2–4.10, 5.2–5.8, 8.5–8.7, 13.7
  */
 
-import { requireAdmin } from '../../_auth';
+import { requireAdmin, requireSuperAdmin } from '../../_auth';
 import { getRole } from '../../../../../lib/auth';
 
 // Profile fields that can be updated via PATCH (password is handled separately)
@@ -273,9 +273,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ): Promise<Response> {
   try {
-    // Step 1: Authenticate and authorize the caller
+    // Step 1: Authenticate and authorize the caller (super_admin only)
     // Validates: Requirements 2.1–2.7
-    const authResult = await requireAdmin(request);
+    const authResult = await requireSuperAdmin(request);
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 

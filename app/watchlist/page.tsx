@@ -2522,12 +2522,13 @@ function WatchlistContent() {
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
               {chartItem && (() => {
                 console.log('[CHART PERF REACTION] Rendering TradingChart for chartItem:', chartItem.symbol, chartItem.segment);
-                const isForex = chartItem.category === 'FOREX' || chartItem.segment?.toUpperCase() === 'FOREX' || isForexSymbol(chartItem.symbol) || isForexSymbol(chartItem.comexSymbol || '');
-                const isChartComex = !isForex && !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
+                const symUpper = chartItem.symbol.toUpperCase();
+                const isGlobalForex = isForexSymbol(chartItem.symbol) || isForexSymbol(chartItem.comexSymbol || '') || (chartItem.segment?.toUpperCase() === 'FOREX' && !symUpper.includes('INR') && !symUpper.endsWith('FUT') && !symUpper.startsWith('CDS:'));
+                const isChartComex = !isGlobalForex && !!chartItem.comexSymbol && (!(chartItem.kiteSymbol) || (chartItem as any).preferredView === 'comex');
                 return (
                   <TradingChart
-                    symbol={isForex ? (chartItem.comexSymbol || chartItem.symbol) : isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
-                    segment={isForex ? 'FOREX' : isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
+                    symbol={isGlobalForex ? (chartItem.comexSymbol || chartItem.symbol) : isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
+                    segment={isGlobalForex ? 'FOREX' : isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
                   />
                 );
               })()}

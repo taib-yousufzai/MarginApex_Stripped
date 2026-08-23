@@ -5,7 +5,7 @@
  * Validates: Requirements 6.1–6.11, 7.1–7.5, 18.1, 18.2, 19.1
  */
 
-import { requireAdmin } from '../../_auth';
+import { requireSuperAdmin } from '../../_auth';
 
 // ---------------------------------------------------------------------------
 // PATCH handler — approve or reject
@@ -16,9 +16,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ): Promise<Response> {
   try {
-    // Step 1: Authenticate and authorize the caller
+    // Step 1: Authenticate and authorize the caller (super_admin only)
     // Validates: Requirements 6.1, 19.1
-    const authResult = await requireAdmin(request);
+    const authResult = await requireSuperAdmin(request);
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 
@@ -167,9 +167,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ): Promise<Response> {
   try {
-    // Step 1: Authenticate and authorize the caller
+    // Step 1: Authenticate and authorize the caller (super_admin only)
     // Validates: Requirements 7.1, 19.1
-    const authResult = await requireAdmin(request);
+    const authResult = await requireSuperAdmin(request);
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 

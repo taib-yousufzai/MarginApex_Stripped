@@ -113,13 +113,18 @@ export async function GET(req: NextRequest) {
     const candles: any[][] = [];
 
     for (let i = 0; i < timestamps.length; i++) {
+      const ts = timestamps[i];
+      // Yahoo Finance ignores period2 for intraday intervals and returns data up to the current moment.
+      // We must strictly filter out any candle with timestamp > period2 or < period1 to prevent TradingView bar cache corruption.
+      if (ts < period1 || ts > period2) continue;
+
       const open = opens[i];
       const high = highs[i];
       const low = lows[i];
       const close = closes[i];
 
       if (open != null && high != null && low != null && close != null && isFinite(close)) {
-        const timeIso = new Date(timestamps[i] * 1000).toISOString();
+        const timeIso = new Date(ts * 1000).toISOString();
         candles.push([
           timeIso,
           open,

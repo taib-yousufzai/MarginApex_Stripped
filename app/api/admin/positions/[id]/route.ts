@@ -17,7 +17,7 @@
  * Validates: Requirements 7.8–7.9, 12.1–12.6
  */
 
-import { requireAdmin } from '../../_auth';
+import { requireAdmin, requireSuperAdmin } from '../../_auth';
 import { requireAuth as apiRequireAuth } from '@/lib/api-middleware';
 import { checkAndExecuteAccountLiquidation } from '@/lib/liquidationEngine';
 import {
@@ -427,8 +427,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> | { id: string } },
 ): Promise<Response> {
   try {
-    // Step 1: Authenticate and authorize the caller
-    const authResult = await requireAdmin(request);
+    // Step 1: Authenticate and authorize the caller (super_admin only)
+    const authResult = await requireSuperAdmin(request);
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 
