@@ -652,29 +652,100 @@ export async function GET(request: Request) {
       });
     }
 
-    // 7. Forex — apply applyForexFilter (excludes CE/PE options, keeps Futures only)
+    // 7. Forex — deduplicated, including Global USD pairs and INR Currency Futures
     const currencies = ['USDINR', 'EURINR', 'GBPINR', 'JPYINR'];
-    const forexInstruments: any[] = [];  // flat — no subCategories
+    const forexInstruments: any[] = [];
+    const seenForexSymbols = new Set<string>();
 
-    await Promise.all(currencies.map(async (curr) => {
-      const { data: futs } = await getSupabase().from('instruments').select('*').eq('name', curr).in('instrument_type', ['FUTCUR', 'FUT', 'MAPPED_FUT']).gte('expiry', today).order('expiry', { ascending: true }).limit(2);
-      const { data: expData } = await getSupabase().rpc('get_option_expiries', { p_symbol: curr, p_min_date: today });
-      let opts: any[] | null = null;
-      if (expData && expData.length > 0) {
-        const nearestExpiry = expData[0].expiry;
-        const { data } = await getSupabase().from('instruments').select('*').eq('name', curr).eq('expiry', nearestExpiry).order('strike_price', { ascending: true });
-        opts = data;
+    // a. Global USD Forex pairs (EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD)
+    const { data: globalForex } = await getSupabase()
+      .from('instruments')
+      .select('*')
+      .or('segment.eq.FOREX,exchange.eq.FOREX,instrument_type.eq.FOREX');
+
+    if (globalForex && globalForex.length > 0) {
+      globalForex.forEach((i: any) => {
+        const sym = i.tradingsymbol || i.id;
+        if (sym && !seenForexSymbols.has(sym)) {
+          seenForexSymbols.add(sym);
+          forexInstruments.push({
+            name: i.name || sym,
+            symbol: sym,
+            kiteSymbol: `${i.exchange || 'FOREX'}:${sym}`,
+            price: 0,
+            change: '0%',
+            segment: 'FOREX',
+            contractDate: '',
+            open: 0,
+            high: 0,
+            low: 0,
+            close: 0,
+            lotSize: i.lot_size || 1,
+          });
+        }
+      });
+    }
+
+    const standardUsdPairs = [
+      { symbol: 'EURUSD', name: 'EUR/USD' },
+      { symbol: 'GBPUSD', name: 'GBP/USD' },
+      { symbol: 'USDJPY', name: 'USD/JPY' },
+      { symbol: 'USDCHF', name: 'USD/CHF' },
+      { symbol: 'USDCAD', name: 'USD/CAD' },
+      { symbol: 'AUDUSD', name: 'AUD/USD' },
+    ];
+    standardUsdPairs.forEach((p) => {
+      if (!seenForexSymbols.has(p.symbol)) {
+        seenForexSymbols.add(p.symbol);
+        forexInstruments.push({
+          name: p.name,
+          symbol: p.symbol,
+          kiteSymbol: `FOREX:${p.symbol}`,
+          price: 0,
+          change: '0%',
+          segment: 'FOREX',
+          contractDate: '',
+          open: 0,
+          high: 0,
+          low: 0,
+          close: 0,
+          lotSize: 1,
+        });
       }
+    });
 
-      // Combine futs + opts, apply forex filter (removes CE/PE), push flat
-      const combined: Instrument[] = [...(futs ?? []), ...(opts ?? [])] as Instrument[];
-      const filtered = applyForexFilter(combined);
+    // b. INR Currency Futures (USDINR, EURINR, GBPINR, JPYINR)
+    await Promise.all(currencies.map(async (curr) => {
+      const { data: futs } = await getSupabase()
+        .from('instruments')
+        .select('*')
+        .eq('name', curr)
+        .in('instrument_type', ['FUTCUR', 'FUT', 'MAPPED_FUT'])
+        .gte('expiry', today)
+        .order('expiry', { ascending: true })
+        .limit(2);
+
+      const filtered = applyForexFilter((futs ?? []) as Instrument[]);
 
       filtered.forEach((i: any) => {
-        const entry = ['CE', 'PE'].includes(i.option_type)
-          ? { name: safeOptName(i), symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`, price: 0, change: '0%', segment: `${i.exchange} - Options`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size }
-          : { name: i.tradingsymbol, symbol: i.tradingsymbol, kiteSymbol: `${i.exchange}:${i.tradingsymbol}`, price: 0, change: '0%', segment: `${i.exchange} - Futures`, contractDate: i.expiry, open: 0, high: 0, low: 0, close: 0, lotSize: i.lot_size };
-        forexInstruments.push(entry);
+        const sym = i.tradingsymbol;
+        if (sym && !seenForexSymbols.has(sym)) {
+          seenForexSymbols.add(sym);
+          forexInstruments.push({
+            name: i.tradingsymbol,
+            symbol: i.tradingsymbol,
+            kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+            price: 0,
+            change: '0%',
+            segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Futures`,
+            contractDate: i.expiry,
+            open: 0,
+            high: 0,
+            low: 0,
+            close: 0,
+            lotSize: i.lot_size || 0,
+          });
+        }
       });
     }));
 
