@@ -178,9 +178,9 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
     icon: 'fa-bitcoin-sign',
     count: 3,
     instruments: [
-      { name: 'BTC/USDT', symbol: 'BTCUSDT', segment: 'Crypto' },
-      { name: 'ETH/USDT', symbol: 'ETHUSDT', segment: 'Crypto' },
-      { name: 'DOGE/USDT', symbol: 'DOGEUSDT', segment: 'Crypto' }
+      { name: 'BTC/USDT', symbol: 'BTCUSDT', segment: 'CRYPTO' },
+      { name: 'ETH/USDT', symbol: 'ETHUSDT', segment: 'CRYPTO' },
+      { name: 'DOGE/USDT', symbol: 'DOGEUSDT', segment: 'CRYPTO' }
     ]
   },
   {
@@ -210,14 +210,14 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
 const DISPLAY_NAME_MAP: Record<string, { name: string; icon: string }> = {
   'INDEX-FUT': { name: 'Index-fut', icon: 'fa-chart-line' },
   'INDEX-OPT': { name: 'Index-opt', icon: 'fa-chart-gantt' },
-  'MCX-FUT':   { name: 'Mcx-fut', icon: 'fa-coins' },
-  'MCX-OPT':   { name: 'Mcx-opt', icon: 'fa-circle-dot' },
+  'MCX-FUT': { name: 'Mcx-fut', icon: 'fa-coins' },
+  'MCX-OPT': { name: 'Mcx-opt', icon: 'fa-circle-dot' },
   'STOCK-FUT': { name: 'Stock-fut', icon: 'fa-building' },
   'STOCK-OPT': { name: 'Stock-opt', icon: 'fa-layer-group' },
-  'NSE-EQ':    { name: 'Nse-eq', icon: 'fa-landmark' },
-  'CRYPTO':    { name: 'Crypto', icon: 'fa-bitcoin-sign' },
-  'COMEX':     { name: 'Comex', icon: 'fa-gem' },
-  'FOREX':     { name: 'Forex', icon: 'fa-globe' },
+  'NSE-EQ': { name: 'Nse-eq', icon: 'fa-landmark' },
+  'CRYPTO': { name: 'Crypto', icon: 'fa-bitcoin-sign' },
+  'COMEX': { name: 'Comex', icon: 'fa-gem' },
+  'FOREX': { name: 'Forex', icon: 'fa-globe' },
 };
 
 interface TradingSegmentsDrawerProps {
@@ -381,16 +381,16 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
   };
 
   const SEGMENT_NAME_TO_DB_KEY: Record<string, string> = {
-    'Index-fut':   'INDEX-FUT',
-    'Index-opt':  'INDEX-OPT',
-    'Mcx-fut':     'MCX-FUT',
-    'Mcx-opt':    'MCX-OPT',
-    'Stock-fut':  'STOCK-FUT',
+    'Index-fut': 'INDEX-FUT',
+    'Index-opt': 'INDEX-OPT',
+    'Mcx-fut': 'MCX-FUT',
+    'Mcx-opt': 'MCX-OPT',
+    'Stock-fut': 'STOCK-FUT',
     'Stock-opt': 'STOCK-OPT',
-    'Nse-eq':     'NSE-EQ',
-    'Crypto':           'CRYPTO',
-    'Comex':            'COMEX',
-    'Forex':            'FOREX',
+    'Nse-eq': 'NSE-EQ',
+    'Crypto': 'CRYPTO',
+    'Comex': 'COMEX',
+    'Forex': 'FOREX',
   };
 
   const visibleSegments = tradingSegments.filter(seg => {
@@ -401,8 +401,8 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
   return (
     <>
-      <div 
-        className={`lib-overlay ${isOpen ? 'active' : ''}`} 
+      <div
+        className={`lib-overlay ${isOpen ? 'active' : ''}`}
         onClick={onClose}
       />
       <div className={`lib-drawer ${isOpen ? 'open' : ''}`}>
@@ -419,7 +419,7 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
         <div className="lib-scroll-content">
           {visibleSegments.map((seg) => (
             <div key={seg.name} className="lib-seg-group">
-              <div 
+              <div
                 className={`lib-seg-header ${expandedSegment === seg.name ? 'is-expanded' : ''}`}
                 onClick={() => handleSegmentClick(seg.name)}
               >
@@ -442,28 +442,28 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
                   {seg.subCategories?.map(sub => {
                     const isSubOpen = !!expandedSubcategories[sub.name];
                     return (
-                    <div key={sub.name} className="lib-subcat">
-                      <div 
-                        className="lib-subcat-header"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedSubcategories(prev => ({ ...prev, [sub.name]: !isSubOpen }));
-                        }}
-                      >
-                        <i 
-                          className={`fas fa-chevron-right lib-arrow ${isSubOpen ? 'is-down' : ''}`}
-                          style={{ fontSize: '0.55rem', marginRight: '6px' }}
-                        ></i>
-                        <span className="lib-subcat-title">{sub.name}</span>
-                        <span className="lib-subcat-count">{sub.instruments?.length || 0}</span>
-                      </div>
-                      {isSubOpen && sub.instruments?.map((inst, idx) => (
-                        <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
-                          <span className="lib-inst-name">{inst.name}</span>
-                          <button className="lib-add-btn">+ Add</button>
+                      <div key={sub.name} className="lib-subcat">
+                        <div
+                          className="lib-subcat-header"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedSubcategories(prev => ({ ...prev, [sub.name]: !isSubOpen }));
+                          }}
+                        >
+                          <i
+                            className={`fas fa-chevron-right lib-arrow ${isSubOpen ? 'is-down' : ''}`}
+                            style={{ fontSize: '0.55rem', marginRight: '6px' }}
+                          ></i>
+                          <span className="lib-subcat-title">{sub.name}</span>
+                          <span className="lib-subcat-count">{sub.instruments?.length || 0}</span>
                         </div>
-                      ))}
-                    </div>
+                        {isSubOpen && sub.instruments?.map((inst, idx) => (
+                          <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
+                            <span className="lib-inst-name">{inst.name}</span>
+                            <button className="lib-add-btn">+ Add</button>
+                          </div>
+                        ))}
+                      </div>
                     );
                   })}
                 </div>
