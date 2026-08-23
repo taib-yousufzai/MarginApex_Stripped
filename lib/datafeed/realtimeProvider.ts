@@ -22,7 +22,7 @@ export interface SubscriberEntry {
 function normalizeSymbol(s: string): string {
   if (!s) return '';
   const canonical = getCanonicalSymbol(s);
-  return canonical.replace(/^(MCX|NSE|NFO|BSE|BFO|CDS):/i, '').trim().toUpperCase();
+  return canonical.replace(/^(MCX|NSE|NFO|BSE|BFO|CDS|FOREX):/i, '').trim().toUpperCase();
 }
 
 export class RealtimeProvider {

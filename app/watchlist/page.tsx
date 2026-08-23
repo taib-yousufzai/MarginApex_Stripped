@@ -92,11 +92,13 @@ const DEFAULT_CRYPTO_ITEMS: WatchlistItem[] = [
 // Update expiry month as contracts roll (format: CDS:XYZINR26MONFUT)
 
 const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
-  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', binanceSymbol: 'GBPUSDT', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', binanceSymbol: 'EURUSDT', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', comexSymbol: 'GBPUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', comexSymbol: 'EURUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', comexSymbol: 'USDJPY=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', comexSymbol: 'USDCHF=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', comexSymbol: 'USDCAD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', comexSymbol: 'AUDUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', comexSymbol: 'NZDUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
   { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },

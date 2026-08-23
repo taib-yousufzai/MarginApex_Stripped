@@ -1,12 +1,25 @@
 type LibrarySymbolInfo = any;
 type ResolutionString = any;
 
+export function isForexSymbol(symbolName: string): boolean {
+  if (!symbolName) return false;
+  const upper = symbolName.toUpperCase().trim();
+  if (upper.startsWith('FOREX:')) return true;
+  const clean = upper.includes(':') ? upper.split(':')[1] : upper;
+  const FOREX_PAIRS = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'];
+  return FOREX_PAIRS.includes(clean);
+}
+
 /**
  * Derives the exchange name from a Kite-style exchange-prefixed symbol.
  * Falls back to "NSE" for unrecognised or un-prefixed symbols.
  */
 export function deriveExchange(symbolName: string): string {
   const upper = symbolName.toUpperCase();
+
+  if (isForexSymbol(symbolName)) {
+    return 'FOREX';
+  }
 
   // Commodity contracts (GOLD, SILVER, CRUDEOIL, NATURALGAS, etc.) are always MCX
   if (
@@ -47,17 +60,10 @@ export function deriveExchange(symbolName: string): string {
  *
  * - CRYPTO path: symbolName ends with "USDT" OR segment === "CRYPTO" (case-insensitive)
  *   → session "24x7", exchange "BINANCE"
+ * - FOREX path: segment === "FOREX" OR isForexSymbol
+ *   → session "24x7", exchange "FOREX"
  * - Indian path: all other symbols
  *   → session "0915-1530", exchange derived from kiteSymbol prefix via `deriveExchange`
- *
- * The ":" separator is used to split the display name from the ticker:
- *   - If present: name = substring after ":", ticker = full symbolName
- *   - If absent:  name = ticker = symbolName
- *
- * Common fields always set:
- *   timezone: "Asia/Kolkata", pricescale: 100, minmov: 1,
- *   has_intraday: true, supported_resolutions: ['1','5','15','60','D'],
- *   format: 'price', data_status: 'streaming'
  */
 export function formatShortName(name: string): string {
   // Check for Options (e.g., NIFTY2672124200CE)
@@ -77,34 +83,37 @@ export function formatShortName(name: string): string {
 }
 
 export function buildSymbolInfo(symbolName: string, segment: string): LibrarySymbolInfo {
+  const isForex = segment.toUpperCase() === 'FOREX' || isForexSymbol(symbolName);
   const isCrypto =
-    symbolName.endsWith('USDT') || segment.toUpperCase() === 'CRYPTO';
+    !isForex && (symbolName.endsWith('USDT') || segment.toUpperCase() === 'CRYPTO');
 
   const colonIdx = symbolName.indexOf(':');
   const rawName = colonIdx >= 0 ? symbolName.slice(colonIdx + 1) : symbolName;
   const name = formatShortName(rawName);
   
-  const exchange = isCrypto ? 'BINANCE' : deriveExchange(symbolName);
-  let ticker = (isCrypto || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
+  const exchange = isForex ? 'FOREX' : isCrypto ? 'BINANCE' : deriveExchange(symbolName);
+  let ticker = (isCrypto || isForex || symbolName.includes(':')) ? symbolName : `${exchange}:${symbolName}`;
   if (exchange === 'MCX' && ticker.startsWith('NFO:')) {
     ticker = `MCX:${ticker.slice(4)}`;
   }
   
   let session = '0915-1530';
-  if (isCrypto) session = '24x7';
+  if (isCrypto || isForex) session = '24x7';
   else if (exchange === 'MCX') session = '0900-2355';
   else if (exchange === 'CDS') session = '0900-1700';
+
+  const isJpy = rawName.toUpperCase().includes('JPY');
 
   return {
     name,
     ticker,
     description: rawName, // Keep the full original name in description
-    type: isCrypto ? 'crypto' : 'stock',
+    type: isCrypto ? 'crypto' : isForex ? 'forex' : 'stock',
     exchange,
     listed_exchange: exchange,
     session,
     timezone: 'Asia/Kolkata',
-    pricescale: isCrypto ? 100000 : 100,
+    pricescale: isCrypto ? 100000 : isJpy ? 1000 : isForex ? 100000 : 100,
     minmov: 1,
     has_intraday: true,
     has_daily: true,

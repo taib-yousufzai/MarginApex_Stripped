@@ -98,8 +98,13 @@ export function mapSegmentWithSymbol(segment: string, symbol: string = ''): Segm
   const seg = segment.trim().toUpperCase();
   const sym = symbol.toUpperCase();
 
-  // Symbol-first: crypto symbols are unambiguous
+  // Symbol-first: forex & crypto symbols check
   if (sym) {
+    if (sym.startsWith('FOREX:')) return 'FOREX';
+    const cleanSym = sym.includes(':') ? sym.split(':')[1] : sym;
+    const FOREX_PAIRS = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'];
+    if (FOREX_PAIRS.includes(cleanSym)) return 'FOREX';
+
     const CRYPTO_BASES = ['BTC','ETH','DOGE','SOL','XRP','ADA','BNB','DOT','LTC','AVAX','MATIC'];
     if (CRYPTO_BASES.some(c => sym === c || sym.startsWith(c + 'USDT'))) return 'CRYPTO';
     if (sym.endsWith('USDT')) return 'CRYPTO';

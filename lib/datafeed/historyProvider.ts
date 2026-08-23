@@ -3,17 +3,14 @@ type LibrarySymbolInfo = any;
 type PeriodParams = any;
 type ResolutionString = any;
 import { resolutionToBinanceInterval, resolutionToKiteInterval } from './resolutionUtils';
-import { getCanonicalSymbol } from './symbolResolver';
+import { getCanonicalSymbol, isForexSymbol } from './symbolResolver';
 
 type BinanceKline = any[];
 
 /**
  * Fetches historical bars for a given symbol and resolution.
  *
- * Routes to the Binance API for CRYPTO symbols (segment === 'CRYPTO' or ticker ends with 'USDT'),
- * and to the internal Kite API for all other (Indian market) symbols.
- *
- * Throws on fetch/parse errors so the caller (Datafeed.getBars) can invoke onErrorCallback.
+ * Routes to Binance API for CRYPTO, Yahoo Finance for FOREX, and Kite API for all Indian symbols.
  */
 export async function fetchBars(
   symbolInfo: LibrarySymbolInfo,
@@ -26,18 +23,66 @@ export async function fetchBars(
 ): Promise<{ bars: Bar[]; noData: boolean }> {
   try {
     const canonicalSymbol = getCanonicalSymbol(symbolInfo);
+    const isForex =
+      segment.toUpperCase() === 'FOREX' ||
+      symbolInfo?.exchange === 'FOREX' ||
+      isForexSymbol(canonicalSymbol);
     const isCrypto =
-      segment.toUpperCase() === 'CRYPTO' ||
-      canonicalSymbol.endsWith('USDT');
+      !isForex &&
+      (segment.toUpperCase() === 'CRYPTO' || canonicalSymbol.endsWith('USDT'));
 
     if (isCrypto) {
       return fetchBinanceBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
+    } else if (isForex) {
+      return fetchYahooForexBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     } else {
       return fetchKiteBars(canonicalSymbol, resolution, periodParams, loadId, getBarsCallNum, loadStartTime);
     }
   } catch (err) {
     throw err;
   }
+}
+
+/**
+ * Fetches bars from the server-side Yahoo Finance Forex proxy API (/api/market/historical-forex).
+ */
+async function fetchYahooForexBars(
+  symbol: string,
+  resolution: ResolutionString,
+  periodParams: PeriodParams,
+  loadId: string,
+  getBarsCallNum: number,
+  loadStartTime: number
+): Promise<{ bars: Bar[]; noData: boolean }> {
+  const url =
+    `/api/market/historical-forex` +
+    `?symbol=${encodeURIComponent(symbol)}` +
+    `&interval=${encodeURIComponent(resolution)}` +
+    `&from=${periodParams.from * 1000}` +
+    `&to=${periodParams.to * 1000}`;
+
+  const fetchStart = performance.now();
+  console.log(`[CHART PERF ${loadId}] +${(fetchStart - loadStartTime).toFixed(1)}ms fetchBars #${getBarsCallNum} Forex START: ${symbol} (${resolution})`);
+
+  const json = await fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`Forex historical data fetch failed: ${r.status} ${r.statusText}`);
+    return r.json();
+  });
+
+  const duration = performance.now() - fetchStart;
+  const candles: any[][] = json?.candles ?? [];
+
+  const bars: Bar[] = candles.map((c) => ({
+    time: new Date(c[0]).getTime(),
+    open: c[1],
+    high: c[2],
+    low: c[3],
+    close: c[4],
+    volume: c[5] ?? 0,
+  }));
+
+  console.log(`[CHART PERF ${loadId}] +${(performance.now() - loadStartTime).toFixed(1)}ms fetchBars #${getBarsCallNum} Forex COMPLETE: ${symbol} -> ${bars.length} bars (fetch took ${duration.toFixed(1)}ms, noData=${bars.length === 0})`);
+  return { bars, noData: bars.length === 0 };
 }
 
 /**
