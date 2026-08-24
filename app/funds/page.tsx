@@ -394,7 +394,7 @@ export default function FundsPage() {
                                   <div className="upi-payment-info" style={{ textAlign: 'center' }}>
                                     <div className="qr-box-wrapper" style={{ marginBottom: '24px' }}>
                                       <div className="qr-container" style={{ background: 'white', padding: '20px', borderRadius: '24px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', border: '1px solid #eee' }}>
-                                        <QRCode value={`upi://pay?pa=${activeAccount.upi_id}&pn=${encodeURIComponent(activeAccount.account_holder)}&am=${amount}&cu=INR`} size={200} />
+                                        <QRCode value={activeAccount?.upi_id ? `upi://pay?pa=${activeAccount.upi_id}&pn=${encodeURIComponent(activeAccount.account_holder)}&am=${amount}&cu=INR` : 'upi://pay'} size={200} />
                                       </div>
                                       <button
                                         onClick={downloadQRCode}
@@ -406,12 +406,12 @@ export default function FundsPage() {
 
                                     <div className="section-divider" style={{ height: '1px', background: 'var(--border-card)', margin: '20px 0', borderBottom: '1px dashed var(--border-card)' }}></div>
 
-                                    <div className="copyable-row" onClick={() => copyToClipboard(activeAccount.upi_id, 'UPI ID')}>
-                                      <div><strong>UPI ID / VPA</strong><span>{activeAccount.upi_id}</span></div>
+                                    <div className="copyable-row" onClick={() => copyToClipboard(activeAccount?.upi_id || '—', 'UPI ID')}>
+                                      <div><strong>UPI ID / VPA</strong><span>{activeAccount?.upi_id || '—'}</span></div>
                                       <i className="fas fa-copy copy-icon"></i>
                                     </div>
-                                    <div className="copyable-row" onClick={() => copyToClipboard(activeAccount.account_holder, 'Beneficiary')}>
-                                      <div><strong>Beneficiary Name</strong><span>{activeAccount.account_holder}</span></div>
+                                    <div className="copyable-row" onClick={() => copyToClipboard(activeAccount?.account_holder || '—', 'Beneficiary')}>
+                                      <div><strong>Beneficiary Name</strong><span>{activeAccount?.account_holder || '—'}</span></div>
                                       <i className="fas fa-copy copy-icon"></i>
                                     </div>
 
@@ -422,10 +422,10 @@ export default function FundsPage() {
                                 ) : (
                                   <div className="bank-payment-info">
                                     {[
-                                      { label: 'Beneficiary', value: activeAccount.account_holder },
-                                      { label: 'Account No', value: activeAccount.account_no },
-                                      { label: 'IFSC Code', value: activeAccount.ifsc },
-                                      { label: 'Bank Name', value: activeAccount.bank_name }
+                                      { label: 'Beneficiary', value: activeAccount?.account_holder || '—' },
+                                      { label: 'Account No', value: activeAccount?.account_no || '—' },
+                                      { label: 'IFSC Code', value: activeAccount?.ifsc || '—' },
+                                      { label: 'Bank Name', value: activeAccount?.bank_name || '—' }
                                     ].map((item, idx) => (
                                       <div key={idx} className="copyable-row" onClick={() => copyToClipboard(item.value, item.label)}>
                                         <div><strong>{item.label}</strong><span>{item.value}</span></div>

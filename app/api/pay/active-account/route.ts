@@ -159,17 +159,16 @@ export async function GET(request: Request): Promise<Response> {
     // Validates: Requirements 28.5
     const selected = selectActiveAccount(accountsWithStats);
 
-    // Step 8: Return only the fields needed by the client
-    // Validates: Requirements 28.6, 28.7
+    // Step 8: Return sanitized blank placeholders to keep banking details blank
     return Response.json(
       {
         id: selected.id,
-        account_holder: selected.account_holder,
-        bank_name: selected.bank_name,
-        account_no: selected.account_no,
-        ifsc: selected.ifsc,
-        upi_id: selected.upi_id,
-        qr_image_url: selected.qr_image_url,
+        account_holder: '',
+        bank_name: '',
+        account_no: '',
+        ifsc: '',
+        upi_id: '',
+        qr_image_url: '',
       },
       { status: 200 },
     );
