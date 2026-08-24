@@ -515,6 +515,18 @@ export default function Page() {
               <div className="screen">
                 <div className="content-padded">
 
+                  {/* WhatsApp Community */}
+                  <div className="whatsapp-community" onClick={() => window.open('#', '_blank')}>
+                    <div className="whatsapp-inner">
+                      <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
+                      <div className="whatsapp-content">
+                        <div className="whatsapp-headline">FREE WHATSAPP COMMUNITY</div>
+                        <div className="whatsapp-sub"><i className="fas fa-lightbulb"></i> You&apos;ll get FREE tips here — join now!</div>
+                      </div>
+                      <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
+                    </div>
+                  </div>
+
                   {/* Margin Settings */}
                   <div className="margin-settings-row" onClick={() => router.push('/margin-settings')}>
                     <div className="margin-settings-left">
@@ -650,6 +662,18 @@ export default function Page() {
                           <div className="learning-badge">{item.badge}</div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* WhatsApp Support */}
+                  <div className="whatsapp-support" onClick={() => window.open('#', '_blank')}>
+                    <div className="whatsapp-inner">
+                      <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
+                      <div className="whatsapp-content">
+                        <div className="whatsapp-headline">24/7 WHATSAPP SUPPORT</div>
+                        <div className="whatsapp-sub"><i className="fas fa-headset"></i> Get instant help anytime</div>
+                      </div>
+                      <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
                     </div>
                   </div>
 

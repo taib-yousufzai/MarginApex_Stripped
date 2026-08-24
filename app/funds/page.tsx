@@ -532,6 +532,18 @@ export default function FundsPage() {
                   </>
                 )}
 
+                {/* WhatsApp Support */}
+                <div className="whatsapp-community" onClick={() => window.open('#', '_blank')} style={{ marginTop: '24px' }}>
+                  <div className="whatsapp-inner">
+                    <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
+                    <div className="whatsapp-content">
+                      <div className="whatsapp-headline">Facing any issue? Contact Support</div>
+                      <div className="whatsapp-sub"><i className="fas fa-headset"></i> Get help on WhatsApp</div>
+                    </div>
+                    <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
