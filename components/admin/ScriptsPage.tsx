@@ -40,11 +40,12 @@ const SEGMENT_DEFAULTS: Record<string, string> = {
   'COMEX':      'GOLD',
   'CRYPTO':     'BTC',
   'FOREX':      'USDINR',
+  'US-EQ':      'AAPL',
 };
 
 const SEGMENTS = [
   'INDEX-FUT', 'INDEX-OPT', 'STOCK-FUT', 'STOCK-OPT',
-  'NSE-EQ', 'MCX-FUT', 'MCX-OPT', 'COMEX', 'CRYPTO', 'FOREX',
+  'NSE-EQ', 'MCX-FUT', 'MCX-OPT', 'COMEX', 'CRYPTO', 'FOREX', 'US-EQ',
 ];
 
 export default function ScriptsPage() {
@@ -1774,7 +1775,7 @@ export default function ScriptsPage() {
         </div>
       </div>
       
-      {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
+      {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
     </div>
   );
 }

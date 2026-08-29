@@ -43,6 +43,7 @@ export async function GET(request: Request): Promise<Response> {
       if (tab === 'CRYPTO') return query.eq('segment', 'CRYPTO');
       if (tab === 'FOREX') return query.eq('exchange', 'CDS');
       if (tab === 'COMEX') return query.eq('segment', 'COMEX');
+      if (tab === 'US-EQ' || tab === 'US' || tab === 'US Stocks') return query.or('exchange.eq.US,segment.eq.US-EQ');
       return query;
     };
 
@@ -63,6 +64,34 @@ export async function GET(request: Request): Promise<Response> {
       results = results.filter((r: any) => indexNames.includes(r.name) || r.instrument_type === 'FUTIDX' || r.instrument_type === 'OPTIDX');
     } else if (tab === 'STOCK-FUT' || tab === 'STOCK-OPT') {
       results = results.filter((r: any) => !indexNames.includes(r.name) && r.instrument_type !== 'FUTIDX' && r.instrument_type !== 'OPTIDX');
+    }
+
+    // Fallback US Stock items for US-EQ tab or All tab
+    const US_STOCK_CATALOG = [
+      { tradingsymbol: 'AAPL', name: 'Apple Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'TSLA', name: 'Tesla, Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'NVDA', name: 'NVIDIA Corporation', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'MSFT', name: 'Microsoft Corporation', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'AMZN', name: 'Amazon.com Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'GOOGL', name: 'Alphabet Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'META', name: 'Meta Platforms, Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'NFLX', name: 'Netflix, Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'AMD', name: 'Advanced Micro Devices, Inc.', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'INTC', name: 'Intel Corporation', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+      { tradingsymbol: 'QQQ', name: 'Invesco QQQ Trust', exchange: 'US', instrument_type: 'EQ', segment: 'US-EQ' },
+    ];
+
+    if (tab === 'US-EQ' || tab === 'US' || tab === 'All') {
+      const qLower = query.toLowerCase();
+      const existingSymbols = new Set(results.map(r => r.tradingsymbol.toUpperCase()));
+      for (const stock of US_STOCK_CATALOG) {
+        if (!existingSymbols.has(stock.tradingsymbol.toUpperCase())) {
+          if (stock.tradingsymbol.toLowerCase().includes(qLower) || stock.name.toLowerCase().includes(qLower)) {
+            results.push(stock as Instrument);
+          }
+        }
+      }
     }
 
     // Apply production filtering rules so admin search reflects what traders see
