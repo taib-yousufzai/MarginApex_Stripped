@@ -34,8 +34,12 @@ const US_STOCK_ITEMS = [
   { name: 'Netflix, Inc.', symbol: 'NFLX', segment: 'US - Equity' },
   { name: 'Advanced Micro Devices', symbol: 'AMD', segment: 'US - Equity' },
   { name: 'Intel Corporation', symbol: 'INTC', segment: 'US - Equity' },
-  { name: 'SPDR S&P 500 ETF Trust', symbol: 'SPY', segment: 'US - Equity' },
-  { name: 'Invesco QQQ Trust', symbol: 'QQQ', segment: 'US - Equity' },
+  { name: 'SPDR S&P 500 ETF Trust (S&P 500)', symbol: 'SPY', segment: 'US - Equity' },
+  { name: 'Invesco QQQ Trust (Nasdaq 100)', symbol: 'QQQ', segment: 'US - Equity' },
+  { name: 'SPDR Dow Jones Industrial Average ETF (Dow Jones)', symbol: 'DIA', segment: 'US - Equity' },
+  { name: 'S&P 500 E-mini Futures', symbol: 'ES=F', segment: 'US - Equity' },
+  { name: 'Nasdaq 100 E-mini Futures', symbol: 'NQ=F', segment: 'US - Equity' },
+  { name: 'Dow Jones E-mini Futures', symbol: 'YM=F', segment: 'US - Equity' },
 ];
 
 const US_STOCK_SYMBOLS = new Set(US_STOCK_ITEMS.map(i => i.symbol));

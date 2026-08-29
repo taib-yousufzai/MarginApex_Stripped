@@ -21,7 +21,7 @@ const quoteCache = new Map<string, { quote: USStockQuote; timestamp: number }>()
 const CACHE_TTL_MS = 2000;
 
 export async function fetchUSStockQuote(symbol: string): Promise<USStockQuote | null> {
-  const cleanSymbol = symbol.trim().toUpperCase();
+  const cleanSymbol = symbol.replace(/^US:/i, '').trim().toUpperCase();
   const cached = quoteCache.get(cleanSymbol);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {

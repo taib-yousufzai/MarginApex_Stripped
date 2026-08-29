@@ -4,7 +4,8 @@ import { getAdminClient } from '../../lib/adminClient.ts';
 import { fetchUSStockQuotes } from '../../lib/datafeed/USStockService.ts';
 
 const DEFAULT_US_SYMBOLS = [
-  'AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'SPY', 'QQQ'
+  'AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'SPY', 'QQQ',
+  'DIA', 'ES=F', 'NQ=F', 'YM=F'
 ];
 
 const POLL_INTERVAL_MS = 3000; // Poll US stocks every 3 seconds
