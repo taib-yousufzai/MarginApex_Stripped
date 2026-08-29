@@ -383,7 +383,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
     'INDEX-FUT': 'NIFTY', 'INDEX-OPT': 'NIFTY',
     'STOCK-FUT': 'RELIANCE', 'STOCK-OPT': 'RELIANCE',
     'NSE-EQ': 'RELIANCE', 'Equity': 'RELIANCE', 'MCX-FUT': 'GOLD', 'MCX-OPT': 'GOLD',
-    'COMEX': 'GOLD', 'CRYPTO': 'BTC', 'FOREX': 'USDINR',
+    'COMEX': 'GOLD', 'CRYPTO': 'BTC', 'FOREX': 'USDINR', 'US-EQ': 'AAPL',
   };
 
   useEffect(() => {
