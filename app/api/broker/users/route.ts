@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { requireBroker } from '../_auth';
+import { getAccessibleUserIds } from '@/lib/hierarchy';
 
 export async function GET(request: Request): Promise<Response> {
   try {
@@ -24,15 +25,18 @@ export async function GET(request: Request): Promise<Response> {
       .single();
 
     const callerRole = callerProfile?.role ?? authResult.role;
-    const isAdmin = callerRole === 'admin' || callerRole === 'super_admin';
+    const accessibleIds = await getAccessibleUserIds(adminClient, callerUser.id, callerRole);
 
     let profilesQuery = adminClient
       .from('profiles')
       .select('id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, balance, settlement_amount, created_at, scheduled_delete_at, history_reset_at')
       .not('role', 'in', '("admin","super_admin","broker")');
 
-    if (!isAdmin) {
-      profilesQuery = profilesQuery.eq('parent_id', callerUser.id);
+    if (accessibleIds !== null) {
+      if (accessibleIds.length === 0) {
+        return Response.json([], { status: 200 });
+      }
+      profilesQuery = profilesQuery.in('id', accessibleIds);
     }
 
     const { data: profiles, error } = await profilesQuery;

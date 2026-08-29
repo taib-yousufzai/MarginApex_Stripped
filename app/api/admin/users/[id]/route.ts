@@ -8,6 +8,7 @@
 
 import { requireAdmin, requireSuperAdmin } from '../../_auth';
 import { getRole } from '../../../../../lib/auth';
+import { isUserInHierarchy } from '../../../../../lib/hierarchy';
 
 // Profile fields that can be updated via PATCH (password is handled separately)
 const PROFILE_FIELDS = [
@@ -58,10 +59,10 @@ export async function GET(
       return Response.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const callerRole = getRole(callerUser);
-    // if (callerRole === 'broker' && data.parent_id !== callerUser.id) {
-    //   return Response.json({ error: 'Forbidden' }, { status: 403 });
-    // }
+    const inHierarchy = await isUserInHierarchy(adminClient, callerUser.id, id);
+    if (!inHierarchy) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // Step 3: Return the profile
     return Response.json(data, { status: 200 });
@@ -85,18 +86,10 @@ export async function PATCH(
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
 
-    // Scope broker updates to their own child users
-    const callerRole = getRole(callerUser);
-    // if (callerRole === 'broker') {
-    //   const { data: targetProfile, error: targetError } = await adminClient
-    //     .from('profiles')
-    //     .select('parent_id')
-    //     .eq('id', id)
-    //     .single();
-    //   if (targetError || !targetProfile || targetProfile.parent_id !== callerUser.id) {
-    //     return Response.json({ error: 'Forbidden' }, { status: 403 });
-    //   }
-    // }
+    const inHierarchy = await isUserInHierarchy(adminClient, callerUser.id, id);
+    if (!inHierarchy) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // Step 2: Parse JSON body
     // Validates: Requirement 6.4

@@ -5,6 +5,8 @@
  */
 
 import { requireAdmin } from '../_auth';
+import { getRole } from '../../../../lib/auth';
+import { getAccessibleUserIds } from '../../../../lib/hierarchy';
 
 export type TransactionRecord = { type: 'DEPOSIT' | 'WITHDRAWAL'; amount: number };
 export type PositionRecord = { pnl: number; side: 'BUY' | 'SELL'; brokerage: number };
@@ -23,6 +25,34 @@ export async function GET(request: Request): Promise<Response> {
     const client_id = url.searchParams.get('client_id');
     const demoParam = url.searchParams.get('demo');
     const isDemo = demoParam === 'true';
+
+    const callerRole = getRole(authResult.callerUser);
+    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+
+    if (accessibleIds !== null && accessibleIds.length === 0) {
+      return Response.json({
+        ledger_balance: 0,
+        net_balance: 0,
+        mark_to_market: 0,
+        net_pnl: 0,
+        total_brokerage: 0,
+        margin_used: 0,
+        net: 0,
+        total_deposits: 0,
+        total_withdrawals: 0,
+        avg_deposit: 0,
+        avg_withdrawal: 0,
+        avg_profit: 0,
+        avg_loss: 0,
+        profitable_clients: 0,
+        loss_making_clients: 0,
+        buy_position_count: 0,
+        sell_position_count: 0,
+        registered: 0,
+        added_funds: 0,
+        conversion: '0%',
+      }, { status: 200 });
+    }
 
     // 1. Fetch profiles to resolve hierarchy if needed
     let targetUserIds: string[] | null = null;
@@ -52,6 +82,15 @@ export async function GET(request: Request): Promise<Response> {
         } else if (broker_id) {
           targetUserIds = [broker_id, ...getDescendants(broker_id)];
         }
+      }
+    }
+
+    // If caller is non-super_admin, filter targetUserIds by accessibleIds
+    if (accessibleIds !== null) {
+      if (targetUserIds) {
+        targetUserIds = targetUserIds.filter(id => accessibleIds.includes(id));
+      } else {
+        targetUserIds = accessibleIds;
       }
     }
 

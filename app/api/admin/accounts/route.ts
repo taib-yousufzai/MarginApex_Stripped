@@ -8,6 +8,8 @@
  */
 
 import { requireAdmin } from '../_auth';
+import { getRole } from '../../../../lib/auth';
+import { getAccessibleUserIds } from '../../../../lib/hierarchy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,11 +82,20 @@ export async function GET(request: Request): Promise<Response> {
     const isDemo = demoParam === 'true';
 
     // Step 3: Query profiles with optional role filter and search
-    // Validates: Requirements 10.5, 10.6
+    const callerRole = getRole(authResult.callerUser);
+    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+
     let profilesQuery = adminClient
       .from('profiles')
       .select('id, full_name, email, role, parent_id')
       .eq('demo_user', isDemo);
+
+    if (accessibleIds !== null) {
+      if (accessibleIds.length === 0) {
+        return Response.json([], { status: 200 });
+      }
+      profilesQuery = profilesQuery.in('id', accessibleIds);
+    }
 
     if (filter === 'subbrokers') {
       profilesQuery = profilesQuery.eq('role', 'sub_broker');

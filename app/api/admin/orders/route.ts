@@ -5,6 +5,8 @@
  */
 
 import { requireAdmin } from '../_auth';
+import { getRole } from '../../../../lib/auth';
+import { getAccessibleUserIds } from '../../../../lib/hierarchy';
 
 export async function GET(request: Request): Promise<Response> {
   try {
@@ -24,8 +26,18 @@ export async function GET(request: Request): Promise<Response> {
     const rows       = rowsParam ? Math.min(parseInt(rowsParam, 10), 500) : 50;
     const page       = Math.max(1, parseInt(pageParam, 10));
 
-    // Fetch all profiles for user name/client_id lookup
-    const { data: profiles } = await adminClient.from('profiles').select('id, email, full_name, client_id').eq('demo_user', isDemo);
+    // Fetch accessible profiles for user name/client_id lookup & scoping
+    const callerRole = getRole(authResult.callerUser);
+    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+
+    let profilesQuery = adminClient.from('profiles').select('id, email, full_name, client_id').eq('demo_user', isDemo);
+    if (accessibleIds !== null) {
+      if (accessibleIds.length === 0) {
+        return Response.json({ orders: [], total: 0 }, { status: 200 });
+      }
+      profilesQuery = profilesQuery.in('id', accessibleIds);
+    }
+    const { data: profiles } = await profilesQuery;
     const profileMap: Record<string, { full_name: string; email: string; client_id: string }> = {};
     (profiles ?? []).forEach((p: any) => { profileMap[p.id] = p; });
 

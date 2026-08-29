@@ -68,6 +68,13 @@ export default function DashboardPage({ selectedUser, onOpenUserPanel, isDemoMod
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
+  const [adminProfile, setAdminProfile] = useState<{ id: string; client_id?: string; role?: string } | null>(null);
+
+  useEffect(() => {
+    apiCall('/api/admin/me', { method: 'GET' }).then(({ ok, data }) => {
+      if (ok) setAdminProfile(data as any);
+    });
+  }, []);
 
   useEffect(() => {
     apiCall(`/api/admin/users?demo=${isDemoMode}`, { method: 'GET' }).then(({ ok, data }) => {
@@ -138,10 +145,44 @@ export default function DashboardPage({ selectedUser, onOpenUserPanel, isDemoMod
   const ledger = metrics?.ledger_balance ?? 0;
   const netDepWith = metrics?.net ?? 0;
 
+  const referralCode = adminProfile?.client_id || adminProfile?.id || '';
+  const referralLink = referralCode && typeof window !== 'undefined' ? `${window.location.origin}/register?ref=${referralCode}` : '';
+
   return (
     <div className="adm-db-root">
       <Toast toast={toast} onDismiss={() => setToast(null)} />
       
+      {referralLink && (
+        <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 600, color: '#e6edf3', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <i className="fas fa-link" style={{ color: '#2ea043' }} />
+              Admin Referral Link
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#8b949e', marginTop: 2 }}>
+              Share this link to onboard brokers or users directly assigned under your account hierarchy.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 280, maxWidth: 460 }}>
+            <input
+              readOnly
+              value={referralLink}
+              style={{ flex: 1, background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: '6px 12px', color: '#58a6ff', fontSize: '0.85rem', fontFamily: 'monospace' }}
+            />
+            <button
+              className="adm-btn-primary"
+              style={{ padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+              onClick={() => {
+                navigator.clipboard.writeText(referralLink);
+                setToast({ message: 'Referral link copied to clipboard!', type: 'success' });
+              }}
+            >
+              <i className="fas fa-copy" style={{ marginRight: 6 }} /> Copy
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Filter Bar */}
       <div className="adm-db-top-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>

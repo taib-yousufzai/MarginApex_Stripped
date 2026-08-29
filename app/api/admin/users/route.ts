@@ -18,6 +18,7 @@
 import { requireAuth } from '../../../../lib/api-middleware';
 import { getRole } from '../../../../lib/auth'; // trigger recompile
 import { auditLog } from '../../../../lib/audit';
+import { getAccessibleUserIds } from '../../../../lib/hierarchy';
 
 export async function GET(request: Request): Promise<Response> {
   try {
@@ -30,16 +31,19 @@ export async function GET(request: Request): Promise<Response> {
     const isDemo = demoParam === 'true';
     const fetchAll = demoParam === 'all' || demoParam === null;
 
-    // 1. Fetch profiles (filtered by parent_id if broker)
+    // 1. Fetch profiles scoped to caller hierarchy
     const callerRole = getRole(authResult.callerUser);
-    const isBroker = callerRole === 'broker';
+    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
 
     let pQuery = adminClient
       .from('profiles')
       .select('id, client_id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, balance, settlement_amount, created_at, scheduled_delete_at, trading_mode, mode_locked_until, template_id, history_reset_at');
     
-    if (isBroker) {
-      pQuery = pQuery.eq('parent_id', authResult.callerUser.id);
+    if (accessibleIds !== null) {
+      if (accessibleIds.length === 0) {
+        return Response.json([], { status: 200 });
+      }
+      pQuery = pQuery.in('id', accessibleIds);
     }
     if (!fetchAll) {
       pQuery = pQuery.eq('demo_user', isDemo);
@@ -195,6 +199,10 @@ export async function POST(request: Request): Promise<Response> {
       if (field in body && body[field] !== '') {
         profileFields[field] = body[field];
       }
+    }
+
+    if (['admin', 'broker'].includes(callerRole) && !profileFields.parent_id) {
+      profileFields.parent_id = callerUser.id;
     }
 
     // Generate a unique 6-character uppercase alphanumeric client_id
