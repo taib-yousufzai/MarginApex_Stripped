@@ -21,6 +21,24 @@ import {
 } from '@/lib/filterEngine';
 
 import { parseOptionSymbol } from '@/lib/positionStore';
+import { fetchUSStockQuotes } from '@/lib/datafeed/USStockService';
+
+const US_STOCK_ITEMS = [
+  { name: 'Apple Inc.', symbol: 'AAPL', segment: 'US - Equity' },
+  { name: 'Tesla, Inc.', symbol: 'TSLA', segment: 'US - Equity' },
+  { name: 'NVIDIA Corporation', symbol: 'NVDA', segment: 'US - Equity' },
+  { name: 'Microsoft Corporation', symbol: 'MSFT', segment: 'US - Equity' },
+  { name: 'Amazon.com, Inc.', symbol: 'AMZN', segment: 'US - Equity' },
+  { name: 'Alphabet Inc.', symbol: 'GOOGL', segment: 'US - Equity' },
+  { name: 'Meta Platforms, Inc.', symbol: 'META', segment: 'US - Equity' },
+  { name: 'Netflix, Inc.', symbol: 'NFLX', segment: 'US - Equity' },
+  { name: 'Advanced Micro Devices', symbol: 'AMD', segment: 'US - Equity' },
+  { name: 'Intel Corporation', symbol: 'INTC', segment: 'US - Equity' },
+  { name: 'SPDR S&P 500 ETF Trust', symbol: 'SPY', segment: 'US - Equity' },
+  { name: 'Invesco QQQ Trust', symbol: 'QQQ', segment: 'US - Equity' },
+];
+
+const US_STOCK_SYMBOLS = new Set(US_STOCK_ITEMS.map(i => i.symbol));
 
 // MCX commodity underlyings — these trade on MCX, not NSE
 const MCX_UNDERLYINGS = new Set([
@@ -146,6 +164,7 @@ const mapSegmentToDbSegment = (s: string): string => {
   if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
   if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options') return 'FOREX';
   if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
+  if (trimmed === 'US - Equity' || trimmed === 'US Equity' || trimmed === 'US-EQ' || trimmed === 'US Stocks') return 'US-EQ';
   return trimmed;
 };
 
@@ -384,6 +403,22 @@ async function fetchLivePrices(
       }
     }
 
+    // 5. Fetch US Stock quotes for missing US stock tickers
+    const usSymbolsToFetch = missingKiteIds
+      .map(id => id.split(':').pop() || id)
+      .filter(sym => US_STOCK_SYMBOLS.has(sym));
+    if (usSymbolsToFetch.length > 0) {
+      try {
+        const usQuotes = await fetchUSStockQuotes(usSymbolsToFetch);
+        for (const [sym, q] of Object.entries(usQuotes)) {
+          if (q && q.price > 0) {
+            quoteMap[sym] = { price: q.price, high: q.high, low: q.low };
+            quoteMap[`US:${sym}`] = { price: q.price, high: q.high, low: q.low };
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     return quoteMap;
   } catch (err) {
     console.error('[fetchLivePrices] Unexpected error:', err);
@@ -447,6 +482,7 @@ export async function GET(request: NextRequest) {
       if (tab === 'CRYPTO') return query.eq('segment', 'CRYPTO');
       if (tab === 'FOREX') return query.or('exchange.eq.CDS,exchange.eq.FOREX,segment.eq.FOREX');
       if (tab === 'COMEX') return query.eq('segment', 'COMEX');
+      if (tab === 'US-EQ' || tab === 'US Equity' || tab === 'US Stocks') return query.eq('segment', 'US-EQ');
       return query;
     };
 
@@ -509,7 +545,7 @@ export async function GET(request: NextRequest) {
           .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol')
           .neq('exchange', 'NCO'); // NCO has sub-interval strike rows that pollute results
           
-        let orParts = [];
+        let orParts: string[] = [];
 
         if (/^\d+(\.\d+)?$/.test(q)) {
           // Pure numeric query — search exact strike_price, but also allow partial text matches
@@ -913,7 +949,7 @@ export async function GET(request: NextRequest) {
     const quoteMap = await fetchLivePrices(kiteIds, request);
 
     // Map to watchlist-compatible shape
-    let results = validRows.map((inst: any) => {
+    let results: any[] = validRows.map((inst: any) => {
       let segmentLabel = '';
       const exch = inst.exchange === 'NFO' ? 'NSE' : inst.exchange === 'BFO' ? 'BSE' : inst.exchange;
       const isIndex = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX', 'BANKEX'].includes(inst.name);
@@ -1087,6 +1123,43 @@ export async function GET(request: NextRequest) {
         }));
 
       results.push(...matchingForex);
+    }
+
+    // Append matching US Stock items if tab is All, US-EQ, US Equity, or US Stocks
+    if (tab === 'All' || tab === 'US-EQ' || tab === 'US Equity' || tab === 'US Stocks') {
+      const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const qClean = q.replace(/[\s\/]+/g, '').toLowerCase();
+
+      const matchingUsStocks = US_STOCK_ITEMS
+        .filter(item => {
+          const itemText = `${item.name} ${item.symbol} ${item.segment} us stock equity`.toLowerCase();
+          const cleanText = itemText.replace(/[\s\/]+/g, '');
+          return searchTerms.every(term => itemText.includes(term) || cleanText.includes(term.replace(/[\s\/]+/g, '')) || cleanText.includes(qClean));
+        });
+
+      if (matchingUsStocks.length > 0) {
+        const usSymbols = matchingUsStocks.map(i => i.symbol);
+        const usQuotes = await fetchUSStockQuotes(usSymbols);
+
+        const usResults = matchingUsStocks.map(item => {
+          const qInfo = usQuotes[item.symbol];
+          return {
+            name: `${item.name} (${item.symbol})`,
+            symbol: item.symbol,
+            kiteSymbol: `US:${item.symbol}`,
+            price: qInfo?.price ?? 0,
+            change: qInfo?.changePercent ? `${qInfo.changePercent > 0 ? '+' : ''}${qInfo.changePercent.toFixed(2)}%` : '0%',
+            segment: item.segment,
+            contractDate: 'Continuous',
+            open: 0,
+            high: qInfo?.high ?? 0,
+            low: qInfo?.low ?? 0,
+            close: qInfo?.prevClose ?? 0,
+          };
+        });
+
+        results.push(...usResults);
+      }
     }
 
     // Deduplicate results by symbol/name

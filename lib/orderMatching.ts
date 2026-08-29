@@ -317,6 +317,7 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
           const s = pos.settlement.toUpperCase();
           if (s.includes('MCX')) exchange = 'MCX';
           else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
+          else if (s.includes('US')) exchange = 'US';
           else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
           else if (s.includes('BSE')) exchange = 'BSE';
           priceObj = pricesMap.get(`${exchange}:${pos.symbol}`);
@@ -402,6 +403,7 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         const s = pos.settlement.toUpperCase();
         if (s.includes('MCX')) exchange = 'MCX';
         else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
+        else if (s.includes('US')) exchange = 'US';
         else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
         else if (s.includes('BSE')) exchange = 'BSE';
         priceObj = pricesMap.get(`${exchange}:${pos.symbol}`);
