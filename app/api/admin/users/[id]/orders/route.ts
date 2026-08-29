@@ -6,6 +6,7 @@
  */
 
 import { requireAdmin } from '../../../_auth';
+import { isUserInHierarchy } from '../../../../../../lib/hierarchy';
 
 export type OrderItem = {
   id: string;
@@ -31,6 +32,11 @@ export async function GET(
 
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
+
+    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, id);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const tab       = url.searchParams.get('tab') ?? null;

@@ -19,6 +19,7 @@
 
 import { requireAdmin, requireSuperAdmin } from '../../_auth';
 import { requireAuth as apiRequireAuth } from '@/lib/api-middleware';
+import { isUserInHierarchy } from '@/lib/hierarchy';
 import { checkAndExecuteAccountLiquidation } from '@/lib/liquidationEngine';
 import {
   calculateClosedPnl,
@@ -73,6 +74,11 @@ export async function PATCH(
 
     if (fetchError || !existingPosition) {
       return Response.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const isAllowed = await isUserInHierarchy(adminClient, callerUser.id, existingPosition.user_id);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Step 5: Extract only editable fields from body

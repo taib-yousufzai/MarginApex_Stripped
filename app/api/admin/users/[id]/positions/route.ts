@@ -9,6 +9,7 @@
 
 import { requireAdmin } from '../../../_auth';
 import { getRole } from '../../../../../../lib/auth';
+import { isUserInHierarchy, getAccessibleUserIds } from '../../../../../../lib/hierarchy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,15 +80,25 @@ export async function GET(
       );
 
     if (id !== 'all') {
+      const callerRole = getRole(authResult.callerUser);
+      const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, id);
+      if (!isAllowed) {
+        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      }
       query = query.eq('user_id', id);
     } else {
       const callerRole = getRole(authResult.callerUser);
+      const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+
       let pQuery = adminClient.from('profiles').select('id').eq('demo_user', isDemo);
-      
-      if (callerRole === 'broker') {
-        pQuery = pQuery.eq('parent_id', authResult.callerUser.id);
+
+      if (accessibleIds !== null) {
+        if (accessibleIds.length === 0) {
+          return Response.json([], { status: 200 });
+        }
+        pQuery = pQuery.in('id', accessibleIds);
       }
-      
+
       const { data: matchedUsers } = await pQuery;
       const matchedIds = matchedUsers?.map((u: { id: string }) => u.id) || [];
       if (matchedIds.length === 0) {

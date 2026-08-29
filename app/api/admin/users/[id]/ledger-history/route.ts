@@ -18,6 +18,7 @@
 
 import { requireAdmin } from '../../../_auth';
 import type { EntryType, LedgerEntry } from '../../../../../../lib/ledger';
+import { isUserInHierarchy } from '../../../../../../lib/hierarchy';
 
 const VALID_ENTRY_TYPES: EntryType[] = [
   'DEPOSIT',
@@ -41,6 +42,11 @@ export async function GET(
     // Step 2: Resolve route param
     const resolvedParams = await Promise.resolve(params);
     const userId = resolvedParams.id;
+
+    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, userId);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // Step 3: Verify the target user exists
     const { data: profile, error: profileError } = await adminClient

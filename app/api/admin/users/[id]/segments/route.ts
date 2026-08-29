@@ -10,6 +10,7 @@
 
 import { requireAdmin } from '../../../_auth';
 import { getRole } from '../../../../../../lib/auth';
+import { isUserInHierarchy } from '../../../../../../lib/hierarchy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,17 +69,9 @@ export async function GET(
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
 
-    // Scope broker access to their own child users
-    const callerRole = getRole(callerUser);
-    if (callerRole === 'broker') {
-      const { data: targetProfile, error: targetError } = await adminClient
-        .from('profiles')
-        .select('parent_id')
-        .eq('id', id)
-        .single();
-      if (targetError || !targetProfile || targetProfile.parent_id !== callerUser.id) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
+    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, id);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const url = new URL(request.url);
@@ -124,17 +117,9 @@ export async function POST(
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
 
-    // Scope broker updates to their own child users
-    const callerRole = getRole(callerUser);
-    if (callerRole === 'broker') {
-      const { data: targetProfile, error: targetError } = await adminClient
-        .from('profiles')
-        .select('parent_id')
-        .eq('id', id)
-        .single();
-      if (targetError || !targetProfile || targetProfile.parent_id !== callerUser.id) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
-      }
+    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, id);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Step 3: Parse JSON body

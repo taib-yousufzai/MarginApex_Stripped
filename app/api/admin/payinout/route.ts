@@ -8,6 +8,8 @@
  */
 
 import { requireAdmin } from '../_auth';
+import { getRole } from '@/lib/auth';
+import { getAccessibleUserIds } from '@/lib/hierarchy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,8 +53,19 @@ export async function GET(request: Request): Promise<Response> {
     const demoParam = url.searchParams.get('demo');
     const isDemo = demoParam === 'true';
 
-    // Fetch all profiles to build a lookup map for user names and client_ids
-    const { data: profiles } = await adminClient.from('profiles').select('id, email, full_name, client_id, bank_name').eq('demo_user', isDemo);
+    const callerRole = getRole(authResult.callerUser);
+    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+
+    let profileQuery = adminClient.from('profiles').select('id, email, full_name, client_id, bank_name').eq('demo_user', isDemo);
+    if (accessibleIds !== null) {
+      if (accessibleIds.length === 0) {
+        return Response.json([], { status: 200 });
+      }
+      profileQuery = profileQuery.in('id', accessibleIds);
+    }
+
+    // Fetch all accessible profiles to build a lookup map for user names and client_ids
+    const { data: profiles } = await profileQuery;
     const profileMap: Record<string, { full_name: string; email: string; client_id: string; bank_name: string }> = {};
     (profiles ?? []).forEach((p: any) => { profileMap[p.id] = p; });
 

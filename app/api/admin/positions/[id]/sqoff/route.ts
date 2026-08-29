@@ -17,6 +17,7 @@
  */
 
 import { requireAdmin } from '../../../_auth';
+import { isUserInHierarchy } from '@/lib/hierarchy';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 
 export async function POST(
@@ -36,13 +37,18 @@ export async function POST(
     // Step 3: Fetch the open position row (must be open to square off)
     const { data: position, error: fetchError } = await adminClient
       .from('positions')
-      .select('id, user_id, symbol, side, settlement, qty_open, entry_price, ltp, product_type')
+      .select('id, user_id, symbol, side, settlement, qty_open, entry_price, ltp, product_type, carry_brokerage_paid')
       .eq('id', id)
       .eq('status', 'open')
       .single();
 
     if (fetchError || position === null) {
       return Response.json({ error: 'Position not found or already closed' }, { status: 404 });
+    }
+
+    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, position.user_id);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Step 4: Fetch live bid/ask from Ticker Daemon.

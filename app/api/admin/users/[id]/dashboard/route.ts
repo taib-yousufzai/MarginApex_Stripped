@@ -8,6 +8,7 @@
  */
 
 import { requireAdmin } from '../../../_auth';
+import { isUserInHierarchy } from '../../../../../../lib/hierarchy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,6 +110,11 @@ export async function GET(
     // Step 2: Resolve params to get the user id
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
+
+    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, id);
+    if (!isAllowed) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // Step 3: Parse optional date range query params
     // Validates: Requirement 3.2
