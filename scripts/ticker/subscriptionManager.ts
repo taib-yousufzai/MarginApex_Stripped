@@ -59,6 +59,10 @@ export class SubscriptionManager {
         'US:INTC',
         'US:SPY',
         'US:QQQ',
+        'US:DIA',
+        'US:ES=F',
+        'US:NQ=F',
+        'US:YM=F',
       ]);
 
       // 1. Fetch symbols from watchlists
