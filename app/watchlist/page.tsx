@@ -808,7 +808,7 @@ function WatchlistContent() {
   const isCrypto = !!(selectedItem?.binanceSymbol);
   const isComex = !!(selectedItem?.comexSymbol) && (!(selectedItem?.kiteSymbol) || (selectedItem as any).preferredView === 'comex');
 
-  const currentKiteQuote = selectedItem?.kiteSymbol ? marketQuotes[selectedItem.kiteSymbol] : null;
+  const currentKiteQuote = (selectedItem?.kiteSymbol && marketQuotes[selectedItem.kiteSymbol]) || (selectedItem?.symbol && marketQuotes[selectedItem.symbol]) || null;
   const currentBinanceQuote = selectedItem?.binanceSymbol ? (marketQuotes[selectedItem.binanceSymbol] || binanceQuotesAsQuoteData[selectedItem.binanceSymbol]) : null;
   const currentComexQuote = selectedItem?.comexSymbol ? comexQuotes[selectedItem.comexSymbol] : null;
 
