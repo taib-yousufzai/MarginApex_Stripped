@@ -84,36 +84,36 @@ function saveWatchlistToStorage(items: WatchlistItem[], userId?: string) {
 
 // Crypto whitelist: only BTC, ETH, DOGE (Requirement 5.1)
 const DEFAULT_CRYPTO_ITEMS: WatchlistItem[] = [
-  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 0, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
-  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 0, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
-  { name: 'Dogecoin', symbol: 'DOGE', kiteSymbol: '', binanceSymbol: 'DOGEUSDT', price: 0, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
+  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 65000.00, change: '0%', segment: 'CRYPTO', contractDate: '', open: 65000.00, high: 65000.00, low: 65000.00, close: 65000.00, category: 'CRYPTO' },
+  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 3500.00, change: '0%', segment: 'CRYPTO', contractDate: '', open: 3500.00, high: 3500.00, low: 3500.00, close: 3500.00, category: 'CRYPTO' },
+  { name: 'Dogecoin', symbol: 'DOGE', kiteSymbol: '', binanceSymbol: 'DOGEUSDT', price: 0.12, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0.12, high: 0.12, low: 0.12, close: 0.12, category: 'CRYPTO' },
 ];
 
 // ── Default Forex Items (Zerodha CDS segment — INR pairs) ──────────────────
 // Update expiry month as contracts roll (format: CDS:XYZINR26MONFUT)
 
 const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
-  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', comexSymbol: 'GBPUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', comexSymbol: 'EURUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', comexSymbol: 'USDJPY=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', comexSymbol: 'USDCHF=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', comexSymbol: 'USDCAD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', comexSymbol: 'AUDUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', comexSymbol: 'NZDUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
-  { name: 'JPY/INR', symbol: 'CDS:JPYINR26AUGFUT', kiteSymbol: 'CDS:JPYINR26AUGFUT', price: 0, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', comexSymbol: 'GBPUSD=X', price: 108.90, change: '0%', segment: 'Forex', contractDate: '', open: 108.90, high: 108.90, low: 108.90, close: 108.90, category: 'FOREX' },
+  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', comexSymbol: 'EURUSD=X', price: 90.55, change: '0%', segment: 'Forex', contractDate: '', open: 90.55, high: 90.55, low: 90.55, close: 90.55, category: 'FOREX' },
+  { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', comexSymbol: 'USDJPY=X', price: 0.55, change: '0%', segment: 'Forex', contractDate: '', open: 0.55, high: 0.55, low: 0.55, close: 0.55, category: 'FOREX' },
+  { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', comexSymbol: 'USDCHF=X', price: 95.20, change: '0%', segment: 'Forex', contractDate: '', open: 95.20, high: 95.20, low: 95.20, close: 95.20, category: 'FOREX' },
+  { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', comexSymbol: 'USDCAD=X', price: 61.80, change: '0%', segment: 'Forex', contractDate: '', open: 61.80, high: 61.80, low: 61.80, close: 61.80, category: 'FOREX' },
+  { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', comexSymbol: 'AUDUSD=X', price: 55.40, change: '0%', segment: 'Forex', contractDate: '', open: 55.40, high: 55.40, low: 55.40, close: 55.40, category: 'FOREX' },
+  { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', comexSymbol: 'NZDUSD=X', price: 50.30, change: '0%', segment: 'Forex', contractDate: '', open: 50.30, high: 50.30, low: 50.30, close: 50.30, category: 'FOREX' },
+  { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', price: 83.85, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 83.85, high: 83.85, low: 83.85, close: 83.85, category: 'FOREX' },
+  { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', price: 91.20, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 91.20, high: 91.20, low: 91.20, close: 91.20, category: 'FOREX' },
+  { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', price: 108.90, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 108.90, high: 108.90, low: 108.90, close: 108.90, category: 'FOREX' },
+  { name: 'JPY/INR', symbol: 'CDS:JPYINR26AUGFUT', kiteSymbol: 'CDS:JPYINR26AUGFUT', price: 0.55, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0.55, high: 0.55, low: 0.55, close: 0.55, category: 'FOREX' },
 ];
 
 // ── Default COMEX Items (MCX ₹ via Kite + COMEX $ via Yahoo proxy) ──────────────
 // Rows with both kiteSymbol + comexSymbol show a ₹⇄$ toggle pill
 
 const DEFAULT_COMEX_ITEMS: WatchlistItem[] = [
-  { name: 'GOLD', symbol: 'MCX:GOLD26OCTFUT', kiteSymbol: 'MCX:GOLD26OCTFUT', comexSymbol: 'GC=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Oct 2026', open: 0, high: 0, low: 0, close: 0 },
-  { name: 'SILVER', symbol: 'MCX:SILVER26SEPFUT', kiteSymbol: 'MCX:SILVER26SEPFUT', comexSymbol: 'SI=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 0, high: 0, low: 0, close: 0 },
-  { name: 'CRUDEOIL', symbol: 'MCX:CRUDEOIL26AUGFUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', comexSymbol: 'CL=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
-  { name: 'COPPER', symbol: 'MCX:COPPER26AUGFUT', kiteSymbol: 'MCX:COPPER26AUGFUT', comexSymbol: 'HG=F', price: 0, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 0, high: 0, low: 0, close: 0 },
+  { name: 'GOLD', symbol: 'MCX:GOLD26OCTFUT', kiteSymbol: 'MCX:GOLD26OCTFUT', comexSymbol: 'GC=F', price: 72000.00, change: '0%', segment: 'MCX - Futures', contractDate: 'Oct 2026', open: 72000.00, high: 72000.00, low: 72000.00, close: 72000.00 },
+  { name: 'SILVER', symbol: 'MCX:SILVER26SEPFUT', kiteSymbol: 'MCX:SILVER26SEPFUT', comexSymbol: 'SI=F', price: 85000.00, change: '0%', segment: 'MCX - Futures', contractDate: 'Sep 2026', open: 85000.00, high: 85000.00, low: 85000.00, close: 85000.00 },
+  { name: 'CRUDEOIL', symbol: 'MCX:CRUDEOIL26AUGFUT', kiteSymbol: 'MCX:CRUDEOIL26AUGFUT', comexSymbol: 'CL=F', price: 6500.00, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 6500.00, high: 6500.00, low: 6500.00, close: 6500.00 },
+  { name: 'COPPER', symbol: 'MCX:COPPER26AUGFUT', kiteSymbol: 'MCX:COPPER26AUGFUT', comexSymbol: 'HG=F', price: 780.00, change: '0%', segment: 'MCX - Futures', contractDate: 'Aug 2026', open: 780.00, high: 780.00, low: 780.00, close: 780.00 },
 ];
 
 export function getDefaultWatchlistItems(): WatchlistItem[] {
@@ -364,21 +364,22 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   let absoluteChange = 0;
 
   if (isCrypto) {
-    let rawLtp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
-    let rawClose = activeCryptoQuote?.close ?? (item.close || rawLtp);
+    let rawLtp = activeCryptoQuote?.lastPrice ?? quote?.lastPrice ?? comexQuote?.lastPrice ?? item.price ?? 0;
+    let rawClose = activeCryptoQuote?.close ?? quote?.close ?? comexQuote?.close ?? (item.close || rawLtp);
     ltp = rawLtp;
     prevClose = rawClose;
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else if (showComex) {
-    ltp = comexQuote?.lastPrice ?? item.price ?? 0;
-    prevClose = comexQuote?.close ?? (item.close || ltp);
+    ltp = comexQuote?.lastPrice ?? quote?.lastPrice ?? item.price ?? 0;
+    prevClose = comexQuote?.close ?? quote?.close ?? (item.close || ltp);
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else {
-    ltp = quote?.lastPrice ?? item.price ?? 0;
-    if (quote) {
-      prevClose = quote.close ?? ltp;
+    ltp = quote?.lastPrice ?? comexQuote?.lastPrice ?? binanceQuote?.lastPrice ?? item.price ?? 0;
+    const activeQ = quote || (comexQuote as any) || binanceQuote;
+    if (activeQ) {
+      prevClose = activeQ.close ?? ltp;
       absoluteChange = ltp - prevClose;
       percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
     } else {
@@ -397,11 +398,17 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   }
 
-  const isLoading = isCrypto
-    ? (!activeCryptoQuote && ltp === 0)
-    : showComex
-      ? (!comexQuote && ltp === 0)
-      : (!quote && ltp === 0);
+  const [quoteTimeout, setQuoteTimeout] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setQuoteTimeout(true), 3000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const hasAnyQuote = !!(quote || binanceQuote || comexQuote || activeCryptoQuote);
+  const rawIsLoading = !hasAnyQuote && ltp === 0;
+
+  const isLoading = rawIsLoading && !quoteTimeout;
 
   const handleLeftClick = () => {
     if (basketMode) return;
@@ -660,62 +667,84 @@ function WatchlistContent() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Safety fallback timer: force allowedSegments to [] after 2.5 seconds if still null
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setAllowedSegments(prev => (prev === null ? [] : prev));
+      }
+    }, 2500);
+
     async function fetchAllowedSegments() {
       try {
         const { supabase: sb } = await import('@/lib/supabaseClient');
         const { data: { session } } = await sb.auth.getSession();
-        if (!session) { setAllowedSegments([]); return; }
+        if (!session) {
+          if (isMounted) setAllowedSegments([]);
+          return;
+        }
 
-        setUserId(session.user.id);
+        if (isMounted) setUserId(session.user.id);
 
         // Also save to window for easy inline script access
         (window as any).__accessToken = session.access_token;
 
         const controller1 = new AbortController();
-        const t1 = setTimeout(() => controller1.abort(), 5000);
+        const t1 = setTimeout(() => controller1.abort(), 4000);
         let profile: any;
         try {
           profile = await api.get<any>('/api/user/profile', { signal: controller1.signal });
+        } catch (e) {
+          console.warn('Profile fetch warning in allowedSegments:', e);
         } finally {
           clearTimeout(t1);
         }
 
-        if (profile) {
-          // Use profile.segments if set, otherwise empty array means all allowed
+        if (isMounted) {
           setAllowedSegments(profile?.segments ?? []);
+        }
 
-          // Fetch block-scripts and trading hours in parallel
-          // segmentSettings and scriptSettings are handled by TradeConfigProvider
-          const controller2 = new AbortController();
-          const t2 = setTimeout(() => controller2.abort(), 5000);
+        // Fetch block-scripts and trading hours asynchronously
+        const controller2 = new AbortController();
+        const t2 = setTimeout(() => controller2.abort(), 4000);
 
+        try {
           const [blockedData] = await Promise.allSettled([
             api.get<any>(`/api/admin/users/${session.user.id}/block-scripts`, { signal: controller2.signal }),
           ]);
-          clearTimeout(t2);
 
-          if (blockedData.status === 'fulfilled') {
+          if (blockedData.status === 'fulfilled' && isMounted) {
             const symbols: string[] = (blockedData.value as any)?.symbols || [];
             setBlockedSymbols(new Set(symbols.map((s: string) => s.toUpperCase())));
           }
 
           const { data: thData } = await sb.from('trading_hours').select('*');
-          if (thData) {
+          if (thData && isMounted) {
             setTradingHours(thData);
           }
-        } else {
-          // On error, fall back to allowing all
-          setAllowedSegments([]);
+        } catch (e) {
+          console.warn('Block-scripts/trading-hours error:', e);
+        } finally {
+          clearTimeout(t2);
         }
       } catch (err) {
         if ((err as Error)?.name !== 'AbortError') {
           console.warn('Failed to fetch allowed segments', err);
         }
-        // On error, fall back to allowing all
-        setAllowedSegments([]);
+      } finally {
+        if (isMounted) {
+          setAllowedSegments(prev => (prev === null ? [] : prev));
+        }
       }
     }
+
     fetchAllowedSegments();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
 
@@ -771,14 +800,19 @@ function WatchlistContent() {
     const list: string[] = [];
     watchlistItems.forEach(i => {
       if (i.kiteSymbol) list.push(i.kiteSymbol);
-      if (i.binanceSymbol) list.push(i.binanceSymbol);
+      if (i.symbol && !list.includes(i.symbol)) list.push(i.symbol);
+      if (i.binanceSymbol && !list.includes(i.binanceSymbol)) list.push(i.binanceSymbol);
+      if (i.comexSymbol && !list.includes(i.comexSymbol)) list.push(i.comexSymbol);
     });
     // Also subscribe to the detail sheet item's symbol if it's not already on the watchlist
-    if (selectedItem?.kiteSymbol && !list.includes(selectedItem.kiteSymbol)) {
-      list.push(selectedItem.kiteSymbol);
+    if (selectedItem) {
+      const selSym = selectedItem.kiteSymbol || selectedItem.symbol || selectedItem.binanceSymbol || selectedItem.comexSymbol;
+      if (selSym && !list.includes(selSym)) {
+        list.push(selSym);
+      }
     }
     return list;
-  }, [watchlistItems, selectedItem?.kiteSymbol]);
+  }, [watchlistItems, selectedItem?.kiteSymbol, selectedItem?.symbol, selectedItem?.binanceSymbol, selectedItem?.comexSymbol]);
 
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
 
@@ -1244,7 +1278,7 @@ function WatchlistContent() {
         if (match) { migrated = true; return { ...match }; }
       }
       // Upgrade legacy Forex (Frankfurter) to new CDS pairs
-      if ((item.category === 'FOREX' || item.segment === 'Forex') && !item.kiteSymbol.startsWith('CDS:')) {
+      if ((item.category === 'FOREX' || item.segment === 'Forex') && !item.kiteSymbol?.startsWith('CDS:')) {
         const match = DEFAULT_FOREX_ITEMS.find(d => d.name === item.name || d.symbol === item.symbol);
         if (match) { migrated = true; return { ...match }; }
       }
@@ -1325,7 +1359,7 @@ function WatchlistContent() {
     if (legItem.comexSymbol) {
       return comexQuotes?.[legItem.comexSymbol]?.lastPrice ?? legItem.price;
     }
-    return marketQuotes?.[legItem.kiteSymbol]?.lastPrice ?? legItem.price;
+    return (legItem.kiteSymbol ? marketQuotes?.[legItem.kiteSymbol]?.lastPrice : undefined) ?? marketQuotes?.[legItem.symbol]?.lastPrice ?? legItem.price;
   };
 
   useEffect(() => {
@@ -1748,7 +1782,16 @@ function WatchlistContent() {
                     <InstrumentRow
                       key={`${item.symbol}_${index}`}
                       item={item}
-                      quote={marketQuotes[item.kiteSymbol] || (item.binanceSymbol ? marketQuotes[item.binanceSymbol] : undefined)}
+                      quote={(() => {
+                        const kSym = item.kiteSymbol || '';
+                        const sym = item.symbol || '';
+                        const cleanK = kSym.replace(/^(US|FOREX|CRYPTO):/, '');
+                        const cleanS = sym.replace(/^(US|FOREX|CRYPTO):/, '');
+                        const keys = [kSym, sym, `US:${cleanK}`, `US:${cleanS}`, cleanK, cleanS, item.binanceSymbol || '', item.comexSymbol || ''].filter(Boolean);
+                        for (const k of keys) { if (marketQuotes[k]?.lastPrice > 0) return marketQuotes[k]; }
+                        for (const k of keys) { if (marketQuotes[k]) return marketQuotes[k]; }
+                        return undefined;
+                      })()}
                       binanceQuote={item.binanceSymbol ? (marketQuotes[item.binanceSymbol] || binanceQuotesAsQuoteData[item.binanceSymbol]) : undefined}
                       comexQuote={item.comexSymbol ? comexQuotes[item.comexSymbol] : undefined}
                       onTrade={(it: WatchlistItem, type?: 'BUY' | 'SELL' | 'BOTH') => {

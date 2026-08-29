@@ -55,6 +55,8 @@ const mapSegmentToDbSegment = (s: string): string => {
 };
 
 const resolveKitePrefix = (key: string, settlement: string) => {
+  if (!key) return '';
+  if (key.startsWith('US:')) return key;
   let baseKey = key;
   if (baseKey.includes(':')) {
     baseKey = baseKey.split(':').slice(1).join(':'); // Strip existing prefix
@@ -179,7 +181,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           const dbSeg = mapSegmentWithSymbol(p.settlement || '', p.symbol);
           const segUpper = dbSeg.toUpperCase();
           const isCrypto = segUpper.includes('CRYPTO') || !!(p.symbol && p.symbol.endsWith('USDT'));
-          const isComex = (p as any).preferredView === 'comex' || segUpper.includes('COMEX');
+          const isComex = ((p as any).preferredView === 'comex' || segUpper.includes('COMEX')) && !p.symbol?.startsWith('US:');
 
           let binanceSymbol = '';
           if (isCrypto) {
@@ -294,6 +296,8 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           let sym = (p.symbol || '').replace('/', '');
           if (!sym.endsWith('USDT')) sym += 'USDT';
           binance.push(sym);
+        } else if (p.symbol && p.symbol.startsWith('US:')) {
+          kite.push(p.symbol);
         } else if (seg.includes('COMEX') || (p.symbol && p.symbol.endsWith('=F'))) {
           comex.push(p.symbol);
         } else {

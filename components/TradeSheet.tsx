@@ -155,6 +155,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     if (bSymbol) {
       list.push(bSymbol);
     }
+    if (item?.symbol && !list.includes(item.symbol)) {
+      list.push(item.symbol);
+    }
     return list;
   }, [computedKiteSymbol, isCrypto, item?.symbol, bSymbol]);
 

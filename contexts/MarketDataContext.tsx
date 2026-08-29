@@ -579,6 +579,11 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const lastWsTickTimeRef = useRef<Record<string, number>>({});
+  const quotesRef = useRef<Record<string, QuoteData>>({});
+
+  useEffect(() => {
+    quotesRef.current = quotes;
+  }, [quotes]);
 
   useEffect(() => {
     const onMessage = (type: string, data: any) => {
@@ -599,26 +604,31 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           }
         }
         Object.assign(pendingUpdatesRef.current, mapped);
+        Object.assign(quotesRef.current, mapped);
       } else if (type === 'update') {
         const { symbol, quote: q } = data;
         lastWsTickTimeRef.current[symbol] = Date.now();
-        pendingUpdatesRef.current[symbol] = normalizeQuote(q, symbol);
+        const norm = normalizeQuote(q, symbol);
+        pendingUpdatesRef.current[symbol] = norm;
+        quotesRef.current[symbol] = norm;
       }
     };
 
     wsManager.addListener(onMessage);
 
     const fetchInitialQuotes = async () => {
-      // More aggressive HTTP fallback for page refresh scenarios
-      // Always try HTTP fallback if WebSocket isn't actively sending ticks
-      const shouldUseHttpFallback = 
-        wsManager.connectionStatus !== 'connected' || 
-        (Date.now() - wsManager.lastMessageReceivedTime > 3000);
-      
-      if (!shouldUseHttpFallback) return;
-      
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
+      
+      const now = Date.now();
+      // Fetch via HTTP for any symbol that hasn't received a WS tick in the last 2.5s or lacks a valid price
+      const symbolsNeedingFetch = symbols.filter(s => {
+        const lastWsTime = lastWsTickTimeRef.current[s] || 0;
+        const currentQuote = quotesRef.current[s] || pendingUpdatesRef.current[s];
+        return (now - lastWsTime > 2500) || !currentQuote || currentQuote.lastPrice === 0;
+      });
+
+      if (symbolsNeedingFetch.length === 0) return;
       
       // Mobile-optimized: Try local API route first (works better on mobile networks)
       try {
@@ -631,7 +641,7 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ instruments: symbols }),
+          body: JSON.stringify({ instruments: symbolsNeedingFetch }),
           signal: controller.signal,
           cache: 'no-store' // Prevent caching issues on mobile
         });
@@ -677,7 +687,7 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
         
-        const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(String(s))).join(',')}`, {
+        const res = await fetch(`${baseUrl}/quotes?symbols=${symbolsNeedingFetch.map(s => encodeURIComponent(String(s))).join(',')}`, {
           signal: controller.signal,
           cache: 'no-store',
           headers: {
