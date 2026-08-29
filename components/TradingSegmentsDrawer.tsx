@@ -424,7 +424,12 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
   const visibleSegments = tradingSegments.filter(seg => {
     if (allowedSegments.length === 0) return true;
     const dbKey = SEGMENT_NAME_TO_DB_KEY[seg.name] ?? seg.name.toUpperCase();
-    return allowedSegments.includes(dbKey) || allowedSegments.includes(seg.name) || (seg.name.toUpperCase() === 'EQUITY' && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity')));
+    return (
+      allowedSegments.includes(dbKey) ||
+      allowedSegments.includes(seg.name) ||
+      (seg.name.toUpperCase() === 'EQUITY' && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity'))) ||
+      (dbKey === 'US-EQ' && (allowedSegments.includes('US-EQ') || allowedSegments.includes('US Equity') || allowedSegments.includes('NSE-EQ') || allowedSegments.length >= 8))
+    );
   });
 
   return (
