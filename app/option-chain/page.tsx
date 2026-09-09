@@ -196,11 +196,31 @@ function OptionChainContent() {
 
   // Compute user's strike range for INDEX-OPT from their segment settings
   const userStrikeRange = React.useMemo(() => {
-    const isIndexOpt = symbol.includes('NIFTY') || symbol.includes('SENSEX') || symbol.includes('BANKEX');
+    const isIndexOpt = normalizedSymbol.includes('NIFTY') || normalizedSymbol.includes('SENSEX') || normalizedSymbol.includes('BANKEX');
     const seg = isIndexOpt ? 'INDEX-OPT' : 'MCX-OPT';
     const setting = segmentSettings.find(s => s.segment === seg);
     return Number(setting?.strike_range ?? 0);
-  }, [segmentSettings, symbol]);
+  }, [segmentSettings, normalizedSymbol]);
+
+  // Compute bid_buffer for display spread in option chain (MCX-OPT / INDEX-OPT)
+  // bid_buffer = 0 for NSE/BSE options (real exchange depth is used)
+  // bid_buffer = user setting for MCX options (synthetic spread from LTP)
+  const displayBidBuffer = React.useMemo(() => {
+    const isIndexOpt = normalizedSymbol.includes('NIFTY') || normalizedSymbol.includes('SENSEX') || normalizedSymbol.includes('BANKEX');
+    // Index options (NSE/BSE) use real exchange bid/ask — no synthetic buffer needed
+    if (isIndexOpt) return 0;
+    // MCX options: use user's configured bid_buffer
+    const mcxSetting = segmentSettings.find(s => s.segment === 'MCX-OPT');
+    return Number(mcxSetting?.bid_buffer ?? 0);
+  }, [segmentSettings, normalizedSymbol]);
+
+  const useLtpMode = React.useMemo(() => {
+    const isIndexOpt = normalizedSymbol.includes('NIFTY') || normalizedSymbol.includes('SENSEX') || normalizedSymbol.includes('BANKEX');
+    const seg = isIndexOpt ? 'INDEX-OPT' : 'MCX-OPT';
+    const setting = segmentSettings.find(s => s.segment === seg);
+    return setting?.exit_price_mode === 'LTP';
+  }, [segmentSettings, normalizedSymbol]);
+
 
   const [selectedExpiry, setSelectedExpiry] = useState<string | null>(null);
   const [showCharges, setShowCharges] = useState(false);
@@ -303,29 +323,36 @@ function OptionChainContent() {
     }
   }, [spotPrice]);
 
-  // Re-fetch when live spot price diverges significantly from the API's underlyingPrice.
-  // This fixes cold-load cases where Redis has no spot quote and the server falls back
-  // to a median-strike ATM, returning strikes far from the actual market price.
+  // Reset refetch tracking whenever symbol or expiry changes
+  useEffect(() => {
+    hasRefetchedRef.current = false;
+  }, [normalizedSymbol, selectedExpiry]);
+
+  // Re-fetch when live spot price diverges from the API's underlyingPrice
+  // or when the server used a median fallback due to missing cold-start Redis quotes.
   const hasRefetchedRef = useRef(false);
   useEffect(() => {
     if (hasRefetchedRef.current || !data?.underlyingPrice || !spotPrice || spotPrice <= 0) return;
     const apiAtm = data.underlyingPrice;
-    const divergence = Math.abs(spotPrice - apiAtm) / apiAtm;
-    if (divergence > 0.01) {
+    const absDiff = Math.abs(spotPrice - apiAtm);
+    const strikeStep = normalizedSymbol.includes('MIDCP') ? 25 : (normalizedSymbol.includes('NIFTY') ? 50 : 100);
+    const usedFallback = (data as any)?.usedFallback;
+
+    // Trigger re-fetch if server used median fallback OR if spot differs by >= 1 strike step
+    if (usedFallback || absDiff >= strikeStep || (absDiff / apiAtm) > 0.0015) {
       hasRefetchedRef.current = true;
       lastSpotPriceRef.current = spotPrice;
-      // Re-fetch with the correct spot price
       (async () => {
         try {
           const url = `/api/market/option-chain?symbol=${normalizedSymbol}${selectedExpiry ? `&expiry=${selectedExpiry}` : ''}&spotPrice=${spotPrice}&_t=${Date.now()}`;
-          const json = await api.get<{ success: boolean; expiry: string; error?: string; strikes: any[]; expiries: string[]; underlyingPrice?: number; underlyingSymbol?: string }>(url);
+          const json = await api.get<{ success: boolean; expiry: string; error?: string; strikes: any[]; expiries: string[]; underlyingPrice?: number; underlyingSymbol?: string; usedFallback?: boolean }>(url);
           if (json.success) {
             setData(json);
           }
         } catch { /* non-fatal — original data still displayed */ }
       })();
     }
-  }, [spotPrice, data?.underlyingPrice, normalizedSymbol, selectedExpiry]);
+  }, [spotPrice, data, normalizedSymbol, selectedExpiry]);
 
   const handleTrade = (instrSymbol: string, side: 'BUY' | 'SELL') => {
     const strikeMatch = data?.strikes.find(s => s.ce?.symbol === instrSymbol || s.pe?.symbol === instrSymbol);
@@ -335,6 +362,30 @@ function OptionChainContent() {
       setSheetView('DETAILS');
       setSheetSide(side);
     }
+  };
+
+  const handleOpenChart = (instrSymbol: string, kiteIdParam?: string) => {
+    const strikeMatch = data?.strikes.find(s => s.ce?.symbol === instrSymbol || s.pe?.symbol === instrSymbol);
+    const contractData = strikeMatch?.ce?.symbol === instrSymbol ? strikeMatch?.ce : strikeMatch?.pe;
+    const kiteId = kiteIdParam || contractData?.id || (instrSymbol.includes(':') ? instrSymbol : null);
+
+    const isMcxOpt = symbol.includes('GOLD') || symbol.includes('SILVER') || symbol.includes('CRUDE') || symbol.includes('NATGAS') || symbol.includes('NATURALGAS');
+    const isBfoOpt = symbol.includes('SENSEX') || symbol.includes('BANKEX');
+    const isCdsOpt = symbol.includes('USDINR') || symbol.includes('EURINR') || symbol.includes('GBPINR') || symbol.includes('JPYINR');
+    const optSegment = isMcxOpt ? 'MCX - Options' : (isBfoOpt ? 'BFO' : (isCdsOpt ? 'CDS' : 'NFO'));
+    const prefix = isMcxOpt ? 'MCX' : (isBfoOpt ? 'BFO' : (isCdsOpt ? 'CDS' : 'NFO'));
+    const fullKiteSymbol = kiteId || (instrSymbol.includes(':') ? instrSymbol : `${prefix}:${instrSymbol}`);
+
+    setChartItem({
+      symbol: instrSymbol,
+      kiteSymbol: fullKiteSymbol,
+      segment: optSegment
+    });
+    setSelectedContract(null);
+    const chartSheet = document.getElementById('chartSheet');
+    const chartOverlay = document.getElementById('chartSheetOverlay');
+    if (chartSheet) chartSheet.classList.add('open');
+    if (chartOverlay) chartOverlay.classList.add('active');
   };
 
   const closeTradeSheet = () => {
@@ -484,9 +535,12 @@ function OptionChainContent() {
                   quotes={quotes}
                   spotPrice={spotPrice}
                   onTrade={handleTrade}
+                  onOpenChart={handleOpenChart}
                   priceMode={priceMode}
                   strikeRange={0}
                   loading={loading}
+                  bidBuffer={displayBidBuffer}
+                  useLtpMode={useLtpMode}
                 />
               </>
             )}
@@ -701,8 +755,25 @@ function OptionChainContent() {
 
           const ltp = quote ? quote.lastPrice : (contractData?.price || 0);
           const chgPct = quote ? quote.changePercent : (contractData?.change || 0);
-          const bid = ltp > 0 ? ltp : 0;
-          const ask = ltp > 0 ? ltp : 0;
+          const forceSynthetic = useLtpMode || displayBidBuffer > 0;
+          let bid = quote?.bid && quote.bid > 0 ? quote.bid : null;
+          let ask = quote?.ask && quote.ask > 0 ? quote.ask : null;
+
+          if (forceSynthetic && ltp > 0) {
+            if (!displayBidBuffer || displayBidBuffer <= 0) {
+              bid = ltp;
+              ask = ltp;
+            } else {
+              const decimalBuffer = Math.abs(displayBidBuffer) > 0.005 ? displayBidBuffer / 100 : displayBidBuffer;
+              const bufAmount = Math.max(0.05, Math.round(ltp * decimalBuffer * 100) / 100);
+              bid = Math.max(0.05, Math.round((ltp - bufAmount) * 100) / 100);
+              ask = Math.round((ltp + bufAmount) * 100) / 100;
+            }
+          } else {
+            bid = bid ?? (ltp > 0 ? Math.round(ltp * 0.999 * 100) / 100 : 0);
+            ask = ask ?? (ltp > 0 ? Math.round(ltp * 1.001 * 100) / 100 : 0);
+          }
+
 
           // Find active opposite positions for options direction guards
           const activePos = activePositions.find(p =>
@@ -790,18 +861,7 @@ function OptionChainContent() {
                       marginBottom: '8px',
                       transition: 'all 0.18s'
                     }}
-                    onClick={() => {
-                      setChartItem({
-                        symbol: selectedContract.symbol,
-                        kiteSymbol: kiteId || selectedContract.symbol,
-                        segment: symbol.includes('SENSEX') || symbol.includes('BANKEX') ? 'BFO' : 'NFO'
-                      });
-                      setSelectedContract(null);
-                      const chartSheet = document.getElementById('chartSheet');
-                      const chartOverlay = document.getElementById('chartSheetOverlay');
-                      if (chartSheet) chartSheet.classList.add('open');
-                      if (chartOverlay) chartOverlay.classList.add('active');
-                    }}
+                    onClick={() => handleOpenChart(selectedContract.symbol, kiteId)}
                   >
                     <svg 
                       viewBox="0 0 24 24" 
@@ -911,7 +971,6 @@ function OptionChainContent() {
                   item={tradeSheetItem} 
                   side={sheetSide} 
                   onClose={closeTradeSheet} 
-                  productType="INTRADAY"
                 />
               </div>
             </div>
@@ -953,6 +1012,13 @@ function OptionChainContent() {
               symbol={chartItem.kiteSymbol || chartItem.symbol}
               segment={chartItem.segment}
               liveQuote={quotes[chartItem.kiteSymbol]}
+              onClose={() => {
+                const sheet = document.getElementById('chartSheet');
+                const overlay = document.getElementById('chartSheetOverlay');
+                if (sheet) sheet.classList.remove('open');
+                if (overlay) overlay.classList.remove('active');
+                setChartItem(null);
+              }}
             />
           )}
         </div>

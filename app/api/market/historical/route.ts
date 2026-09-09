@@ -72,13 +72,16 @@ const STATIC_TOKENS: Record<string, ResolvedInstrument> = {
   'ICICIBANK':          { token: 1270529, canonicalId: 'NSE:ICICIBANK' },
   'NSE:ICICIBANK':      { token: 1270529, canonicalId: 'NSE:ICICIBANK' },
   'GOLD':               { token: 123668231, canonicalId: 'MCX:GOLD26OCTFUT' },
+  'MCX:GOLD':           { token: 123668231, canonicalId: 'MCX:GOLD26OCTFUT' },
   'MCX:GOLD26OCTFUT':   { token: 123668231, canonicalId: 'MCX:GOLD26OCTFUT' },
-  'SILVER':             { token: 120761607, canonicalId: 'MCX:SILVER26SEPFUT' },
-  'MCX:SILVER26SEPFUT': { token: 120761607, canonicalId: 'MCX:SILVER26SEPFUT' },
-  'SILVERM':            { token: 120761863, canonicalId: 'MCX:SILVERM26AUGFUT' },
-  'MCX:SILVERM26AUGFUT':{ token: 120761863, canonicalId: 'MCX:SILVERM26AUGFUT' },
+  'SILVER':             { token: 126774791, canonicalId: 'MCX:SILVER26DECFUT' },
+  'MCX:SILVER':         { token: 126774791, canonicalId: 'MCX:SILVER26DECFUT' },
+  'MCX:SILVER26DECFUT': { token: 126774791, canonicalId: 'MCX:SILVER26DECFUT' },
+  'SILVERM':            { token: 123668487, canonicalId: 'MCX:SILVERM26NOVFUT' },
+  'MCX:SILVERM':        { token: 123668487, canonicalId: 'MCX:SILVERM26NOVFUT' },
+  'MCX:SILVERM26NOVFUT':{ token: 123668487, canonicalId: 'MCX:SILVERM26NOVFUT' },
   'CRUDEOIL':           { token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
-  'MCX:CRUDEOIL26AUGFUT':{ token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
+  'MCX:CRUDEOIL':       { token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
   'MCX:CRUDEOIL26SEPFUT':{ token: 144870151, canonicalId: 'MCX:CRUDEOIL26SEPFUT' },
   'NATURALGAS':         { token: 145470727, canonicalId: 'MCX:NATURALGAS26SEPFUT' },
   'MCX:NATURALGAS':     { token: 145470727, canonicalId: 'MCX:NATURALGAS26SEPFUT' },
@@ -172,6 +175,16 @@ async function resolveInstrument(symbol: string): Promise<ResolvedInstrument | n
   let normalizedSymbol = symbol;
   if (normalizedSymbol.startsWith('NCO:')) {
     normalizedSymbol = 'MCX:' + normalizedSymbol.slice(4);
+  }
+
+  const isOptSymbol = normalizedSymbol.endsWith('CE') || normalizedSymbol.endsWith('PE');
+  if (isOptSymbol && !normalizedSymbol.includes(':')) {
+    const upperOpt = normalizedSymbol.toUpperCase();
+    const prefix = (upperOpt.includes('SENSEX') || upperOpt.includes('BANKEX')) ? 'BFO'
+      : (upperOpt.includes('GOLD') || upperOpt.includes('SILVER') || upperOpt.includes('CRUDE') || upperOpt.includes('NATURALGAS') || upperOpt.includes('NATGAS')) ? 'MCX'
+      : (upperOpt.includes('USDINR') || upperOpt.includes('EURINR') || upperOpt.includes('GBPINR') || upperOpt.includes('JPYINR')) ? 'CDS'
+      : 'NFO';
+    normalizedSymbol = `${prefix}:${normalizedSymbol}`;
   }
 
   // Fast path: symbol contains ':' (e.g. "MCX:GOLD26AUG161500CE") — exact id match
