@@ -74,6 +74,7 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
       if (cancelled) return;
       await fetchOrders();
       if (cancelled) return;
+      intervalRef.current = setInterval(() => {
         if (!isSubscribed && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
           fetchOrders();
         }

@@ -134,3 +134,9 @@ export function getSharedSessionSync(): { token: string | null; userId: string |
   }
   return local;
 }
+
+export function clearSharedSession(): void {
+  cachedToken = null;
+  cachedUserId = null;
+  sessionPromise = null;
+}

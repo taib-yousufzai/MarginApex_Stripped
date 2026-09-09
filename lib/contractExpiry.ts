@@ -80,3 +80,11 @@ export function isContractExpired(kiteSymbol: string): boolean {
 
   return false;
 }
+
+const MONTH_CODES = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+export function getCurrentFuturesSymbol(prefix: string, base: string, date = new Date()): string {
+  const yy = String(date.getFullYear()).slice(-2);
+  const mmm = MONTH_CODES[date.getMonth()];
+  return `${prefix}:${base}${yy}${mmm}FUT`;
+}

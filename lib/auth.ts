@@ -1,5 +1,10 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
+import { clearSharedSession } from './sharedSession';
+
+export function clearAuthCache(): void {
+  clearSharedSession();
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
