@@ -161,7 +161,32 @@ const redisProxyClient = new Proxy({}, {
     const activeClient = isReady ? realClient : mockClient;
     const prop = (activeClient as any)[propKey];
     if (typeof prop === 'function') {
-      return prop.bind(activeClient);
+      return function (...args: any[]) {
+        try {
+          const targetClient = (isReady && typeof (realClient as any)[propKey] === 'function') ? realClient : mockClient;
+          const fn = (targetClient as any)[propKey] || (mockClient as any)[propKey];
+          if (typeof fn !== 'function') return Promise.resolve(null);
+          const res = fn.apply(targetClient, args);
+          if (res && typeof res.then === 'function') {
+            return Promise.race([
+              res,
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Redis command timeout (1500ms)')), 1500))
+            ]).catch((err) => {
+              if (process.env.NODE_ENV === 'development') {
+                logger.warn({ err: err?.message || err, command: String(propKey) }, 'Redis command timed out/failed, falling back to mock');
+              }
+              const mockProp = (mockClient as any)[propKey];
+              if (typeof mockProp === 'function') {
+                return mockProp.apply(mockClient, args);
+              }
+              return null;
+            });
+          }
+          return res;
+        } catch {
+          return null;
+        }
+      };
     }
     return prop;
   }

@@ -348,21 +348,27 @@ export default function Page() {
       const newRow2 = [...KITE_INSTRUMENTS_ROW2];
       let changed = false;
 
-      for (const base of bases) {
-        // If the base is in row1 or row2 and expired (or we just want to forcefully fetch the active one)
+      const todayStr = new Date().toISOString().split('T')[0];
+      await Promise.all(bases.map(async (base) => {
         const row1Idx = newRow1.findIndex(k => k.includes(base.name));
         const row2Idx = newRow2.findIndex(k => k.includes(base.name));
         
         if (row1Idx !== -1 || row2Idx !== -1) {
-          const { data } = await supabase
+          const queryPromise = supabase
             .from('instruments')
             .select('tradingsymbol')
             .eq('name', base.name)
             .in('instrument_type', base.type)
-            .gte('expiry', new Date().toISOString().split('T')[0])
+            .gte('expiry', todayStr)
             .order('expiry', { ascending: true })
             .limit(1)
             .maybeSingle();
+
+          const timeoutPromise = new Promise<{ data: any }>((resolve) =>
+            setTimeout(() => resolve({ data: null }), 1500)
+          );
+
+          const { data } = await Promise.race([queryPromise, timeoutPromise]);
 
           if (data?.tradingsymbol) {
             const resolvedKey = `${base.prefix}:${data.tradingsymbol}`;
@@ -380,7 +386,7 @@ export default function Page() {
             }
           }
         }
-      }
+      }));
 
       if (changed) {
         setDisplayMap(newMap);
@@ -388,9 +394,9 @@ export default function Page() {
         setMarketRow2Keys(newRow2);
       }
     }
-
     resolveExpiredContracts();
   }, []);
+
 
   const allKiteInstruments = [...marketRow1Keys, ...marketRow2Keys];
   const {

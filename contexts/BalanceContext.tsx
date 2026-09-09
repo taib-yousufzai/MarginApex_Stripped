@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { api } from '@/lib/api';
+import { getSharedSessionSync } from '@/lib/sharedSession';
 
 export interface BalanceContextType {
   balance: number;
@@ -106,19 +107,42 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
       }
     });
 
-    // Check current session immediately
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        init(session);
-      } else {
-        setTimeout(() => {
+    // Check current session immediately via non-blocking token check
+    const { token } = getSharedSessionSync();
+    if (token) {
+      fetchBalance();
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session && !cancelled) init(session);
+      });
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session && !cancelled) {
+          init(session);
+        } else {
           if (!cancelled) setLoading(false);
-        }, 500);
+        }
+      });
+    }
+
+    // Active balance polling fallback: fetch balance every 10 seconds as safety net
+    // (paused when tab is hidden, immediate refresh when tab becomes visible)
+    const timer = setInterval(() => {
+      if (!cancelled && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+        fetchBalance();
       }
-    });
+    }, 10000);
+
+    const handleVisibility = () => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        fetchBalance();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
       subscription.unsubscribe();
       if (channel) supabase.removeChannel(channel);
       window.removeEventListener('order_placed', handleOrderPlaced);

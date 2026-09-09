@@ -131,6 +131,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     fetchPositions();
   }, []);
 
+
   const startConversion = useCallback((posId: string, newType: string) => {
     setInFlightConversions(prev => ({ ...prev, [posId]: newType }));
   }, []);
@@ -261,12 +262,25 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     window.addEventListener('order_placed_with_data', handleOrderPlacedWithData);
     window.addEventListener('order_failed', handleOrderFailed);
 
+    // Active polling fallback: even when subscribed to realtime channels,
+    // poll every 8s as a safety net (paused when tab is in background)
+    const pollTime = Math.max(refreshInterval, 8000);
     const timer = setInterval(() => {
-      if (!isSubscribed) fetchPositions();
-    }, 15000);
+      if (!isSubscribed || document.visibilityState === 'visible') {
+        fetchPositions();
+      }
+    }, pollTime);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPositions();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
       supabase.removeChannel(channel);
       window.removeEventListener('order_placed', handleOrderPlaced);
       window.removeEventListener('order_placed_with_data', handleOrderPlacedWithData);
