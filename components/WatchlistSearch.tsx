@@ -362,7 +362,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const fetchLiveResults = async (q: string, tab: string, signal: AbortSignal) => {
     try {
       const data = await api.get<WatchlistItem[]>(
-        `/api/market/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(tab)}`,
+        `/api/market/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(tab)}&_t=${Date.now()}`,
         { signal }
       );
       return Array.isArray(data) ? data : [];
@@ -482,7 +482,8 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                       <div className="sri-left" style={{ flex: 1, minWidth: 0 }}>
                         {(() => {
                           const rawName = r.name || '';
-                          const isGenericCommodityName = ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'NATURALGAS', 'NATGAS'].includes(rawName.toUpperCase().trim());
+                          const isComex = r.segment?.includes('COMEX') || r.exchange === 'COMEX' || r.symbol?.endsWith('=F') || r.symbol === 'SI=F' || r.symbol === 'GC=F';
+                          const isGenericCommodityName = !isComex && ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'NATURALGAS', 'NATGAS'].includes(rawName.toUpperCase().trim());
                           const searchDisplayName = isGenericCommodityName ? (r.symbol ? r.symbol.replace(/^(MCX|NSE|BSE|CDS|NFO|BFO):/, '') : rawName) : (rawName || r.symbol);
                           return <div className="sri-name">{searchDisplayName}</div>;
                         })()}
