@@ -161,10 +161,18 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     return list;
   }, [computedKiteSymbol, isCrypto, item?.symbol, bSymbol]);
 
+  const comexSymbolKey = item?.comexSymbol || (item?.symbol?.endsWith('=F') ? item.symbol : (
+    (item?.name || item?.symbol || '').toUpperCase().includes('SILVER') ? 'SI=F' :
+    (item?.name || item?.symbol || '').toUpperCase().includes('GOLD') ? 'GC=F' :
+    (item?.name || item?.symbol || '').toUpperCase().includes('CRUDE') ? 'CL=F' :
+    (item?.name || item?.symbol || '').toUpperCase().includes('COPPER') ? 'HG=F' :
+    (item?.name || item?.symbol || '').toUpperCase().includes('NAT') ? 'NG=F' : ''
+  ));
+
   const comexSymbols = useMemo(() => {
-    if (item?.comexSymbol) return [item.comexSymbol];
+    if (comexSymbolKey) return [comexSymbolKey];
     return [];
-  }, [item?.comexSymbol]);
+  }, [comexSymbolKey]);
 
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
   const { quotes: comexQuotes } = useComexQuotes(comexSymbols);
@@ -176,7 +184,7 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
 
   const symCheck = ((item?.symbol || '') + ' ' + (item?.name || '') + ' ' + (item?.kiteSymbol || '')).toUpperCase();
   const isForexUsd = symCheck.includes('GBPUSD') || symCheck.includes('EURUSD') || symCheck.includes('GBP/USD') || symCheck.includes('EUR/USD');
-  const usdInrRate = 83.85;
+  const usdInrRate = 1;
 
   const cryptoQuote = isCrypto && bSymbol ? (marketQuotes[bSymbol] || marketQuotes[item?.symbol?.replace('/', '') || '']) : null;
 
@@ -184,9 +192,9 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
     currentLtp = cryptoQuote.lastPrice || currentLtp;
     const prevClose = (cryptoQuote as any).prevClosePrice ?? (cryptoQuote as any).close ?? currentLtp;
     currentChangePercent = (cryptoQuote as any).changePercent ?? (prevClose > 0 ? ((currentLtp - prevClose) / prevClose) * 100 : 0);
-  } else if (isComex && item?.comexSymbol && comexQuotes[item.comexSymbol]) {
-    currentLtp = comexQuotes[item.comexSymbol].lastPrice;
-    currentChangePercent = comexQuotes[item.comexSymbol].changePercent;
+  } else if (isComex && comexSymbolKey && comexQuotes[comexSymbolKey]) {
+    currentLtp = comexQuotes[comexSymbolKey].lastPrice;
+    currentChangePercent = comexQuotes[comexSymbolKey].changePercent;
   } else if (computedKiteSymbol && marketQuotes[computedKiteSymbol]) {
     currentLtp = marketQuotes[computedKiteSymbol].lastPrice;
     currentChangePercent = marketQuotes[computedKiteSymbol].changePercent;
