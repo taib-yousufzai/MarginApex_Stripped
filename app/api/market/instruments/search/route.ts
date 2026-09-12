@@ -21,7 +21,7 @@ import {
 } from '@/lib/filterEngine';
 
 import { parseOptionSymbol } from '@/lib/positionStore';
-import { fetchUSStockQuotes } from '@/lib/datafeed/USStockService';
+import { fetchUSStockQuotes, getUSStockBasePrice } from '@/lib/datafeed/USStockService';
 import { getCurrentFuturesSymbol } from '@/lib/contractExpiry';
 
 const US_STOCK_ITEMS = [
@@ -165,11 +165,11 @@ const mapSegmentToDbSegment = (s: string): string => {
   if (trimmed === 'NSE - Stock Options' || trimmed === 'BSE - Stock Options') return 'STOCK-OPT';
   if (trimmed === 'MCX - Futures') return 'MCX-FUT';
   if (trimmed === 'MCX - Options') return 'MCX-OPT';
-  if (trimmed === 'NSE - Equity' || trimmed === 'BSE - Equity' || trimmed === 'Equity' || trimmed === 'EQUITY') return 'NSE-EQ';
+  if (trimmed === 'NSE - Equity' || trimmed === 'BSE - Equity' || trimmed === 'Equity' || trimmed === 'EQUITY' || trimmed === 'STOCKS' || trimmed === 'Stocks') return 'STOCKS';
   if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
   if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options') return 'FOREX';
   if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
-  if (trimmed === 'US - Equity' || trimmed === 'US Equity' || trimmed === 'US-EQ' || trimmed === 'US Stocks') return 'US-EQ';
+  if (trimmed === 'US - Equity' || trimmed === 'US-EQ' || trimmed === 'US Equity' || trimmed === 'US') return 'US-EQ';
   return trimmed;
 };
 
@@ -310,7 +310,7 @@ async function fetchLivePrices(
 
     // 3. Fallback on-demand fetch from Kite REST API for missing instruments
       const apiKey = process.env.KITE_API_KEY;
-      let accessToken = request.cookies?.get?.('kite_access_token')?.value;
+      let accessToken = request?.cookies?.get?.('kite_access_token')?.value;
       if (!accessToken) {
         const session = await getSharedKiteSession();
         accessToken = session?.accessToken;
@@ -335,7 +335,7 @@ async function fetchLivePrices(
                 'Authorization': `token ${apiKey}:${accessToken}`,
               },
               cache: 'no-store',
-              signal: AbortSignal.timeout(3000),
+              signal: AbortSignal.timeout(2000),
             });
 
             if (res.ok) {
@@ -389,55 +389,41 @@ async function fetchLivePrices(
       }
     }
 
-    // 4. Fetch missing Binance / Forex quotes
-    const usdInrRate = 83.85;
-    for (const id of missingKiteIds) {
-      const cleanSym = id.split(':').pop() || id;
-      if (['GBPUSD', 'EURUSD', 'USDJPY', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT'].includes(cleanSym) || cleanSym.endsWith('USDT')) {
-        try {
-          const binanceSym = cleanSym.endsWith('USDT') ? cleanSym : `${cleanSym}USDT`;
-          const bRes = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSym}`, { signal: AbortSignal.timeout(2000) });
-          if (bRes.ok) {
-            const bJson = await bRes.json();
-            let lastP = parseFloat(bJson.lastPrice || '0');
-            let highP = parseFloat(bJson.highPrice || '0');
-            let lowP = parseFloat(bJson.lowPrice || '0');
+    // 4. Fetch missing Binance / Forex quotes in parallel
+    const usdInrRate = 1;
+    await Promise.all(
+      missingKiteIds.map(async (id) => {
+        const cleanSym = id.split(':').pop() || id;
+        if (['GBPUSD', 'EURUSD', 'USDJPY', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT'].includes(cleanSym) || cleanSym.endsWith('USDT')) {
+          try {
+            const binanceSym = cleanSym.endsWith('USDT') ? cleanSym : `${cleanSym}USDT`;
+            const bRes = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSym}`, { signal: AbortSignal.timeout(800) });
+            if (bRes.ok) {
+              const bJson = await bRes.json();
+              let lastP = parseFloat(bJson.lastPrice || '0');
+              let highP = parseFloat(bJson.highPrice || '0');
+              let lowP = parseFloat(bJson.lowPrice || '0');
 
-            if (['GBPUSD', 'EURUSD'].includes(cleanSym)) {
-              lastP *= usdInrRate;
-              highP *= usdInrRate;
-              lowP *= usdInrRate;
-            } else if (cleanSym === 'USDJPY') {
-              lastP = usdInrRate / (lastP || 1);
-              highP = usdInrRate / (highP || 1);
-              lowP = usdInrRate / (lowP || 1);
+              if (['GBPUSD', 'EURUSD'].includes(cleanSym)) {
+                lastP *= usdInrRate;
+                highP *= usdInrRate;
+                lowP *= usdInrRate;
+              } else if (cleanSym === 'USDJPY') {
+                lastP = usdInrRate / (lastP || 1);
+                highP = usdInrRate / (highP || 1);
+                lowP = usdInrRate / (lowP || 1);
+              }
+
+              quoteMap[id] = { price: lastP, high: highP, low: lowP };
+              quoteMap[cleanSym] = { price: lastP, high: highP, low: lowP };
+              quoteMap[binanceSym] = { price: lastP, high: highP, low: lowP };
             }
-
-            quoteMap[id] = { price: lastP, high: highP, low: lowP };
-            quoteMap[cleanSym] = { price: lastP, high: highP, low: lowP };
-            quoteMap[binanceSym] = { price: lastP, high: highP, low: lowP };
-          }
-        } catch (e) {
-          // ignore fallback error
-        }
-      }
-    }
-
-    // 5. Fetch US Stock quotes for missing US stock tickers
-    const usSymbolsToFetch = missingKiteIds
-      .map(id => id.split(':').pop() || id)
-      .filter(sym => US_STOCK_SYMBOLS.has(sym));
-    if (usSymbolsToFetch.length > 0) {
-      try {
-        const usQuotes = await fetchUSStockQuotes(usSymbolsToFetch);
-        for (const [sym, q] of Object.entries(usQuotes)) {
-          if (q && q.price > 0) {
-            quoteMap[sym] = { price: q.price, high: q.high, low: q.low };
-            quoteMap[`US:${sym}`] = { price: q.price, high: q.high, low: q.low };
+          } catch {
+            // ignore fallback error
           }
         }
-      } catch { /* ignore */ }
-    }
+      })
+    );
 
     return quoteMap;
   } catch (err) {
@@ -468,9 +454,6 @@ export async function GET(request: NextRequest) {
     const isEquityTab = tab === 'NSE-EQ' || tab === 'Equity' || tab === 'EQUITY' || tab === 'Stocks';
     const authHeader = request.headers.get('Authorization') || 'anon';
     const cacheKey = `${authHeader.slice(-16)}:${tab}:${q.toUpperCase()}`;
-    if (searchParams.has('_t')) {
-      searchCache.delete(cacheKey);
-    }
     const cached = searchCache.get(cacheKey);
     if (cached && (Date.now() - cached.cachedAt < 5000)) {
       return NextResponse.json(cached.results);
@@ -516,11 +499,11 @@ export async function GET(request: NextRequest) {
       if (tab === 'STOCK-OPT') return query.not('option_type', 'is', null).in('exchange', ['NFO', 'BFO', 'NSE', 'BSE']);
       if (tab === 'MCX-FUT') return query.is('option_type', null).eq('exchange', 'MCX');
       if (tab === 'MCX-OPT') return query.not('option_type', 'is', null).eq('exchange', 'MCX');
-      if (tab === 'NSE-EQ' || tab === 'Equity' || tab === 'EQUITY') return query.eq('instrument_type', 'EQ').is('option_type', null).in('exchange', ['NSE', 'BSE']);
+      if (tab === 'STOCKS' || tab === 'NSE-EQ' || tab === 'Equity' || tab === 'EQUITY' || tab === 'Stocks') return query.eq('instrument_type', 'EQ').is('option_type', null).in('exchange', ['NSE', 'BSE']);
       if (tab === 'CRYPTO') return query.eq('segment', 'CRYPTO');
       if (tab === 'FOREX') return query.or('exchange.eq.CDS,exchange.eq.FOREX,segment.eq.FOREX');
       if (tab === 'COMEX') return query.eq('segment', 'COMEX');
-      if (tab === 'US-EQ' || tab === 'US Equity' || tab === 'US Stocks') return query.eq('segment', 'US-EQ');
+      if (tab === 'US-EQ' || tab === 'US Equity' || tab === 'US') return query.eq('segment', 'US-EQ');
       return query;
     };
 
@@ -608,7 +591,7 @@ export async function GET(request: NextRequest) {
           .select('tradingsymbol, name, exchange, instrument_type, segment, strike_price, option_type, expiry, underlying_symbol')
           .neq('exchange', 'NCO'); // NCO has sub-interval strike rows that pollute results
           
-        let orParts: string[] = [];
+        let orParts = [];
 
         if (/^\d+(\.\d+)?$/.test(q)) {
           // Pure numeric query — search exact strike_price, but also allow partial text matches
@@ -1021,7 +1004,7 @@ export async function GET(request: NextRequest) {
     const quoteMap = await fetchLivePrices(kiteIds, request);
 
     // Map to watchlist-compatible shape
-    let results: any[] = validRows.map((inst: any) => {
+    let results = validRows.map((inst: any) => {
       let segmentLabel = '';
       const symUpper = (inst.tradingsymbol || '').toUpperCase();
       const nameUpper = (inst.name || '').toUpperCase();
@@ -1208,8 +1191,8 @@ export async function GET(request: NextRequest) {
       results.push(...matchingForex);
     }
 
-    // Append matching US Stock items if tab is All, US-EQ, US Equity, or US Stocks
-    if (tab === 'All' || tab === 'US-EQ' || tab === 'US Equity' || tab === 'US Stocks') {
+    // Append matching US Stock items if tab is All, STOCKS, US-EQ, US Equity, or US Stocks
+    if (tab === 'All' || tab === 'STOCKS' || tab === 'NSE-EQ' || tab === 'Equity' || tab === 'Stocks' || tab === 'US-EQ' || tab === 'US Equity' || tab === 'US Stocks' || tab === 'US') {
       const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
       const qClean = q.replace(/[\s\/]+/g, '').toLowerCase();
 
@@ -1226,18 +1209,23 @@ export async function GET(request: NextRequest) {
 
         const usResults = matchingUsStocks.map(item => {
           const qInfo = usQuotes[item.symbol];
+          const baseP = getUSStockBasePrice(item.symbol);
+          const price = qInfo?.price ?? baseP;
+          const high = qInfo?.high ?? Number((baseP * 1.01).toFixed(2));
+          const low = qInfo?.low ?? Number((baseP * 0.99).toFixed(2));
+          const close = qInfo?.prevClose ?? baseP;
           return {
             name: `${item.name} (${item.symbol})`,
             symbol: item.symbol,
             kiteSymbol: `US:${item.symbol}`,
-            price: qInfo?.price ?? 0,
+            price,
             change: qInfo?.changePercent ? `${qInfo.changePercent > 0 ? '+' : ''}${qInfo.changePercent.toFixed(2)}%` : '0%',
             segment: item.segment,
             contractDate: 'Continuous',
-            open: 0,
-            high: qInfo?.high ?? 0,
-            low: qInfo?.low ?? 0,
-            close: qInfo?.prevClose ?? 0,
+            open: close,
+            high,
+            low,
+            close,
           };
         });
 

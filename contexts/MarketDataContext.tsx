@@ -27,8 +27,8 @@ type MarketDataContextType = {
 
 const MarketDataContext = createContext<MarketDataContextType>({
   quotes: {},
-  subscribe: () => {},
-  unsubscribe: () => {},
+  subscribe: () => { },
+  unsubscribe: () => { },
   connectionStatus: 'disconnected',
   lastError: null,
   reconnectCount: 0,
@@ -42,15 +42,15 @@ class MarketWSManager {
   public symbolRefCount: Map<string, number> = new Map();
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private wsUrl: string;
-  
+
   // Event handler references for cleanup
   private handleVisibilityChange: (() => void) | null = null;
   private handleWake: (() => void) | null = null;
   private handleOnline: (() => void) | null = null;
-  
+
   // Pending subscriptions to send when WebSocket connects
   private pendingSubscriptions: string[] = [];
-  
+
   // Track connection start time for timeout
   private connectionStartTime: number = 0;
 
@@ -64,10 +64,10 @@ class MarketWSManager {
   constructor() {
     // Smart URL resolution for production and development
     let url = process.env.NEXT_PUBLIC_TICKER_WS_URL;
-    
+
     // Skip Vercel URLs as they don't support WebSocket
     if (url && url.includes('vercel.app')) url = '';
-    
+
     // Try to derive WS URL from HTTP ticker URL
     if (!url && process.env.NEXT_PUBLIC_TICKER_URL) {
       const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL;
@@ -75,7 +75,7 @@ class MarketWSManager {
         url = tickerUrl.replace(/^http/, 'ws');
       }
     }
-    
+
     // Production fallback: Use Railway production URL
     if (!url) {
       // Check if we're in production by looking at window.location
@@ -100,13 +100,13 @@ class MarketWSManager {
         url = 'wss://marginapexx-production.up.railway.app';
       }
     }
-    
+
     this.wsUrl = url;
     console.log('[MarketWSManager] Initialized with WebSocket URL:', url);
 
     if (typeof window !== 'undefined') {
       let lastHiddenTime = 0;
-      
+
       // Store handler references for cleanup
       this.handleVisibilityChange = () => {
         if (document.visibilityState === 'hidden') {
@@ -114,7 +114,7 @@ class MarketWSManager {
         } else if (document.visibilityState === 'visible') {
           console.log('[MarketWSManager] Visibility visible. Checking connection status...');
           const elapsed = lastHiddenTime > 0 ? Date.now() - lastHiddenTime : 0;
-          
+
           if (elapsed > 5000) {
             console.log(`[MarketWSManager] Tab hidden for ${elapsed}ms. Proactively recycling socket for iOS resilience.`);
             this.disconnectCleanly();
@@ -155,7 +155,7 @@ class MarketWSManager {
 
   private disconnectCleanly() {
     this.stopHeartbeat();
-    
+
     if (this.ws) {
       console.log('[MarketWSManager] Disconnecting current WebSocket cleanly...');
       this.ws.onopen = null;
@@ -174,7 +174,7 @@ class MarketWSManager {
       this.binanceWs.onmessage = null;
       this.binanceWs.onerror = null;
       this.binanceWs.onclose = null;
-      try { this.binanceWs.close(); } catch {}
+      try { this.binanceWs.close(); } catch { }
       this.binanceWs = null;
     }
     if (this.reconnectTimeout) {
@@ -261,17 +261,15 @@ class MarketWSManager {
     if (this.usStockInterval) return;
 
     const pollUSQuotes = async () => {
-      const usSymbols: string[] = [];
-      const US_STOCKS = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'SPY', 'QQQ', 'DIA'];
+      const US_STOCKS = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'SPY', 'QQQ', 'DIA', 'ES=F', 'NQ=F', 'YM=F'];
+      const usSymbols: string[] = [...US_STOCKS];
       
       for (const sym of Array.from(this.symbolRefCount.keys())) {
-        const clean = sym.replace(/^(US:|FOREX:)/i, '').trim().toUpperCase();
+        const clean = sym.replace(/^(US:|FOREX:|NSE:|BSE:|NFO:)/i, '').trim().toUpperCase();
         if (sym.toUpperCase().startsWith('US:') || US_STOCKS.includes(clean)) {
           usSymbols.push(clean);
         }
       }
-
-      if (usSymbols.length === 0) return;
 
       const unique = Array.from(new Set(usSymbols));
       try {
@@ -302,6 +300,7 @@ class MarketWSManager {
 
           this.notifyListeners('update', { symbol: sym, quote: quoteObj });
           this.notifyListeners('update', { symbol: `US:${sym}`, quote: quoteObj });
+          this.notifyListeners('update', { symbol: `NSE:${sym}`, quote: quoteObj });
         }
       } catch (e) {
         // fail silently
@@ -314,7 +313,7 @@ class MarketWSManager {
 
   private connect() {
     console.log('[MarketWSManager] connect() called, symbolRefCount:', this.symbolRefCount.size, 'ws state:', this.ws?.readyState);
-    
+
     if (this.symbolRefCount.size === 0) {
       console.log('[MarketWSManager] No symbols to subscribe to, skipping connect');
       return;
@@ -322,7 +321,7 @@ class MarketWSManager {
 
     this.connectBinance();
     this.connectUSStocks();
-    
+
     // Prevent overlapping connection attempts
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
       console.log('[MarketWSManager] Connection already in progress, skipping');
@@ -331,7 +330,7 @@ class MarketWSManager {
 
     console.log('[MarketWSManager] Starting new WebSocket connection');
     this.disconnectCleanly();
-    
+
     // Set connection start time for timeout tracking
     this.connectionStartTime = Date.now();
 
@@ -352,11 +351,11 @@ class MarketWSManager {
 
         // Send all active subscriptions
         const activeSymbols = Array.from(this.symbolRefCount.keys());
-        
+
         // Also include any pending subscriptions that were queued before connection
         const allSymbols = [...activeSymbols, ...this.pendingSubscriptions];
         const uniqueSymbols = Array.from(new Set(allSymbols));
-        
+
         if (uniqueSymbols.length > 0) {
           console.log('[MarketWSManager] Subscribing to instruments:', uniqueSymbols);
           this.ws?.send(JSON.stringify({ action: 'subscribe', symbols: uniqueSymbols }));
@@ -470,18 +469,18 @@ class MarketWSManager {
 
   public subscribe(symbols: string[]) {
     console.log('[MarketWSManager] subscribe() called with symbols:', symbols, 'current refCount:', this.symbolRefCount.size);
-    
+
     const toSubscribe: string[] = [];
     for (const sym of symbols) {
       const count = this.symbolRefCount.get(sym) || 0;
       this.symbolRefCount.set(sym, count + 1);
       if (count === 0) toSubscribe.push(sym);
     }
-    
+
     console.log('[MarketWSManager] After increment, refCount:', this.symbolRefCount.size, 'toSubscribe:', toSubscribe);
-    
+
     this.connect();
-    
+
     if (toSubscribe.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
       console.log('[MarketWSManager] Sending subscribe message for:', toSubscribe);
       this.ws.send(JSON.stringify({ action: 'subscribe', symbols: toSubscribe }));
@@ -551,7 +550,7 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
 
   const rawSym = (q.symbol || q.tradingsymbol || symbolKey || '').toUpperCase();
   const exchange = (q.exchange || (rawSym.includes(':') ? rawSym.split(':')[0] : '')).toUpperCase();
-  const cleanSym = rawSym.replace(/^CRYPTO:/, '').replace(/^FOREX:/, '').replace(/^MCX:/, '').replace(/^COMEX:/, '').replace(/^NCO:/, '').replace('USDT', '');
+  const cleanSym = rawSym.replace(/^(CRYPTO|FOREX|MCX|COMEX|NCO|NFO|NSE|BSE):/, '');
 
   const isForexUsd = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'].includes(cleanSym);
   const usdInrRate = 1;
@@ -576,11 +575,15 @@ export function normalizeQuote(q: any, symbolKey?: string): QuoteData {
     if (low > 0 && low < 20) low *= usdInrRate;
   }
 
+  const isCommodity = exchange === 'MCX' || rawSym.startsWith('MCX:') || rawSym.startsWith('MCX-') ||
+    ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c => cleanSym.includes(c));
+
   const isIndianMarket = exchange === 'NSE' || exchange === 'NFO' || exchange === 'MCX' || exchange === 'BSE' || exchange === 'BFO' || exchange === 'NCO' ||
     rawSym.startsWith('NSE:') || rawSym.startsWith('NFO:') || rawSym.startsWith('MCX:') || rawSym.startsWith('BSE:') || rawSym.startsWith('BFO:') || rawSym.startsWith('NCO:') || rawSym.startsWith('MCX-') ||
     ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL', 'NIFTY', 'BANKNIFTY', 'FINNIFTY', 'SENSEX'].some(c => cleanSym.includes(c));
 
-  // For Indian market (NSE, NFO, MCX), ignore buffers and use Zerodha raw ask/bid 1:1
+  // For all Indian market instruments (NSE, NFO, MCX, BSE, BFO), pass real API bid/ask through.
+  // For Crypto and Forex, force synthetic buffer calculation (no reliable depth from exchange).
   const forceSynthetic = !isIndianMarket;
 
   const { bid: finalBid, ask: finalAsk } = normalizeOptionQuoteDepth(
@@ -622,7 +625,8 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const wsManager = useMemo(() => MarketWSManager.getInstance(), []);
   const pendingUpdatesRef = useRef<Record<string, QuoteData>>({});
-  const fetchInitialQuotesRef = useRef<() => void>(() => {});
+  const fetchInitialQuotesRef = useRef<() => void>(() => { });
+  const isFetchingRef = useRef<boolean>(false);
 
   // Flush pending updates every 250ms to reduce render count
   useEffect(() => {
@@ -638,11 +642,6 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const lastWsTickTimeRef = useRef<Record<string, number>>({});
-  const quotesRef = useRef<Record<string, QuoteData>>({});
-
-  useEffect(() => {
-    quotesRef.current = quotes;
-  }, [quotes]);
 
   useEffect(() => {
     const onMessage = (type: string, data: any) => {
@@ -659,58 +658,71 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           // Do not allow HTTP fallback quotes to overwrite fresh WS ticks (within last 5s)
           const lastWsTime = lastWsTickTimeRef.current[key] || 0;
           if (now - lastWsTime > 5000) {
-            mapped[key] = normalizeQuote(quote as any, key);
+            const normalized = normalizeQuote(quote as any, key);
+            mapped[key] = normalized;
+            if (key.includes(':')) {
+              const clean = key.split(':')[1];
+              mapped[clean] = normalized;
+              const unspaced = clean.replace(/\s+/g, '');
+              mapped[unspaced] = normalized;
+            }
           }
         }
         Object.assign(pendingUpdatesRef.current, mapped);
-        Object.assign(quotesRef.current, mapped);
       } else if (type === 'update') {
-        const { symbol, quote: q } = data;
+        const { symbol, quote: q = data.data } = data;
         lastWsTickTimeRef.current[symbol] = Date.now();
-        const norm = normalizeQuote(q, symbol);
-        pendingUpdatesRef.current[symbol] = norm;
-        quotesRef.current[symbol] = norm;
+        const normalized = normalizeQuote(q, symbol);
+        pendingUpdatesRef.current[symbol] = normalized;
+        if (symbol && symbol.includes(':')) {
+          const clean = symbol.split(':')[1];
+          pendingUpdatesRef.current[clean] = normalized;
+          const unspaced = clean.replace(/\s+/g, '');
+          pendingUpdatesRef.current[unspaced] = normalized;
+        }
       }
     };
 
     wsManager.addListener(onMessage);
 
     const fetchInitialQuotes = async () => {
+      // Prevent concurrent overlapping requests from saturating browser connection pool
+      if (isFetchingRef.current) return;
+
+      // More aggressive HTTP fallback for page refresh scenarios
+      // Always try HTTP fallback if WebSocket isn't actively sending ticks
+      const shouldUseHttpFallback =
+        wsManager.connectionStatus !== 'connected' ||
+        (Date.now() - wsManager.lastMessageReceivedTime > 3000);
+
+      if (!shouldUseHttpFallback) return;
+
       const symbols = Array.from(wsManager.symbolRefCount.keys());
       if (symbols.length === 0) return;
-      
-      const now = Date.now();
-      // Fetch via HTTP for any symbol that hasn't received a WS tick in the last 2.5s or lacks a valid price
-      const symbolsNeedingFetch = symbols.filter(s => {
-        const lastWsTime = lastWsTickTimeRef.current[s] || 0;
-        const currentQuote = quotesRef.current[s] || pendingUpdatesRef.current[s];
-        return (now - lastWsTime > 2500) || !currentQuote || currentQuote.lastPrice === 0;
-      });
 
-      if (symbolsNeedingFetch.length === 0) return;
-      
-      // Mobile-optimized: Try local API route first (works better on mobile networks)
+      isFetchingRef.current = true;
+
       try {
-        // Fallback 1: Local Next.js API route with longer timeout for mobile
+        // Fallback 1: Local Next.js API route
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for mobile
-        
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
         const res = await fetch('/api/kite/quotes', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ instruments: symbolsNeedingFetch }),
+          body: JSON.stringify({ instruments: symbols }),
           signal: controller.signal,
-          cache: 'no-store' // Prevent caching issues on mobile
+          cache: 'no-store'
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (res.ok) {
           const json = await res.json();
           if (json.data && Object.keys(json.data).length > 0) {
-            console.log('[MarketDataProvider] ✓ Quotes fetched via local API (mobile-friendly)');
+            console.log('[MarketDataProvider] ✓ Quotes fetched via local API');
             onMessage('quotes', json.data);
             return;
           }
@@ -723,11 +735,10 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
       }
 
-      // Fallback 2: Direct query to Railway ticker daemon with mobile-optimized settings
+      // Fallback 2: Direct query to Railway ticker daemon
       try {
         let baseUrl = process.env.NEXT_PUBLIC_TICKER_URL;
-        
-        // Smart production URL detection
+
         if (!baseUrl) {
           if (typeof window !== 'undefined') {
             const hostname = window.location.hostname;
@@ -742,20 +753,20 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             baseUrl = 'https://marginapexx-production.up.railway.app';
           }
         }
-        
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
-        
-        const res = await fetch(`${baseUrl}/quotes?symbols=${symbolsNeedingFetch.map(s => encodeURIComponent(String(s))).join(',')}`, {
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const res = await fetch(`${baseUrl}/quotes?symbols=${symbols.map(s => encodeURIComponent(String(s))).join(',')}`, {
           signal: controller.signal,
           cache: 'no-store',
           headers: {
             'Accept': 'application/json'
           }
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (res.ok) {
           const json = await res.json();
           if (json.success && json.data && Object.keys(json.data).length > 0) {
@@ -769,6 +780,8 @@ export const MarketDataProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         } else {
           console.error('[MarketDataProvider] Direct HTTP fallback error:', err);
         }
+      } finally {
+        isFetchingRef.current = false;
       }
     };
 
