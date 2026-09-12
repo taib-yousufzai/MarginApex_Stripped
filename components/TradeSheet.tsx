@@ -226,6 +226,16 @@ export default function TradeSheet({ item, side, onClose, onSuccess, exitMode = 
   const sellEntryBuffer = sellSetting ? sellSetting.entry_buffer : 0;
   const sellExitBuffer = sellSetting ? sellSetting.exit_buffer : 0;
 
+  const cleanSymUpper = item?.symbol ? item.symbol.replace(/^US:/i, '').trim().toUpperCase() : '';
+  const activeKiteQuote = (computedKiteSymbol && marketQuotes[computedKiteSymbol]) ||
+    (item?.kiteSymbol && marketQuotes[item.kiteSymbol]) ||
+    (item?.symbol && marketQuotes[item.symbol]) ||
+    (cleanSymUpper && marketQuotes[cleanSymUpper]) ||
+    (cleanSymUpper && marketQuotes[`US:${cleanSymUpper}`]) ||
+    (item?.symbol && marketQuotes[item.symbol.replace(/\s+/g, '')]) ||
+    (item?.name && marketQuotes[item.name]) ||
+    null;
+
   let bidPrice = 0;
   let askPrice = 0;
   let rawBid = 0;
