@@ -115,16 +115,22 @@ export default function PositionPage() {
   };
 
   useEffect(() => {
+    refresh();
     fetchClosed();
     // Closed positions don't need rapid polling — refresh on events + slow fallback
     const iv = setInterval(fetchClosed, 30000);
-    const onOrderPlaced = () => setTimeout(() => fetchClosed(), 200);
+    const onOrderPlaced = () => {
+      refresh();
+      setTimeout(() => { refresh(); fetchClosed(); }, 200);
+    };
     window.addEventListener('order_placed', onOrderPlaced);
+    window.addEventListener('order_placed_with_data', onOrderPlaced);
     return () => {
       clearInterval(iv);
       window.removeEventListener('order_placed', onOrderPlaced);
+      window.removeEventListener('order_placed_with_data', onOrderPlaced);
     };
-  }, []);
+  }, [refresh]);
 
   const { balance: balanceFromHook, settlementAmount } = useBalance();
   const balance = balanceFromHook;

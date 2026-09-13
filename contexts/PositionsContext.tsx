@@ -9,6 +9,7 @@ import { useBinanceQuotes } from '@/hooks/useBinanceQuotes';
 import { MyPosition } from '@/lib/types/order';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
+import { getSharedSessionSync } from '@/lib/sharedSession';
 import { isContractExpired } from '@/lib/contractExpiry';
 
 export interface EnrichedPosition extends MyPosition {
@@ -32,6 +33,7 @@ export interface PositionsContextType {
   restorePositionLocally: (posId: string) => void;
   startConversion: (posId: string, newType: string) => void;
   endConversion: (posId: string) => void;
+  addOptimisticPosition: (pos: Partial<MyPosition>) => void;
 }
 
 const PositionsContext = createContext<PositionsContextType | null>(null);
@@ -47,10 +49,11 @@ const mapSegmentToDbSegment = (s: string): string => {
   if (trimmed === 'NSE - Stock Options' || trimmed === 'BSE - Stock Options') return 'STOCK-OPT';
   if (trimmed === 'MCX - Futures') return 'MCX-FUT';
   if (trimmed === 'MCX - Options') return 'MCX-OPT';
-  if (trimmed === 'NSE - Equity' || trimmed === 'BSE - Equity') return 'NSE-EQ';
+  if (trimmed === 'NSE - Equity' || trimmed === 'BSE - Equity') return 'STOCKS';
   if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
   if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options') return 'FOREX';
   if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
+  if (trimmed === 'US - Equity' || trimmed === 'US-EQ' || trimmed === 'US Equity' || trimmed === 'US') return 'US-EQ';
   return trimmed;
 };
 
@@ -62,6 +65,7 @@ const resolveKitePrefix = (key: string, settlement: string) => {
     baseKey = baseKey.split(':').slice(1).join(':'); // Strip existing prefix
   }
   const seg = (settlement || '').toUpperCase();
+  if (seg.includes('US')) return `US:${baseKey}`;
   let prefix = 'NSE:';
   if (baseKey.startsWith('SENSEX') || baseKey.startsWith('BANKEX')) {
     prefix = 'BFO:';
@@ -111,9 +115,11 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
   const optimisticallyRemovedIds = useRef<Set<string>>(new Set());
   const abortControllerRef = useRef<AbortController | null>(null);
   const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  // Tracks IDs of positions that were added optimistically (not yet confirmed by DB)
+  const optimisticPositionIds = useRef<Set<string>>(new Set());
 
   // Static properties map to cache computations that never change per position lifecycle
-  const staticPositionPropsRef = useRef<Record<string, { entryTimeMs: number; dbSeg: string; resolvedKiteSymbol: string; isCrypto: boolean; isComex: boolean; binanceSymbol: string }>>({});
+  const staticPositionPropsRef = useRef<Record<string, { entryTimeMs: number; dbSeg: string; resolvedKiteSymbol: string; isCrypto: boolean; isComex: boolean; binanceSymbol: string }>>({}); 
 
   const updatePositionLocally = useCallback((posId: string, updatedFields: Partial<MyPosition>) => {
     setRawPositions(prev =>
@@ -131,6 +137,43 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     fetchPositions();
   }, []);
 
+  // Inject a temporary placeholder position so the user sees it instantly
+  // after a scalp order — before the DB write propagates. The real DB fetch
+  // will replace this placeholder when it arrives.
+  const addOptimisticPosition = useCallback((partialPos: Partial<MyPosition>) => {
+    const tempId = `__optimistic__${Date.now()}`;
+    const now = new Date().toISOString();
+    const optimisticPos: MyPosition = {
+      id: tempId,
+      user_id: '',
+      symbol: partialPos.symbol || '',
+      settlement: partialPos.settlement || '',
+      side: partialPos.side || 'BUY',
+      qty_open: partialPos.qty_open || 0,
+      lots: (partialPos as any).lots || 0,
+      entry_price: partialPos.entry_price || 0,
+      avg_price: partialPos.avg_price || partialPos.entry_price || 0,
+      ltp: partialPos.ltp || partialPos.entry_price || 0,
+      status: 'open',
+      product_type: partialPos.product_type || 'INTRADAY',
+      kite_instrument: partialPos.kite_instrument || partialPos.symbol || '',
+      entry_time: now,
+      locked_margin: partialPos.locked_margin || 0,
+      brokerage: 0,
+      ...partialPos,
+    } as MyPosition;
+
+    optimisticPositionIds.current.add(tempId);
+    setRawPositions(prev => [optimisticPos, ...prev]);
+
+    // Auto-remove the optimistic placeholder after 4s (real data should arrive by then)
+    setTimeout(() => {
+      if (optimisticPositionIds.current.has(tempId)) {
+        optimisticPositionIds.current.delete(tempId);
+        setRawPositions(prev => prev.filter(p => p.id !== tempId));
+      }
+    }, 4000);
+  }, []);
 
   const startConversion = useCallback((posId: string, newType: string) => {
     setInFlightConversions(prev => ({ ...prev, [posId]: newType }));
@@ -147,8 +190,8 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
   const fetchPositions = useCallback(async () => {
     try {
       // Don't fetch if there's no active session (e.g. on the login page)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      const { token } = getSharedSessionSync();
+      if (!token) return;
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -182,7 +225,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           const dbSeg = mapSegmentWithSymbol(p.settlement || '', p.symbol);
           const segUpper = dbSeg.toUpperCase();
           const isCrypto = segUpper.includes('CRYPTO') || !!(p.symbol && p.symbol.endsWith('USDT'));
-          const isComex = ((p as any).preferredView === 'comex' || segUpper.includes('COMEX')) && !p.symbol?.startsWith('US:');
+          const isComex = (p as any).preferredView === 'comex' || segUpper.includes('COMEX');
 
           let binanceSymbol = '';
           if (isCrypto) {
@@ -201,10 +244,30 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         }
       });
 
-      setRawPositions(newPositions);
+      setRawPositions(prev => {
+        const prevOpenIds = new Set(prev.map(p => p.id));
+        let posClosedOnBackend = false;
+        for (const id of prevOpenIds) {
+          // Skip optimistic placeholders — they are not real DB IDs
+          if (id.startsWith('__optimistic__')) continue;
+          if (!serverIds.has(id) && !optimisticallyRemovedIds.current.has(id)) {
+            posClosedOnBackend = true;
+            break;
+          }
+        }
+        if (posClosedOnBackend) {
+          setTimeout(() => {
+            window.dispatchEvent(new Event('position-closed'));
+          }, 0);
+        }
+        // Clear any optimistic placeholders now that real data has arrived
+        optimisticPositionIds.current.clear();
+        return newPositions;
+      });
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : "Unknown error");
+      console.warn('[PositionsContext] Transient error fetching positions:', err);
+      setError(null);
     } finally {
       setLoading(false);
     }
@@ -220,7 +283,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     let isSubscribed = false;
     const channelName = `my-positions-realtime-${Math.random().toString(36).slice(2)}`;
 
-    const debouncedFetch = (delay = 1500) => {
+    const debouncedFetch = (delay = 300) => {
       if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
       fetchDebounceRef.current = setTimeout(() => {
         fetchPositions();
@@ -233,7 +296,7 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
         'postgres_changes',
         { event: '*', schema: 'public', table: 'positions' },
         () => {
-          debouncedFetch(500);
+          debouncedFetch(200);
         }
       );
 
@@ -241,16 +304,26 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       isSubscribed = status === 'SUBSCRIBED';
     });
 
-    const handleOrderPlacedWithData = (_e: Event) => {
-      // v2 engine: all position state transitions happen atomically in the DB.
-      // Optimistic UI manipulation is not needed and causes incorrect state
-      // (e.g. removing unrelated positions, incorrect averaging across multiple lots).
-      // A fast DB fetch is sufficient — the real state arrives within ~100ms.
-      debouncedFetch(100);
+    const handleOrderPlacedWithData = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        if (detail.is_exit && detail.linked_position_id) {
+          removePositionLocally(detail.linked_position_id);
+        } else if (!detail.is_exit) {
+          addOptimisticPosition(detail);
+        }
+      }
+      // Immediate fetch — scalp mode needs instant position update
+      fetchPositions();
+      // Follow-up fetch in 800ms to catch any async DB propagation
+      debouncedFetch(800);
     };
 
     const handleOrderPlaced = () => {
-      debouncedFetch(100);
+      // Immediate fetch for fast position panel update
+      fetchPositions();
+      // Follow-up fetch in 800ms
+      debouncedFetch(800);
     };
 
     const handleOrderFailed = () => {
@@ -261,12 +334,16 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
     window.addEventListener('order_placed', handleOrderPlaced);
     window.addEventListener('order_placed_with_data', handleOrderPlacedWithData);
     window.addEventListener('order_failed', handleOrderFailed);
+    window.addEventListener('position-closed', handleOrderPlaced);
+    window.addEventListener('position_closed', handleOrderPlaced);
+    window.addEventListener('position_updated', handleOrderPlaced);
+    window.addEventListener('order_executed', handleOrderPlaced);
 
     // Active polling fallback: even when subscribed to realtime channels,
     // poll every 8s as a safety net (paused when tab is in background)
     const pollTime = Math.max(refreshInterval, 8000);
     const timer = setInterval(() => {
-      if (!isSubscribed || document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible') {
         fetchPositions();
       }
     }, pollTime);
@@ -285,8 +362,12 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       window.removeEventListener('order_placed', handleOrderPlaced);
       window.removeEventListener('order_placed_with_data', handleOrderPlacedWithData);
       window.removeEventListener('order_failed', handleOrderFailed);
+      window.removeEventListener('position-closed', handleOrderPlaced);
+      window.removeEventListener('position_closed', handleOrderPlaced);
+      window.removeEventListener('position_updated', handleOrderPlaced);
+      window.removeEventListener('order_executed', handleOrderPlaced);
     };
-  }, [fetchPositions]);
+  }, [fetchPositions, refreshInterval]);
 
   const { kiteKeys, binanceKeys, comexKeys } = useMemo(() => {
     const kite: string[] = [];
@@ -310,8 +391,6 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
           let sym = (p.symbol || '').replace('/', '');
           if (!sym.endsWith('USDT')) sym += 'USDT';
           binance.push(sym);
-        } else if (p.symbol && p.symbol.startsWith('US:')) {
-          kite.push(p.symbol);
         } else if (seg.includes('COMEX') || (p.symbol && p.symbol.endsWith('=F'))) {
           comex.push(p.symbol);
         } else {
@@ -448,7 +527,8 @@ export const PositionsDataProvider = ({ children, refreshInterval = 5000 }: { ch
       removePositionLocally,
       restorePositionLocally,
       startConversion,
-      endConversion
+      endConversion,
+      addOptimisticPosition,
     }}>
       {children}
     </PositionsContext.Provider>
