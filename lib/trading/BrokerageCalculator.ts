@@ -38,19 +38,14 @@ export function calculateSingleLegCharge({
   commissionValue,
 }: CommissionParams): number {
   if (commissionValue <= 0) return 0;
-
-  if (commissionType === 'Per Crore') {
-    return (exposure * commissionValue) / 10_000_000;
-  }
-  if (commissionType === 'Per Lot') {
-    return lots * commissionValue;
-  }
-  if (commissionType === 'Per Trade' || commissionType === 'Flat') {
-    return commissionValue;
-  }
-  // Unknown type — fall back to 0.1%
+  const type = (commissionType || '').toLowerCase();
+  if (type.includes('crore')) return (exposure * commissionValue) / 10000000;
+  if (type.includes('lot')) return (lots || 1) * commissionValue;
+  if (type.includes('trade') || type.includes('flat')) return commissionValue;
   return exposure * 0.001;
 }
+
+export const calculateOrderBrokerage = calculateSingleLegCharge;
 
 // ─── Carry brokerage (legacy interface — backward-compatible) ────────────────
 
