@@ -82,8 +82,27 @@ function safeOptName(i: any) {
 }
 
 function generateSyntheticStockOptions(stkName: string, expiry: string): any[] {
-  const baseStrike = 1000;
-  const step = 20;
+  const now = new Date(expiry || Date.now());
+  const yearStr = String(now.getFullYear()).slice(-2);
+  const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const monthStr = months[now.getMonth()] || 'AUG';
+  const expTag = `${yearStr}${monthStr}`;
+
+  let baseStrike = 500;
+  let step = 10;
+
+  const lowValueStocks = new Set(['NHPC', 'IDEA', 'SUZLON', 'SJVN', 'IREDA', 'RVNL', 'HUDCO', 'YESBANK', 'PNB', 'IDFCFIRSTB', 'BHEL', 'NLCINDIA', 'NMDC', 'GMRINFRA', 'SOUTHBANK']);
+  const highValueStocks = new Set(['TCS', 'RELIANCE', 'BAJFINANCE', 'INFY', 'ULTRACEMCO', 'BAJAJ-AUTO', 'MARUTI', 'HEROMOTOCO', 'DIXON', 'LTIM', 'EICHERMOT', 'SHREECEM']);
+
+  const upperStk = stkName.toUpperCase();
+  if (lowValueStocks.has(upperStk)) {
+    baseStrike = 80;
+    step = 2.5;
+  } else if (highValueStocks.has(upperStk)) {
+    baseStrike = 2500;
+    step = 50;
+  }
+
   const strikes: number[] = [];
   for (let k = -5; k <= 5; k++) {
     strikes.push(baseStrike + k * step);
@@ -92,7 +111,7 @@ function generateSyntheticStockOptions(stkName: string, expiry: string): any[] {
   const contracts: any[] = [];
   strikes.forEach(sp => {
     ['CE', 'PE'].forEach(optType => {
-      const tsym = `${stkName}${sp}${optType}`;
+      const tsym = `${stkName}${expTag}${sp}${optType}`;
       contracts.push({
         name: `${stkName} ${sp} ${optType}`,
         symbol: tsym,
@@ -310,23 +329,7 @@ async function buildLibrary(request: Request, today: string) {
             }
           } catch (_) { /* Redis unavailable */ }
 
-          // 2. Try internal quotes API (works even when Redis is down)
-          if (!atmPrice) {
-            try {
-              const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-              const res = await fetch(`${baseUrl}/api/market/quotes?symbols=${encodeURIComponent(kiteId)}`, {
-                headers: { 'x-internal': '1' },
-                signal: AbortSignal.timeout(2000),
-              });
-              if (res.ok) {
-                const qdata = await res.json();
-                const q = qdata?.data?.[kiteId] || qdata?.[kiteId];
-                if (q) atmPrice = q.lastPrice || q.last_price || 0;
-              }
-            } catch (_) { /* internal API unavailable */ }
-          }
-
-          // 3. Use spot price passed from frontend via query string
+          // 2. Use spot price passed from frontend via query string
           if (!atmPrice && qsAtm[idx]) {
             atmPrice = qsAtm[idx];
           }
@@ -576,15 +579,27 @@ async function buildLibrary(request: Request, today: string) {
       }
     });
 
-    // c. Stock-OPT: batch fetch Stock Options (up to 500 underlyings)
-    const { data: stockOptData } = await getSupabase()
-      .from('instruments')
-      .select('tradingsymbol, name, exchange, instrument_type, strike_price, option_type, expiry, lot_size')
-      .in('segment', ['NFO-OPT', 'BFO-OPT', 'NFO', 'BFO'])
-      .in('option_type', ['CE', 'PE'])
-      .gte('expiry', today)
-      .not('name', 'in', '("NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX","SENSEX50","NIFTYNXT50")')
-      .limit(5000);
+    // c. Stock-OPT: batch fetch Stock Options for priority recognizable stock underlyings
+    const stockBatches: string[][] = [];
+    const targetStockNames = prioritySymbols.filter(s => isValidStockSymbol(s));
+    for (let i = 0; i < targetStockNames.length; i += 40) {
+      stockBatches.push(targetStockNames.slice(i, i + 40));
+    }
+
+    const stockOptResults = await Promise.all(
+      stockBatches.map(batch =>
+        getSupabase()
+          .from('instruments')
+          .select('tradingsymbol, name, exchange, instrument_type, strike_price, option_type, expiry, lot_size')
+          .in('name', batch)
+          .in('segment', ['NFO-OPT', 'BFO-OPT', 'NFO', 'BFO'])
+          .in('option_type', ['CE', 'PE'])
+          .gte('expiry', today)
+          .limit(1000)
+      )
+    );
+
+    const stockOptData = stockOptResults.flatMap(r => r.data || []);
 
     const stockOptGroup: Record<string, Record<string, Instrument[]>> = {};
     (stockOptData || []).forEach((i: any) => {
@@ -616,22 +631,29 @@ async function buildLibrary(request: Request, today: string) {
       }
 
       addedStockNames.add(stk);
+      let mappedInstruments = selectedOpts.map((i: any) => ({
+        name: safeOptName(i),
+        symbol: i.tradingsymbol,
+        kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
+        price: 0,
+        change: '0%',
+        segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Stock Options`,
+        contractDate: i.expiry,
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+        lotSize: i.lot_size,
+      }));
+
+      // If database query PostgREST cap truncated results leaving < 10 option contracts, fall back to synthetic strike generation
+      if (mappedInstruments.length < 10) {
+        mappedInstruments = generateSyntheticStockOptions(stk, today);
+      }
+
       stockOptCats.push({
         name: stk,
-        instruments: selectedOpts.map((i: any) => ({
-          name: safeOptName(i),
-          symbol: i.tradingsymbol,
-          kiteSymbol: `${i.exchange}:${i.tradingsymbol}`,
-          price: 0,
-          change: '0%',
-          segment: `${i.exchange === 'NFO' ? 'NSE' : i.exchange === 'BFO' ? 'BSE' : i.exchange} - Stock Options`,
-          contractDate: i.expiry,
-          open: 0,
-          high: 0,
-          low: 0,
-          close: 0,
-          lotSize: i.lot_size,
-        })).slice(0, 22),
+        instruments: mappedInstruments.slice(0, 22),
       });
     });
 
@@ -657,7 +679,7 @@ async function buildLibrary(request: Request, today: string) {
 
     if (stockFutInstruments.length > 0) segments.push({ name: 'STOCK-FUT', icon: 'fa-building', instruments: stockFutInstruments });
     if (stockOptCats.length > 0) segments.push({ name: 'STOCK-OPT', icon: 'fa-building', subCategories: stockOptCats });
-    if (nseEqInstruments.length > 0) segments.push({ name: 'Equity', icon: 'fa-landmark', instruments: nseEqInstruments });
+    if (nseEqInstruments.length > 0) segments.push({ name: 'STOCKS', icon: 'fa-landmark', instruments: nseEqInstruments });
 
     // 5. Crypto — apply applyCryptoWhitelist
     const { data: cryptos } = await getSupabase().from('instruments').select('*').eq('segment', 'CRYPTO').order('name', { ascending: true });
@@ -701,6 +723,11 @@ async function buildLibrary(request: Request, today: string) {
       }
 
       const tickerMap: Record<string, string> = {
+        'XAUUSD': 'GOLD',
+        'XAGUSD': 'SILVER',
+        'XTIUSD': 'CRUDEOIL',
+        'XCUUSD': 'COPPER',
+        'XNGUSD': 'NATURALGAS',
         'GC=F': 'GOLD',
         'SI=F': 'SILVER',
         'CL=F': 'CRUDEOIL',
@@ -708,6 +735,11 @@ async function buildLibrary(request: Request, today: string) {
       };
 
       const symbolMap: Record<string, string> = {
+        'XAUUSD': 'GOLD_FUT',
+        'XAGUSD': 'SILVER_FUT',
+        'XTIUSD': 'CRUDEOIL_FUT',
+        'XCUUSD': 'COPPER_FUT',
+        'XNGUSD': 'NATURALGAS_FUT',
         'GC=F': 'GOLD_FUT',
         'SI=F': 'SILVER_FUT',
         'CL=F': 'CRUDEOIL_FUT',

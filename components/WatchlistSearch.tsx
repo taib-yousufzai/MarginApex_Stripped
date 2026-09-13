@@ -363,7 +363,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const fetchLiveResults = async (q: string, tab: string, signal: AbortSignal) => {
     try {
       const data = await api.get<WatchlistItem[]>(
-        `/api/market/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(tab)}&_t=${Date.now()}`,
+        `/api/market/instruments/search?q=${encodeURIComponent(q)}&tab=${encodeURIComponent(tab)}`,
         { signal }
       );
       return Array.isArray(data) ? data : [];
@@ -383,8 +383,8 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
   const SEGMENT_DEFAULTS: Record<string, string> = {
     'INDEX-FUT': 'NIFTY', 'INDEX-OPT': 'NIFTY',
     'STOCK-FUT': 'RELIANCE', 'STOCK-OPT': 'RELIANCE',
-    'NSE-EQ': 'RELIANCE', 'Equity': 'RELIANCE', 'MCX-FUT': 'GOLD', 'MCX-OPT': 'GOLD',
-    'COMEX': 'GOLD', 'CRYPTO': 'BTC', 'FOREX': 'USDINR', 'US-EQ': 'AAPL',
+    'NSE-EQ': 'RELIANCE', 'STOCKS': 'RELIANCE', 'Equity': 'RELIANCE', 'Stocks': 'RELIANCE', 'US-EQ': 'TSLA', 'MCX-FUT': 'GOLD', 'MCX-OPT': 'GOLD',
+    'COMEX': 'GOLD', 'CRYPTO': 'BTC', 'FOREX': 'USDINR',
   };
 
   useEffect(() => {
@@ -404,6 +404,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
         });
 
         const liveMatches = await fetchLiveResults(actualQuery, activeTab, abortController.signal);
+        if (abortController.signal.aborted) return;
         const merged = [...liveMatches];
         const liveSymbols = new Set(liveMatches.map((r: any) => r.symbol));
         for (const local of localMatches) {
@@ -411,9 +412,11 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
         }
         setResults(merged);
       } finally {
-        setIsSearching(false);
+        if (!abortController.signal.aborted) {
+          setIsSearching(false);
+        }
       }
-    }, 300);
+    }, 180);
 
     return () => { clearTimeout(timer); abortController.abort(); };
   }, [normalizedQuery, activeTab, token, isOpen]);
@@ -464,11 +467,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                 let high = (q?.high && q.high > 0) ? q.high : (r.high || 0);
                 let low = (q?.low && q.low > 0) ? q.low : (r.low || 0);
                 const isForexUsd = ['GBPUSD', 'EURUSD'].includes((r.symbol || '').toUpperCase());
-                if (isForexUsd && price > 0 && price < 20) {
-                  price = price * 83.85;
-                  if (high > 0 && high < 20) high = high * 83.85;
-                  if (low > 0 && low < 20) low = low * 83.85;
-                }
+                // Keep raw currency prices for Forex/Crypto/COMEX
                 return (
                   <div
                     key={`${r.kiteSymbol || r.symbol}-${i}`}
@@ -483,7 +482,7 @@ export default function WatchlistSearch({ activeTab, addedSymbols, onAdd, onRemo
                       <div className="sri-left" style={{ flex: 1, minWidth: 0 }}>
                         {(() => {
                           const rawName = r.name || '';
-                          const isComex = r.segment?.includes('COMEX') || r.exchange === 'COMEX' || r.symbol?.endsWith('=F') || r.symbol === 'SI=F' || r.symbol === 'GC=F';
+                          const isComex = r.segment?.includes('COMEX') || r.exchange === 'COMEX' || r.symbol?.endsWith('=F') || ['XAUUSD', 'XAGUSD', 'XTIUSD', 'XCUUSD', 'XNGUSD'].some(c => (r.symbol || '').includes(c) || (r.comexSymbol || '').includes(c));
                           const isGenericCommodityName = !isComex && ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'NATURALGAS', 'NATGAS'].includes(rawName.toUpperCase().trim());
                           const searchDisplayName = isComex ? fmtSymbolName(r.symbol, r.name) : (isGenericCommodityName ? (r.symbol ? r.symbol.replace(/^(MCX|NSE|BSE|CDS|NFO|BFO):/, '') : rawName) : (rawName || r.symbol));
                           return <div className="sri-name">{searchDisplayName}</div>;
