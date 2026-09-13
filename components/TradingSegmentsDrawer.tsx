@@ -164,7 +164,7 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
     ]
   },
   {
-    name: 'Equity',
+    name: 'STOCKS',
     icon: 'fa-landmark',
     count: 4,
     instruments: [
@@ -189,10 +189,10 @@ const BASE_TRADING_SEGMENTS: Segment[] = [
     icon: 'fa-gem',
     count: 4,
     instruments: [
-      { name: 'GOLD', symbol: 'GC=F', comexSymbol: 'GC=F', segment: 'COMEX - Futures' },
-      { name: 'SILVER', symbol: 'SI=F', comexSymbol: 'SI=F', segment: 'COMEX - Futures' },
-      { name: 'CRUDE OIL', symbol: 'CL=F', comexSymbol: 'CL=F', segment: 'COMEX - Futures' },
-      { name: 'COPPER', symbol: 'HG=F', comexSymbol: 'HG=F', segment: 'COMEX - Futures' }
+      { name: 'GOLD', symbol: 'XAUUSD', comexSymbol: 'XAUUSD', segment: 'COMEX - Futures' },
+      { name: 'SILVER', symbol: 'XAGUSD', comexSymbol: 'XAGUSD', segment: 'COMEX - Futures' },
+      { name: 'CRUDE OIL', symbol: 'XTIUSD', comexSymbol: 'XTIUSD', segment: 'COMEX - Futures' },
+      { name: 'COPPER', symbol: 'XCUUSD', comexSymbol: 'XCUUSD', segment: 'COMEX - Futures' }
     ]
   },
   {
@@ -234,9 +234,11 @@ const DISPLAY_NAME_MAP: Record<string, { name: string; icon: string }> = {
   'MCX-OPT': { name: 'Mcx-opt', icon: 'fa-circle-dot' },
   'STOCK-FUT': { name: 'Stock-fut', icon: 'fa-building' },
   'STOCK-OPT': { name: 'Stock-opt', icon: 'fa-layer-group' },
-  'NSE-EQ': { name: 'Equity', icon: 'fa-landmark' },
-  'EQUITY': { name: 'Equity', icon: 'fa-landmark' },
-  'Equity': { name: 'Equity', icon: 'fa-landmark' },
+  'NSE-EQ': { name: 'STOCKS', icon: 'fa-landmark' },
+  'EQUITY': { name: 'STOCKS', icon: 'fa-landmark' },
+  'Equity': { name: 'STOCKS', icon: 'fa-landmark' },
+  'STOCKS': { name: 'STOCKS', icon: 'fa-landmark' },
+  'Stocks': { name: 'STOCKS', icon: 'fa-landmark' },
   'CRYPTO': { name: 'CRYPTO', icon: 'fa-bitcoin-sign' },
   'COMEX': { name: 'Comex', icon: 'fa-gem' },
   'FOREX': { name: 'Forex', icon: 'fa-globe' },
@@ -248,9 +250,10 @@ interface TradingSegmentsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSelect?: (item: any) => void;
+  addedSymbols?: Set<string>;
 }
 
-export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: TradingSegmentsDrawerProps) {
+export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect, addedSymbols }: TradingSegmentsDrawerProps) {
   const [mounted, setMounted] = React.useState(false);
   const [expandedSegment, setExpandedSegment] = useState<string | null>(null);
   const [expandedSubcategories, setExpandedSubcategories] = useState<Record<string, boolean>>({});
@@ -411,10 +414,13 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
     'Mcx-opt': 'MCX-OPT',
     'Stock-fut': 'STOCK-FUT',
     'Stock-opt': 'STOCK-OPT',
-    'Equity': 'NSE-EQ',
-    'Nse-eq': 'NSE-EQ',
-    'NSE-EQ': 'NSE-EQ',
+    'Stocks': 'STOCKS',
+    'STOCKS': 'STOCKS',
+    'Equity': 'STOCKS',
+    'Nse-eq': 'STOCKS',
+    'NSE-EQ': 'STOCKS',
     'Crypto': 'CRYPTO',
+    'CRYPTO': 'CRYPTO',
     'Comex': 'COMEX',
     'Forex': 'FOREX',
     'US-EQ': 'US-EQ',
@@ -428,8 +434,8 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
     return (
       allowedSegments.includes(dbKey) ||
       allowedSegments.includes(seg.name) ||
-      (seg.name.toUpperCase() === 'EQUITY' && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity'))) ||
-      (dbKey === 'US-EQ' && (allowedSegments.includes('US-EQ') || allowedSegments.includes('US Equity') || allowedSegments.includes('NSE-EQ') || allowedSegments.length >= 8))
+      ((seg.name === 'Stocks' || seg.name === 'STOCKS' || seg.name === 'Equity' || seg.name.toUpperCase() === 'EQUITY') && (allowedSegments.includes('STOCKS') || allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity') || allowedSegments.includes('Stocks'))) ||
+      (dbKey === 'US-EQ' && (allowedSegments.includes('US-EQ') || allowedSegments.includes('US Equity') || allowedSegments.includes('STOCKS') || allowedSegments.includes('NSE-EQ') || allowedSegments.length >= 8))
     );
   });
 
@@ -467,12 +473,20 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
 
               {expandedSegment === seg.name && (
                 <div className="lib-seg-children">
-                  {seg.instruments?.map((inst, idx) => (
-                    <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
-                      <span className="lib-inst-name">{inst.name}</span>
-                      <button className="lib-add-btn">+ Add</button>
-                    </div>
-                  ))}
+                  {seg.instruments?.map((inst, idx) => {
+                    const isAdded = addedSymbols?.has(inst.symbol);
+                    return (
+                      <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
+                        <span className="lib-inst-name">{inst.name}</span>
+                        <button
+                          className="lib-add-btn"
+                          style={isAdded ? { background: '#2C8E5A', color: '#fff', borderColor: '#2C8E5A' } : undefined}
+                        >
+                          {isAdded ? 'Added ✓' : '+ Add'}
+                        </button>
+                      </div>
+                    );
+                  })}
                   {seg.subCategories?.map(sub => {
                     const isSubOpen = !!expandedSubcategories[sub.name];
                     return (
@@ -491,12 +505,20 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
                           <span className="lib-subcat-title">{sub.name}</span>
                           <span className="lib-subcat-count">{sub.instruments?.length || 0}</span>
                         </div>
-                        {isSubOpen && sub.instruments?.map((inst, idx) => (
-                          <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
-                            <span className="lib-inst-name">{inst.name}</span>
-                            <button className="lib-add-btn">+ Add</button>
-                          </div>
-                        ))}
+                        {isSubOpen && sub.instruments?.map((inst, idx) => {
+                          const isAdded = addedSymbols?.has(inst.symbol);
+                          return (
+                            <div key={`${inst.kiteSymbol || inst.symbol}-${idx}`} className="lib-inst-item" onClick={() => onSelect?.(inst)}>
+                              <span className="lib-inst-name">{inst.name}</span>
+                              <button
+                                className="lib-add-btn"
+                                style={isAdded ? { background: '#2C8E5A', color: '#fff', borderColor: '#2C8E5A' } : undefined}
+                              >
+                                {isAdded ? 'Added ✓' : '+ Add'}
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
@@ -615,7 +637,7 @@ export default function TradingSegmentsDrawer({ isOpen, onClose, onSelect }: Tra
           gap: 14px;
         }
         .lib-seg-icon { font-size: 1.05rem; color: #C62E2E; width: 24px; text-align: center; }
-        .lib-seg-name { font-size: 0.85rem; font-weight: 700; color: #1f2937; }
+        .lib-seg-name { font-size: 0.85rem; font-weight: 700; color: #1f2937; text-transform: uppercase; }
 
         .lib-seg-count {
           background: #f3f4f6;

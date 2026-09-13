@@ -104,12 +104,7 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
 
   const isCommoditySymbol = ['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUM'].some(c => symUp.includes(c));
 
-  const isUs = symUp.startsWith('US:') ||
-               segUpper.includes('US') ||
-               (item.kiteSymbol && item.kiteSymbol.startsWith('US:')) ||
-               ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'SPY', 'QQQ', 'DIA', 'ES=F', 'NQ=F', 'YM=F'].includes(symUp.replace(/^US:/, ''));
-
-  const isStock = !isCrypto && !isUs && !isCommoditySymbol && (
+  const isStock = !isCrypto && !isCommoditySymbol && (
     segUpper === 'STOCK-FUT' ||
     segUpper === 'STOCK-OPT' ||
     segUpper.includes('STOCK') ||
@@ -125,18 +120,18 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
   let prevClose = 0;
   if (isCrypto) {
     ltp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
-    prevClose = activeCryptoQuote?.close || item.close || ltp;
+    prevClose = activeCryptoQuote?.close ?? item.close ?? ltp;
   } else if (showComex) {
-    ltp = comexQuote?.lastPrice ?? item.price ?? 0;
-    prevClose = comexQuote?.close || item.close || ltp;
+    ltp = comexQuote?.lastPrice ?? 0;
+    prevClose = comexQuote?.close ?? 0;
   } else {
-    ltp = quote?.lastPrice ?? item.price ?? 0;
-    prevClose = quote?.close || item.close || ltp;
+    ltp = quote?.lastPrice ?? item.price;
+    prevClose = item.close;
   }
 
   const absoluteChange = ltp - prevClose;
   const percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
-  const isLoading = isCrypto ? (!activeCryptoQuote && ltp === 0) : showComex ? (!comexQuote && ltp === 0) : (!quote && ltp === 0);
+  const isLoading = isCrypto ? (!activeCryptoQuote && ltp === 0) : (showComex && !comexQuote);
 
   const handleCardClick = (e: React.MouseEvent) => {
     // If clicking a sub-button like delete or view toggle, don't trigger trade
@@ -179,18 +174,15 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
             <span className="exchange-badge" style={
               isCrypto ? { background: '#F0A500', color: '#fff' } :
                 showComex ? { background: '#4A148C', color: '#fff' } :
-                  isUs ? { background: '#2563EB', color: '#fff' } :
-                    isStock ? { background: '#059669', color: '#fff' } : {}
+                  isStock ? { background: '#059669', color: '#fff' } : {}
             }>
               {isCrypto
                 ? 'CRYPTO'
                 : showComex
                   ? 'COMEX'
-                  : isUs
-                    ? 'US'
-                    : isStock
-                      ? (segUpper.includes('FUT') ? 'Stock - Stock Fut' : segUpper.includes('OPT') ? 'Stock - Stock Opt' : 'Stock')
-                      : getExchangeBadge(item.segment, item.name, item.symbol)}
+                  : isStock
+                    ? (segUpper.includes('FUT') ? 'Stock - Stock Fut' : segUpper.includes('OPT') ? 'Stock - Stock Opt' : 'Stock')
+                    : getExchangeBadge(item.segment, item.name, item.symbol)}
             </span>
           </div>
           {item.contractDate && (
@@ -216,13 +208,7 @@ export default function InstrumentRow({ item, quote, binanceQuote, comexQuote, o
             <>
               <div className="instr-row__ltp">
                 <TickFlash value={ltp}>
-                  {isCrypto
-                    ? `₹${ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : showComex
-                      ? `₹${ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : isUs
-                        ? `$${ltp.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : `LTP: ${ltp.toFixed(2)}`}
+                  {`₹${ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </TickFlash>
               </div>
               <div className="instr-row__abs-change">

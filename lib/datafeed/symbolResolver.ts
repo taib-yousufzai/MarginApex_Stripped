@@ -1,33 +1,49 @@
+type LibrarySymbolInfo = any;
+type ResolutionString = any;
+
 const KNOWN_US_SYMBOLS = new Set([
   'AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC',
-  'SPY', 'QQQ', 'DIA', 'ES=F', 'NQ=F', 'YM=F', 'CL=F', 'GC=F', 'SI=F'
+  'SPY', 'QQQ', 'DIA', 'ES=F', 'NQ=F', 'YM=F', 'CL=F', 'GC=F', 'SI=F', 'NG=F', 'HG=F',
+  'XAUUSD', 'XAGUSD', 'XTIUSD', 'XNGUSD', 'XCUUSD', 'GOLD', 'SILVER', 'CRUDE', 'WTI'
 ]);
 
 export function isUsSymbol(symbolName: string, segment?: string): boolean {
   if (!symbolName) return false;
   const upper = symbolName.toUpperCase().trim();
-  if (upper.startsWith('US:')) return true;
-  if (segment && (segment.toUpperCase().includes('US') || segment.toUpperCase() === 'US EQUITIES' || segment.toUpperCase() === 'US FUTURES')) return true;
-  const clean = upper.replace(/^US:/, '').trim();
+  if (upper.startsWith('US:') || upper.startsWith('COMEX:')) return true;
+  if (segment && (segment.toUpperCase().includes('US') || segment.toUpperCase().includes('COMEX') || segment.toUpperCase() === 'US EQUITIES' || segment.toUpperCase() === 'US FUTURES')) return true;
+  const clean = upper.replace(/^(US:|COMEX:)/, '').trim();
   return KNOWN_US_SYMBOLS.has(clean) || clean.endsWith('=F');
 }
 
 export function isForexSymbol(symbolName: string): boolean {
   if (!symbolName) return false;
   let upper = symbolName.toUpperCase().trim();
-  
-  if (upper.startsWith('US:') || isUsSymbol(symbolName)) return false;
 
-  // Indian currency futures (USDINR, EURINR, GBPINR, JPYINR futures) are Kite CDS instruments, NOT Yahoo Forex
-  if (upper.includes('INR') || upper.endsWith('FUT') || upper.startsWith('CDS:')) {
+  if (upper.startsWith('US:') || isUsSymbol(symbolName)) return false;
+  
+  // Indian currency futures, exchange prefixes, and Indian indices/stocks are NOT Yahoo Forex
+  if (
+    upper.includes('INR') || 
+    upper.endsWith('FUT') || 
+    upper.startsWith('CDS:') ||
+    upper.startsWith('BSE:') ||
+    upper.startsWith('NSE:') ||
+    upper.startsWith('NFO:') ||
+    upper.startsWith('BFO:') ||
+    upper.startsWith('MCX:') ||
+    upper.includes('SENSEX') ||
+    upper.includes('BANKEX') ||
+    upper.includes('NIFTY')
+  ) {
     return false;
   }
 
   if (upper.startsWith('FOREX:')) return true;
   if (upper.endsWith('=X')) upper = upper.slice(0, -2);
-  const clean = (upper.includes(':') ? upper.split(':')[1] : upper).replace(/\//g, '');
+  const clean = (upper.includes(':') ? upper.split(':')[1] : upper).replace(/[\/\=X]/g, '').trim();
   const FOREX_PAIRS = ['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY', 'CHFJPY', 'NZDJPY', 'EURAUD', 'EURCAD', 'EURNZD', 'GBPAUD', 'GBPCAD', 'GBPNZD'];
-  return FOREX_PAIRS.includes(clean) || (clean.length === 6 && !clean.includes('INR'));
+  return FOREX_PAIRS.includes(clean);
 }
 
 /**
@@ -76,6 +92,8 @@ export function deriveExchange(symbolName: string): string {
     return 'NFO';
   }
 
+  if (upper.includes('SENSEX') || upper.includes('BANKEX')) return 'BSE';
+
   return 'NSE';
 }
 
@@ -123,10 +141,27 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
     ticker = `MCX:${ticker.slice(4)}`;
   }
   
+  const isComex = upperSym.startsWith('COMEX:') || segment?.toUpperCase() === 'COMEX' || ['GC=F', 'SI=F', 'CL=F', 'NG=F', 'HG=F', 'XAUUSD', 'XAGUSD', 'XTIUSD', 'XNGUSD', 'XCUUSD'].some(c => upperSym.includes(c));
+
   let session = '0915-1530';
-  if (isCrypto || isGlobalForex || isUs) session = '24x7';
-  else if (exchange === 'MCX') session = '0900-2355';
-  else if (exchange === 'CDS') session = '0900-1700';
+  let timezone = 'Asia/Kolkata';
+
+  if (isCrypto || isComex) {
+    session = '24x7';
+    timezone = 'Asia/Kolkata';
+  } else if (isGlobalForex) {
+    session = '24x7';
+    timezone = 'Asia/Kolkata';
+  } else if (isUs) {
+    session = '0930-1600';
+    timezone = 'America/New_York';
+  } else if (exchange === 'MCX') {
+    session = '0900-2355';
+    timezone = 'Asia/Kolkata';
+  } else if (exchange === 'CDS') {
+    session = '0900-1700';
+    timezone = 'Asia/Kolkata';
+  }
 
   const isJpy = rawName.toUpperCase().includes('JPY');
 
@@ -138,7 +173,7 @@ export function buildSymbolInfo(symbolName: string, segment: string): LibrarySym
     exchange,
     listed_exchange: exchange,
     session,
-    timezone: 'Asia/Kolkata',
+    timezone,
     pricescale: isCrypto ? 100000 : (isJpy && isGlobalForex) ? 1000 : isGlobalForex ? 100000 : exchange === 'CDS' ? 10000 : 100,
     minmov: 1,
     has_intraday: true,
@@ -159,5 +194,3 @@ export function getCanonicalSymbol(symbolInfoOrName: any): string {
   }
   return symbolInfoOrName.ticker || symbolInfoOrName.name || '';
 }
-
-
