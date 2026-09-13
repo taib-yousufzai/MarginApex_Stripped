@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import ChartContainer from '@/components/chart/ChartContainer';
 import { ErrorModal } from '@/components/ErrorModal';
 import { getDefaultWatchlistItems, getTabForItem, TAB_LABELS, TabLabel } from '@/app/watchlist/page';
@@ -14,11 +14,13 @@ import { api, ApiError } from '@/lib/api';
 import OptionChainTable from '@/app/option-chain/OptionChainTable';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
 import { useComexQuotes } from '@/hooks/useComexQuotes';
+
 import useSWR from 'swr';
 import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
 import { calculateMarginPortion } from '@/lib/trading/MarginCalculator';
 import { mapSegmentToDbSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 import { formatShortName, isForexSymbol } from '@/lib/datafeed/symbolResolver';
+import { normalizeComexTicker } from '@/lib/watchlistUtils';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { useBalance } from '@/hooks/useBalance';
@@ -49,16 +51,17 @@ const getUnderlyingSymbol = (sym: string) => {
   return clean;
 }
 
+import { getSavedTheme } from '@/lib/theme';
+
 function getAppTheme(): 'dark' | 'black' | 'light' {
   if (typeof document === 'undefined') return 'dark';
+  const saved = getSavedTheme();
+  if (saved === 'black') return 'black';
+  if (saved === 'light') return 'light';
+  if (saved === 'blue' || saved === 'dark') return 'dark';
   if (document.documentElement.classList.contains('black') || document.body.classList.contains('black')) return 'black';
-  if (document.documentElement.classList.contains('dark') || document.body.classList.contains('dark')) return 'dark';
+  if (document.documentElement.classList.contains('dark') || document.body.classList.contains('dark') || document.documentElement.classList.contains('blue') || document.body.classList.contains('blue')) return 'dark';
   if (document.documentElement.classList.contains('light') || document.body.classList.contains('light')) return 'light';
-  try {
-    const saved = localStorage.getItem('marginApexTheme');
-    if (saved === 'black') return 'black';
-    if (saved === 'light') return 'light';
-  } catch (e) {}
   return 'dark';
 }
 
@@ -66,9 +69,40 @@ interface TradingChartProps {
   symbol: string;         // e.g., "BTCUSDT" or "NSE:INFY"
   segment: string;        // e.g., "CRYPTO" or "EQ"
   liveQuote?: any;        // Live quote object to update the last candle
+  onClose?: () => void;
 }
 
-type Timeframe = '1m' | '5m' | '15m' | '60m' | 'day';
+type Timeframe = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '60m' | 'day';
+
+function CandleCountdown({ timeframe }: { timeframe: Timeframe }) {
+  const [timeLeft, setTimeLeft] = useState('');
+  useEffect(() => {
+    if (timeframe === 'day') return;
+    const resMs =
+      timeframe === '1m' ? 60000 : timeframe === '2m' ? 120000 : timeframe === '3m' ? 180000 :
+      timeframe === '5m' ? 300000 : timeframe === '10m' ? 600000 : timeframe === '15m' ? 900000 :
+      timeframe === '30m' ? 1800000 : timeframe === '60m' ? 3600000 : 0;
+    if (!resMs) return;
+    const update = () => {
+      const nowMs = Date.now();
+      const next = Math.ceil(nowMs / resMs) * resMs;
+      const diff = Math.max(0, next - nowMs);
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [timeframe]);
+
+  if (timeframe === 'day' || !timeLeft) return null;
+  return (
+    <div style={{ marginLeft: '4px', fontSize: '12px', fontWeight: 600, color: '#f23645' }}>
+      ({timeLeft})
+    </div>
+  );
+}
 
 const SwipeableItem = ({ children, onDelete }: { children: React.ReactNode, onDelete: () => void }) => {
   const [translateX, setTranslateX] = useState(0);
@@ -143,8 +177,14 @@ const SEGMENT_TAB_MAP: Record<string, string> = {
   'BSE - Stock Options': 'STOCK-OPT',
   'MCX - Futures': 'MCX-FUT',
   'MCX - Options': 'MCX-OPT',
-  'NSE - Equity': 'NSE-EQ',
-  'BSE - Equity': 'NSE-EQ',
+  'NSE - Equity': 'STOCKS',
+  'BSE - Equity': 'STOCKS',
+  'NSE-EQ': 'STOCKS',
+  'BSE-EQ': 'STOCKS',
+  'STOCKS': 'STOCKS',
+  'Stocks': 'STOCKS',
+  'Equity': 'STOCKS',
+  'EQUITY': 'STOCKS',
   'Crypto': 'CRYPTO',
   'CRYPTO': 'CRYPTO',
   'Forex': 'FOREX',
@@ -162,15 +202,15 @@ function getStoredWatchlistItems() {
     return (window as any).__watchlistItems;
   }
   try {
-    let bestKey = 'marginApex_watchlist';
+    let bestKey = 'niveshX_watchlist';
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('marginApex_watchlist_')) {
+      if (key && (key.startsWith('niveshX_watchlist_') || key.startsWith('marginApex_watchlist_'))) {
         bestKey = key;
         break;
       }
     }
-    const rawUser = localStorage.getItem(bestKey);
+    const rawUser = localStorage.getItem('marginApex_watchlist') || localStorage.getItem(bestKey);
     if (rawUser && rawUser !== 'null') {
       const parsed = JSON.parse(rawUser);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -209,26 +249,17 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments = [], toggle
     'INDEX-OPT': 'NIFTY',
     'STOCK-FUT': 'RELIANCE',
     'STOCK-OPT': 'RELIANCE',
+    'STOCKS': 'RELIANCE',
     'NSE-EQ': 'RELIANCE',
     'Equity': 'RELIANCE',
+    'Stocks': 'RELIANCE',
+    'US-EQ': 'TSLA',
     'MCX-FUT': 'GOLD',
     'MCX-OPT': 'GOLD',
     'COMEX': 'GOLD',
     'CRYPTO': 'BTC',
     'FOREX': 'USDINR',
   };
-
-  const UNDERLYING_KEYS = [
-    'NSE:NIFTY 50',
-    'NSE:NIFTY BANK',
-    'BSE:SENSEX',
-    'BSE:BANKEX',
-    'NSE:NIFTY FIN SERVICE',
-    'NSE:NIFTY MID SELECT',
-    'MCX:GOLD',
-    'MCX:SILVER',
-    'MCX:CRUDEOIL',
-  ];
 
   const fetchLiveResults = async (q: string, tab: string, signal: AbortSignal) => {
     try {
@@ -259,9 +290,8 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments = [], toggle
     const abortController = new AbortController();
 
     const timer = setTimeout(async () => {
-      const actualQuery = normalizedQuery.length >= 1 ? normalizedQuery : (SEGMENT_DEFAULTS[activeSearchTab] || 'NIFTY');
-
       try {
+        const actualQuery = normalizedQuery.length >= 1 ? normalizedQuery : (SEGMENT_DEFAULTS[activeSearchTab] || 'NIFTY');
         const liveMatches = await fetchLiveResults(actualQuery, activeSearchTab, abortController.signal);
         if (reqId !== searchReqIdRef.current) return;
 
@@ -274,6 +304,7 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments = [], toggle
             liveSymbols.add(local.symbol);
           }
         }
+
         setSearchResults(merged);
       } catch (err) {
         console.error('Chart search error:', err);
@@ -290,82 +321,21 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments = [], toggle
     };
   }, [normalizedQuery, activeSearchTab]);
 
-  const resultIds = React.useMemo(() => {
-    const ids = searchResults.map(r => r.binanceSymbol || r.kiteSymbol || r.symbol).filter(Boolean);
-    return Array.from(new Set([...ids, ...UNDERLYING_KEYS]));
-  }, [searchResults]);
-  const { quotes } = useMarketQuotes(resultIds);
-
   const comexIds = React.useMemo(() => {
-    const ids = searchResults.map(r => r.comexSymbol).filter((s): s is string => !!s);
+    const ids = (searchResults || []).map((r: any) => r.comexSymbol).filter((s: string | undefined): s is string => !!s);
     return Array.from(new Set(ids));
   }, [searchResults]);
   const { quotes: comexQuotes } = useComexQuotes(comexIds);
 
-  const displayResults = React.useMemo(() => {
-    if (!searchResults || searchResults.length === 0) return [];
-    const hasOptions = searchResults.some((r: any) => r.strike !== undefined || r.segment?.includes('Options'));
-    if (!hasOptions) return searchResults;
-
-    const firstOption = searchResults.find((r: any) => r.strike !== undefined || r.segment?.includes('Options')) as any;
-    if (!firstOption) return searchResults;
-
-    const uSym = (firstOption.underlyingSymbol || firstOption.name || '').toUpperCase();
-    let spotKey = '';
-    if (uSym.includes('NIFTY') && !uSym.includes('BANK') && !uSym.includes('FIN') && !uSym.includes('MID')) spotKey = 'NSE:NIFTY 50';
-    else if (uSym.includes('BANKNIFTY')) spotKey = 'NSE:NIFTY BANK';
-    else if (uSym.includes('FINNIFTY')) spotKey = 'NSE:NIFTY FIN SERVICE';
-    else if (uSym.includes('MID')) spotKey = 'NSE:NIFTY MID SELECT';
-    else if (uSym.includes('SENSEX')) spotKey = 'BSE:SENSEX';
-    else if (uSym.includes('BANKEX')) spotKey = 'BSE:BANKEX';
-    else if (uSym.includes('GOLD')) spotKey = 'MCX:GOLD';
-    else if (uSym.includes('SILVER')) spotKey = 'MCX:SILVER';
-    else if (uSym.includes('CRUDE')) spotKey = 'MCX:CRUDEOIL';
-
-    const spotPrice = spotKey && quotes[spotKey]?.lastPrice ? quotes[spotKey].lastPrice : 0;
-    if (spotPrice <= 0) return searchResults;
-
-    const nonOptions = searchResults.filter((r: any) => r.strike === undefined && !r.segment?.includes('Options'));
-    const options = searchResults.filter((r: any) => r.strike !== undefined || r.segment?.includes('Options'));
-
-    const strikeSet = new Set<number>();
-    options.forEach((o: any) => {
-      if (o.strike !== undefined) strikeSet.add(Number(o.strike));
-    });
-    const strikes = Array.from(strikeSet).sort((a, b) => a - b);
-    if (strikes.length === 0) return searchResults;
-
-    let closestIdx = 0, minDiff = Infinity;
-    strikes.forEach((s, idx) => {
-      const diff = Math.abs(s - spotPrice);
-      if (diff < minDiff) { minDiff = diff; closestIdx = idx; }
-    });
-
-    const range = 11;
-    const half = Math.floor(range / 2);
-    let startIdx = closestIdx - half;
-    let endIdx = closestIdx + half;
-    if (startIdx < 0) { endIdx += Math.abs(startIdx); startIdx = 0; }
-    if (endIdx >= strikes.length) { startIdx = Math.max(0, startIdx - (endIdx - strikes.length + 1)); endIdx = strikes.length - 1; }
-
-    const selStrikes = new Set(strikes.slice(startIdx, endIdx + 1));
-    const filteredOptions = options.filter((o: any) => selStrikes.has(Number(o.strike)));
-
-    return [...nonOptions, ...filteredOptions];
-  }, [searchResults, quotes, isSearching]);
+  const displayResults = searchResults;
 
   const renderResultItem = (res: any, idx: number) => {
     const isStarred = starredInstruments.some((p: any) => (p.kiteSymbol || p.symbol) === (res.kiteSymbol || res.symbol));
-    const q = (res.binanceSymbol ? quotes[res.binanceSymbol] : null) || (res.comexSymbol ? comexQuotes[res.comexSymbol] : null) || quotes[res.kiteSymbol] || quotes[res.symbol] || quotes[(res.kiteSymbol || '').split(':').pop() || ''];
-    let price = (q?.lastPrice && q.lastPrice > 0) ? q.lastPrice : (res.price || 0);
-    let high = (q?.high && q.high > 0) ? q.high : (res.high || 0);
-    let low = (q?.low && q.low > 0) ? q.low : (res.low || 0);
+    let price = res.price || 0;
+    let high = res.high || 0;
+    let low = res.low || 0;
     const isForexUsd = ['GBPUSD', 'EURUSD'].includes((res.symbol || '').toUpperCase());
-    if (isForexUsd && price > 0 && price < 20) {
-      price = price * 83.85;
-      if (high > 0 && high < 20) high = high * 83.85;
-      if (low > 0 && low < 20) low = low * 83.85;
-    }
+    // Keep raw currency prices for Forex/Crypto/COMEX
 
     return (
       <div
@@ -541,20 +511,65 @@ const ChartSearchOverlay = ({ onClose, onSelect, starredInstruments = [], toggle
 
 let tradingChartRenderCount = 0;
 
-function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', liveQuote: propLiveQuote }: TradingChartProps) {
+function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', liveQuote: propLiveQuote, onClose }: TradingChartProps) {
   tradingChartRenderCount++;
-  const [symbol, setSymbol] = useState(propSymbol);
+  const [symbol, setSymbol] = useState(() => normalizeComexTicker(propSymbol));
   const [segment, setSegment] = useState(propSegment);
   const [loadId, setLoadId] = useState(() => Math.random().toString(36).substring(2, 8));
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   console.log(`[PROD-CHART] timestamp=${Date.now()} loadId=${loadId} symbol=${propSymbol} event=TRADING_CHART_RENDER renderCount=${tradingChartRenderCount}`);
+
+  // ── Keyboard Back Navigation (Esc / Alt+ArrowLeft) for Desktop / Computer ──
+  useEffect(() => {
+    const handleBackNav = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || (e.altKey && e.key === 'ArrowLeft')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (onCloseRef.current) {
+          onCloseRef.current();
+        } else {
+          const sheet = document.getElementById('chartSheet');
+          const overlay = document.getElementById('chartSheetOverlay');
+          if (sheet) sheet.classList.remove('open');
+          if (overlay) overlay.classList.remove('active');
+          window.history.back();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleBackNav);
+
+    // Also attach to the TradingView iframe so clicking inside chart doesn't trap keyboard back
+    const timer = setTimeout(() => {
+      try {
+        const iframe = document.querySelector('#chartSheet iframe, .tc-chart-area iframe') as HTMLIFrameElement | null;
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.addEventListener('keydown', handleBackNav);
+        }
+      } catch { /* cross-origin protection */ }
+    }, 1200);
+
+    return () => {
+      window.removeEventListener('keydown', handleBackNav);
+      clearTimeout(timer);
+      try {
+        const iframe = document.querySelector('#chartSheet iframe, .tc-chart-area iframe') as HTMLIFrameElement | null;
+        if (iframe && iframe.contentWindow) {
+          iframe.contentWindow.removeEventListener('keydown', handleBackNav);
+        }
+      } catch { }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.unlock) {
       try { screen.orientation.unlock(); } catch (e) {}
     }
     return () => {
-      if (typeof screen !== 'undefined' && screen.orientation && screen.orientation.lock) {
+      if (typeof screen !== 'undefined' && screen.orientation && (screen.orientation as any).lock) {
         (screen.orientation as any).lock('portrait').catch(() => {});
       }
     };
@@ -563,12 +578,12 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   useEffect(() => {
     const newId = Math.random().toString(36).substring(2, 8);
     setLoadId(newId);
-    setSymbol(propSymbol);
+    setSymbol(normalizeComexTicker(propSymbol));
     setSegment(propSegment);
     console.log(`[CHART PERF ${newId}] +0.0ms TradingChart propSymbol change: ${propSymbol}`);
   }, [propSymbol, propSegment]);
 
-  const [themeMode, setThemeMode] = useState<'dark' | 'black' | 'light'>(getAppTheme);
+  const [themeMode, setThemeMode] = useState<'dark' | 'black' | 'blue' | 'light'>(() => getAppTheme());
 
   useEffect(() => {
     const updateTheme = () => {
@@ -607,7 +622,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('marginApex_starred_instruments');
+      const stored = localStorage.getItem('niveshX_starred_instruments') || localStorage.getItem('marginApex_starred_instruments');
       if (stored) setStarredInstruments(JSON.parse(stored));
     } catch (e) { }
   }, []);
@@ -690,13 +705,18 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   }, []);
 
   const toggleStar = (item: any) => {
+    const itemKey = item.kiteSymbol || item.symbol;
+    if (!itemKey) return;
     setStarredInstruments(prev => {
-      const isStarred = prev.some(p => p.kiteSymbol === item.kiteSymbol);
-      const next = isStarred ? prev.filter(p => p.kiteSymbol !== item.kiteSymbol) : [...prev, item];
-      try { localStorage.setItem('marginApex_starred_instruments', JSON.stringify(next)); } catch (e) { }
+      const isStarred = prev.some(p => (p.kiteSymbol || p.symbol) === itemKey);
+      const next = isStarred
+        ? prev.filter(p => (p.kiteSymbol || p.symbol) !== itemKey)
+        : [...prev, item];
+      try { localStorage.setItem('niveshX_starred_instruments', JSON.stringify(next)); } catch (e) { }
       return next;
     });
   };
+
 
 
 
@@ -722,13 +742,14 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
 
   // --- Real Data Hooks ---
   const { orders, cancelOrder, refresh: refreshOrders } = useMyOrders();
-  const { positions, refresh: refreshPositions } = useMyPositions();
+  const { positions, refresh: refreshPositions, addOptimisticPosition } = useMyPositions();
   const { placeOrder, closePosition } = useOrderEntry();
 
   // --- Dashboard States ---
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [addingPosId, setAddingPosId] = useState<string | null>(null);
   const positionSnapshotRef = useRef<string | null>(null); // snapshot of position state at order time
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // tracks the active toast auto-dismiss timer
   const submitStartTimeRef = useRef<number>(0);
   const submittingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOrderBlockVisible, setIsOrderBlockVisible] = useState<boolean>(false);
@@ -756,6 +777,22 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   const { tradingMode, getLotSize, getSegment } = useTradeConfig();
   // Balance from the global BalanceDataProvider — no local fetch needed
   const { balance, refresh: refreshBalance } = useBalance();
+
+  const notifyOrderEvent = useCallback(() => {
+    refreshOrders();
+    refreshPositions();
+    refreshBalance();
+    window.dispatchEvent(new Event('order_placed'));
+    window.dispatchEvent(new Event('order_executed'));
+    window.dispatchEvent(new Event('position_updated'));
+    window.dispatchEvent(new CustomEvent('position-closed'));
+    window.dispatchEvent(new CustomEvent('position_closed'));
+    setTimeout(() => {
+      refreshOrders();
+      refreshPositions();
+      refreshBalance();
+    }, 600);
+  }, [refreshOrders, refreshPositions, refreshBalance]);
 
   // ── CHARTINH Integration States ──
   const [activeOrderTab, setActiveOrderTab] = useState<'open' | 'executed'>('open');
@@ -813,11 +850,11 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     const displayPrice = defaultAction === 'BUY' ? ask : bid;
     setLimitPrice(displayPrice.toFixed(2));
     setTriggerPrice(displayPrice.toFixed(2));
-    setGttSlPrice((displayPrice * 0.99).toFixed(2));
-    setGttTargetPrice((displayPrice * 1.01).toFixed(2));
+    setGttSlPrice(defaultAction === 'BUY' ? (displayPrice * 0.99).toFixed(2) : (displayPrice * 1.01).toFixed(2));
+    setGttTargetPrice(defaultAction === 'BUY' ? (displayPrice * 1.01).toFixed(2) : (displayPrice * 0.99).toFixed(2));
     setOrderType('market');
     setOrderCarry('normal');
-    const isQtyDefault = segment.toUpperCase().includes('EQUITY') || segment.toUpperCase() === 'NSE-EQ' || segment.toUpperCase().includes('CRYPTO');
+    const isQtyDefault = segment.toUpperCase().includes('EQUITY') || segment.toUpperCase() === 'NSE-EQ' || segment.toUpperCase() === 'STOCKS' || segment.toUpperCase().includes('CRYPTO');
     setUseLots(!isQtyDefault);
     setQtyValue(1);
     setIsExitFlow(false);
@@ -872,9 +909,36 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
 
   // Toast helper
   const showToast = (msg: string, isError = false) => {
+    // Cancel any pending auto-dismiss so stale timers can't close the new toast early
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     setToast({ visible: true, msg, isError });
-    setTimeout(() => setToast({ visible: false, msg: '' }), 2000);
+    // Errors stay visible longer so the user can actually read them
+    toastTimerRef.current = setTimeout(() => {
+      setToast({ visible: false, msg: '' });
+      toastTimerRef.current = null;
+    }, isError ? 4000 : 2500);
   };
+
+  // Safety guard: if the toast is visible but the timer was lost (e.g. after
+  // Next.js fast refresh preserves state but resets refs), re-arm the dismiss.
+  useEffect(() => {
+    if (toast.visible && !toastTimerRef.current) {
+      toastTimerRef.current = setTimeout(() => {
+        setToast({ visible: false, msg: '' });
+        toastTimerRef.current = null;
+      }, toast.isError ? 4000 : 2500);
+    }
+    return () => {
+      // Cleanup on unmount so we don't call setToast on a dead component
+      if (!toast.visible && toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, [toast.visible, toast.isError]);
 
   // Convert timeframe to Binance or Kite interval string
   const getIntervalString = () => {
@@ -915,7 +979,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
 
   // Ensure default quantity is reset to 1 when the symbol changes
   useEffect(() => {
-    const isQtyDefault = segment.toUpperCase().includes('EQUITY') || segment.toUpperCase() === 'NSE-EQ' || segment.toUpperCase().includes('CRYPTO');
+    const isQtyDefault = segment.toUpperCase().includes('EQUITY') || segment.toUpperCase() === 'NSE-EQ' || segment.toUpperCase() === 'STOCKS' || segment.toUpperCase().includes('CRYPTO');
     setUseLots(!isQtyDefault);
     setQtyValue(1);
   }, [symbol]);
@@ -1070,7 +1134,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
       const p = positions.find(x => x.id === exitPositionId);
       if (p) {
         orderSymbol = p.symbol;
-        orderSegment = p.settlement || p.segment || segment;
+        orderSegment = p.settlement || (p as any).segment || segment;
       }
     }
 
@@ -1149,19 +1213,13 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     }).then(res => {
       if (res.success) {
         showToast(modifyOrderId ? 'Order Modified Successfully!' : `${orderSide} Order Placed Successfully!`);
-        refreshOrders();
-        refreshBalance();
-        window.dispatchEvent(new CustomEvent('position-closed'));
-        // isSubmitting stays true — cleared by useEffect when positions refresh
-        // Safety fallback in case positions never update
-        submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 2500);
+        notifyOrderEvent();
       } else {
         showToast(res.error || 'Failed to place order', true);
-        setIsSubmitting(false);
-        positionSnapshotRef.current = null;
       }
     }).catch(err => {
       showToast(err?.message || 'Failed to place order', true);
+    }).finally(() => {
       setIsSubmitting(false);
       positionSnapshotRef.current = null;
     });
@@ -1173,8 +1231,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     const res = await cancelOrder(id);
     if (res.success) {
       showToast('Order cancelled');
-      refreshOrders();
-      refreshBalance();
+      notifyOrderEvent();
       if (modifyOrderId === id) {
         setModifyOrderId(null);
         setIsOrderBlockVisible(false);
@@ -1221,7 +1278,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     // Also set the target symbol info so the order block UI shows the correct position prices
     // instead of the chart's current instrument prices
     setAddMoreSymbol(pos.symbol);
-    setAddMoreSegment(pos.settlement || pos.segment || segment);
+    setAddMoreSegment(pos.settlement || (pos as any).segment || segment);
     setAddMoreKiteInst(pos.kite_instrument || pos.symbol);
     setAddMoreLtp(pos.current_ltp || pos.avg_price || pos.entry_price);
 
@@ -1307,62 +1364,64 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     exitingPosIds.current.add(pos.id);
     setForceRender(prev => prev + 1);
 
-    const posLotSize = getLotSize(pos.symbol);
-    const selectedQtyRaw = parseFloat(String(qtyValue)) || 0;
-    const selectedQty = useLots ? selectedQtyRaw * posLotSize : selectedQtyRaw;
-    const finalQty = selectedQty > 0 ? Math.min(pos.qty_open, selectedQty) : pos.qty_open;
+    try {
+      const posLotSize = getLotSize(pos.symbol);
+      const selectedQtyRaw = parseFloat(String(qtyValue)) || 0;
+      const selectedQty = useLots ? selectedQtyRaw * posLotSize : selectedQtyRaw;
+      const finalQty = selectedQty > 0 ? Math.min(pos.qty_open, selectedQty) : pos.qty_open;
 
-    if (finalQty <= 0) {
+      if (finalQty <= 0) {
+        return;
+      }
+
+      const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
+      const effectiveLots = finalQty / posLotSize;
+
+      showToast(`Placing quick exit order...`);
+      const exitTimeout = new Promise<{ success: false; error: string }>((resolve) =>
+        setTimeout(() => resolve({ success: false, error: 'Exit order timed out' }), 15000)
+      );
+      const res = await Promise.race([
+        placeOrder({
+          symbol: pos.symbol,
+          kite_instrument: pos.kite_instrument || pos.symbol,
+          segment: pos.settlement || segment,
+          side: exitSide,
+          qty: finalQty,
+          lots: effectiveLots,
+          order_type: 'MARKET',
+          product_type: pos.product_type || 'INTRADAY',
+          client_price: pos.current_ltp || pos.avg_price || pos.entry_price || currentPrice,
+          is_exit: true,
+          linked_position_id: positionViewMode === 'detailed' ? pos.id : undefined
+        }),
+        exitTimeout
+      ]);
+
+      if (res.success) {
+        showToast(`Quick exit order placed`);
+        notifyOrderEvent();
+
+        // Reset transient quantity state to 1 lot (configured default) upon exit completion
+        setQtyValue(1);
+        setUseLots(true);
+        setIsExitFlow(false);
+        setIsAddMoreFlow(false);
+      } else {
+        showToast(res.error || 'Exit failed', true);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Exit failed', true);
+    } finally {
       quickExitLock.current = false;
       exitingPosIds.current.delete(pos.id);
-      setForceRender(prev => prev + 1);
-      return;
-    }
-
-    const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
-    const effectiveLots = finalQty / posLotSize;
-
-    showToast(`Placing quick exit order...`);
-    const res = await placeOrder({
-      symbol: pos.symbol,
-      kite_instrument: pos.kite_instrument || pos.symbol,
-      segment: pos.settlement || segment,
-      side: exitSide,
-      qty: finalQty,
-      lots: effectiveLots,
-      order_type: 'MARKET',
-      product_type: pos.product_type || 'INTRADAY',
-      client_price: pos.current_ltp || pos.avg_price || pos.entry_price || currentPrice,
-      is_exit: true,
-      linked_position_id: positionViewMode === 'detailed' ? pos.id : undefined
-    });
-
-    if (res.success) {
-      showToast(`Quick exit order placed`);
-      refreshOrders();
-      refreshBalance();
-      refreshPositions();
-      window.dispatchEvent(new CustomEvent('position-closed'));
-      quickExitLock.current = false;
-
-      // Reset transient quantity state to 1 lot (configured default) upon exit completion
-      setQtyValue(1);
-      setUseLots(true);
-      setIsExitFlow(false);
-      setIsAddMoreFlow(false);
-
-      exitingPosIds.current.delete(pos.id);
-      setForceRender(prev => prev + 1);
-    } else {
-      showToast(res.error || 'Exit failed', true);
-      quickExitLock.current = false;
-      exitingPosIds.current.delete(pos.id);
+      setIsSubmitting(false);
       setForceRender(prev => prev + 1);
     }
   };
 
   // Add more to a position (may be a different symbol from the current chart)
-  const handleAddMorePosition = (pos: EnrichedPosition) => {
+  const handleAddMorePosition = async (pos: EnrichedPosition) => {
     if (isSubmitting) return;
     if (!isTradeOnChartActive) {
       if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
@@ -1401,48 +1460,40 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
       submitStartTimeRef.current = Date.now();
       positionSnapshotRef.current = `${pos.id}:${pos.qty_open}`;
 
-      placeOrder({
-        symbol: pos.symbol,
-        kite_instrument: pos.kite_instrument || pos.symbol,
-        segment: pos.settlement || segment,
-        side: pos.side,
-        qty: qVal,
-        lots: 1,
-        order_type: 'MARKET',
-        product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
-        client_price: 0,
-        is_exit: false
-      }).then(res => {
+      try {
+        const addTimeout = new Promise<{ success: false; error: string }>((resolve) =>
+          setTimeout(() => resolve({ success: false, error: 'Add to position timed out' }), 15000)
+        );
+        const res = await Promise.race([
+          placeOrder({
+            symbol: pos.symbol,
+            kite_instrument: pos.kite_instrument || pos.symbol,
+            segment: pos.settlement || segment,
+            side: pos.side,
+            qty: qVal,
+            lots: 1,
+            order_type: 'MARKET',
+            product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
+            client_price: currentPrice || pos.current_ltp || pos.avg_price || 0,
+            is_exit: false
+          }),
+          addTimeout
+        ]);
+
         if (res.success) {
           showToast(`Successfully added ${qVal} to position!`);
-          refreshOrders();
-          refreshPositions();
-          refreshBalance();
-          refreshBalance();
-          window.dispatchEvent(new Event('order_placed'));
-          window.dispatchEvent(new CustomEvent('position-closed'));
-          
-          // Safety timeout to clear isSubmitting / loader
-          submittingTimeoutRef.current = setTimeout(() => {
-            setIsSubmitting(false);
-            setAddingPosId(null);
-            positionSnapshotRef.current = null;
-            window.dispatchEvent(new Event('global-loader-end'));
-          }, 8000);
+          notifyOrderEvent();
         } else {
           showToast(res.error || 'Failed to add to position', true);
-          setIsSubmitting(false);
-          setAddingPosId(null);
-          positionSnapshotRef.current = null;
-          window.dispatchEvent(new Event('global-loader-end'));
         }
-      }).catch(err => {
+      } catch (err: any) {
         showToast(err?.message || 'Failed to add to position', true);
+      } finally {
         setIsSubmitting(false);
         setAddingPosId(null);
         positionSnapshotRef.current = null;
         window.dispatchEvent(new Event('global-loader-end'));
-      });
+      }
       return;
     }
 
@@ -1454,147 +1505,305 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   const quickEntryLock = useRef(false);
 
   const handleQuickMarketOrder = async (side: 'BUY' | 'SELL') => {
-    if (quickEntryLock.current || isSubmitting) return;
+    if (quickEntryLock.current) return;
     quickEntryLock.current = true;
-    setIsSubmitting(true);
-    positionSnapshotRef.current = currentInstrumentPosition ? `${currentInstrumentPosition.id}:${currentInstrumentPosition.qty_open}` : '__none__';
     setOrderSide(side);
 
-    // Guard against stale exit/add-more quantity when placing a new order (Bug #2)
-    let qVal = Number(qtyValue) || 1;
-    if (isExitFlow || isAddMoreFlow || !currentInstrumentPosition || qVal <= 0) {
-      qVal = 1;
-      setQtyValue(1);
-      setUseLots(true);
-      setIsExitFlow(false);
-      setIsAddMoreFlow(false);
-    }
+    try {
+      // Guard: don't place order if price feed hasn't loaded yet
+      if (!currentPrice || currentPrice <= 0) {
+        showToast('Price not loaded yet. Please wait a moment.', true);
+        return;
+      }
 
-    if (qVal <= 0) {
-      showToast("Invalid quantity", true);
-      quickEntryLock.current = false;
-      setIsSubmitting(false);
-      return;
-    }
-    const isScalper = tradingMode === 'scalper';
-    const effectiveUseLots = isScalper ? true : useLots;
+      // Guard against stale exit/add-more quantity when placing a new order
+      let qVal = Number(qtyValue) || 1;
+      if (isExitFlow || isAddMoreFlow || qVal <= 0) {
+        qVal = 1;
+        setQtyValue(1);
+        setUseLots(true);
+        setIsExitFlow(false);
+        setIsAddMoreFlow(false);
+      }
 
-    // In scalp mode qtyValue is always in lots. Guard against a stale exit-qty
-    // (e.g. 1500 units from a previous exit flow) being treated as lot count,
-    // which would multiply by lotSize again and blow past max_order_lot.
-    const dbSeg = mapSegmentWithSymbol(segment, symbol);
-    const segSetting = getSegment(dbSeg, side);
-    const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 50;
+      if (qVal <= 0) {
+        showToast("Invalid quantity", true);
+        return;
+      }
+      const isScalper = tradingMode === 'scalper';
+      const effectiveUseLots = isScalper ? true : useLots;
 
-    // If qty exceeds max, show error, correct input to max, and abort — don't silently clamp.
-    if (effectiveUseLots && maxOrderLot > 0 && qVal > maxOrderLot) {
-      showToast(`Max allowed: ${maxOrderLot} lots (${maxOrderLot * lotSize} qty). Corrected to maximum.`, true);
-      setQtyValue(String(maxOrderLot));
-      quickEntryLock.current = false;
-      setIsSubmitting(false);
-      return;
-    }
+      const dbSeg = mapSegmentWithSymbol(segment, symbol);
+      const segSetting = getSegment(dbSeg, side);
+      const maxOrderLot = segSetting?.max_order_lot ?? segSetting?.max_lot ?? 50;
 
-    const finalQty = effectiveUseLots ? (isCrypto ? qVal * lotSize : Math.round(qVal * lotSize)) : (isCrypto ? qVal : Math.round(qVal));
-    const intradayLeverage = segSetting?.intraday_leverage ?? 10;
-    const intradayType = segSetting?.intraday_type ?? 'Multiplier';
-    const required = Math.round(intradayType === '%' ? (currentPrice * finalQty) * (intradayLeverage / 100) : (intradayType === 'Fixed' ? (finalQty / lotSize) * intradayLeverage : (currentPrice * finalQty) / intradayLeverage));
+      // If qty exceeds max, show error, correct input to max, and abort — don't silently clamp.
+      if (effectiveUseLots && maxOrderLot > 0 && qVal > maxOrderLot) {
+        showToast(`Max allowed: ${maxOrderLot} lots (${maxOrderLot * lotSize} qty). Corrected to maximum.`, true);
+        setQtyValue(String(maxOrderLot));
+        return;
+      }
 
-    if (required > balance) {
-      showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
-      quickEntryLock.current = false;
-      setIsSubmitting(false);
-      return;
-    }
+      const finalQty = effectiveUseLots ? (isCrypto ? qVal * lotSize : Math.round(qVal * lotSize)) : (isCrypto ? qVal : Math.round(qVal));
+      const intradayLeverage = segSetting?.intraday_leverage ?? 10;
+      const intradayType = segSetting?.intraday_type ?? 'Multiplier';
+      const required = Math.round(intradayType === '%' ? (currentPrice * finalQty) * (intradayLeverage / 100) : (intradayType === 'Fixed' ? (finalQty / lotSize) * intradayLeverage : (currentPrice * finalQty) / intradayLeverage));
 
-    showToast(`Placing quick ${side} order...`);
-    const res = await placeOrder({
-      symbol: symbol,
-      kite_instrument: symbol,
-      segment: segment,
-      side: side,
-      qty: finalQty,
-      lots: effectiveUseLots ? qVal : (finalQty / lotSize),
-      order_type: 'MARKET',
-      product_type: 'INTRADAY',
-      client_price: currentPrice,
-      is_exit: false
-    });
+      if (required > balance) {
+        showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+        return;
+      }
 
-    if (res.success) {
-      showToast(`Quick ${side} Order Placed Successfully!`);
+      showToast(`Placing quick ${side} order...`);
+      // Build proper kite instrument id (with exchange prefix) for server-side quote fetch
+      const kiteInst = (() => {
+        const s = symbol;
+        if (s.includes(':')) return s;
+        const upper = s.toUpperCase();
+        if (isCrypto || upper.endsWith('USDT') || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => upper === c || upper.startsWith(c + 'USDT'))) {
+          return `BINANCE:${s.replace(/^BINANCE:/i, '')}`;
+        }
+        if (['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'].includes(upper)) {
+          return `FOREX:${s}`;
+        }
+        if (upper.endsWith('=F') || upper.includes('=F')) return `COMEX:${s}`;
+        if (upper.endsWith('CE') || upper.endsWith('PE') || upper.endsWith('FUT') || upper.includes('FUT')) {
+          if (upper.startsWith('SENSEX') || upper.startsWith('BANKEX')) return `BFO:${s}`;
+          if (['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => upper.startsWith(c))) return `MCX:${s}`;
+          if (upper.startsWith('EURINR') || upper.startsWith('USDINR') || upper.startsWith('GBPINR') || upper.startsWith('JPYINR')) return `CDS:${s}`;
+          return `NFO:${s}`;
+        }
+        return `NSE:${s}`;
+      })();
+      showToast(`Quick ${side} order placed!`);
+
+      // Inject optimistic position immediately for instant UI feedback
+      try {
+        const dbSeg = mapSegmentWithSymbol(segment, symbol);
+        addOptimisticPosition({
+          symbol,
+          settlement: dbSeg,
+          side,
+          qty_open: finalQty,
+          lots: effectiveUseLots ? qVal : (finalQty / lotSize),
+          entry_price: currentPrice,
+          avg_price: currentPrice,
+          ltp: currentPrice,
+          product_type: 'INTRADAY',
+          kite_instrument: kiteInst,
+          _preOrderQty: currentInstrumentPosition?.qty_open ?? 0,
+        } as any);
+      } catch (optErr) {
+        console.warn('[TradingChart] Optimistic position injection failed:', optErr);
+      }
+
       // Flash the button
       const btn = document.getElementById(side === 'BUY' ? 'buyButton' : 'sellButton');
       if (btn) {
         btn.classList.remove('quick-flash');
-        void btn.offsetWidth; // force reflow
+        void btn.offsetWidth;
         btn.classList.add('quick-flash');
       }
-      refreshOrders();
-      refreshBalance();
-      refreshBalance();
-      refreshPositions();
-      window.dispatchEvent(new CustomEvent('position-closed'));
-    } else {
-      showToast(res.error || 'Failed to place quick order', true);
-      // On failure, release immediately
-      setIsSubmitting(false);
+
+      setActiveSegment('positions');
+
+      // Release lock immediately — no waiting for API
+      quickEntryLock.current = false;
       positionSnapshotRef.current = null;
-    }
-    
-    // Release click lock after debounce
-    setTimeout(() => { quickEntryLock.current = false; }, 500);
-    // isSubmitting stays true on success — cleared by useEffect when positions refresh
-    // Safety fallback in case positions never update
-    if (res.success) {
-      submittingTimeoutRef.current = setTimeout(() => { setIsSubmitting(false); positionSnapshotRef.current = null; }, 1500);
+      window.dispatchEvent(new Event('global-loader-end'));
+
+      // Fire API in background
+      placeOrder({
+        symbol: symbol,
+        kite_instrument: kiteInst,
+        segment: segment,
+        side: side,
+        qty: finalQty,
+        lots: effectiveUseLots ? qVal : (finalQty / lotSize),
+        order_type: 'MARKET',
+        product_type: 'INTRADAY',
+        client_price: currentPrice,
+        frontend_ask: activeLiveQuote?.ask || currentPrice,
+        frontend_bid: activeLiveQuote?.bid || currentPrice,
+        frontend_ltp: currentPrice,
+        client_click_time: Date.now(),
+        is_exit: false
+      }).then(res => {
+        if (res.success) {
+          notifyOrderEvent();
+        } else {
+          showToast(res.error || 'Order may have failed — check positions', true);
+          refreshPositions();
+          refreshBalance();
+        }
+      }).catch(err => {
+        showToast(err?.message || 'Quick order failed — check positions', true);
+        refreshPositions();
+      });
+    } catch (err: any) {
+      showToast(err?.message || 'Quick order failed', true);
+      quickEntryLock.current = false;
+      positionSnapshotRef.current = null;
+      window.dispatchEvent(new Event('global-loader-end'));
     }
   };
 
   const handleQuickAddPosition = async (pos: EnrichedPosition) => {
-    if (quickEntryLock.current) return;
+    if (quickEntryLock.current || isSubmitting) return;
     quickEntryLock.current = true;
+    setIsSubmitting(true);
+    setAddingPosId(pos.id);
 
-    const addQty = pos.qty_open;
-    const dbSeg = mapSegmentWithSymbol(segment, symbol);
-    const segSetting = getSegment(dbSeg, pos.side);
-    const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
-    const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
-    const required = Math.round(levType === '%' ? (currentPrice * addQty) * (leverage / 100) : (levType === 'Fixed' ? (addQty / lotSize) * leverage : (currentPrice * addQty) / leverage));
+    try {
+      const addQty = pos.qty_open;
+      const dbSeg = mapSegmentWithSymbol(segment, symbol);
+      const segSetting = getSegment(dbSeg, pos.side);
+      const leverage = pos.product_type === 'CARRY' ? (segSetting?.holding_leverage ?? 10) : (segSetting?.intraday_leverage ?? 10);
+      const levType = pos.product_type === 'CARRY' ? (segSetting?.holding_type ?? 'Multiplier') : (segSetting?.intraday_type ?? 'Multiplier');
+      const required = Math.round(levType === '%' ? (currentPrice * addQty) * (leverage / 100) : (levType === 'Fixed' ? (addQty / lotSize) * leverage : (currentPrice * addQty) / leverage));
 
-    if (required > balance) {
-      showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+      if (required > balance) {
+        showToast(`Insufficient margin! Need ₹${required.toLocaleString('en-IN')}`, true);
+        return;
+      }
+
+      showToast(`Adding ${addQty} to ${pos.side} position...`);
+      
+      // Build proper kite instrument id (with exchange prefix) for server-side quote fetch
+      const kiteInst = (() => {
+        const s = symbol;
+        if (s.includes(':')) return s;
+        const upper = s.toUpperCase();
+        if (isCrypto || upper.endsWith('USDT') || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => upper === c || upper.startsWith(c + 'USDT'))) {
+          return `BINANCE:${s.replace(/^BINANCE:/i, '')}`;
+        }
+        if (['GBPUSD', 'EURUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD'].includes(upper)) {
+          return `FOREX:${s}`;
+        }
+        if (upper.endsWith('=F') || upper.includes('=F')) return `COMEX:${s}`;
+        if (upper.endsWith('CE') || upper.endsWith('PE') || upper.endsWith('FUT') || upper.includes('FUT')) {
+          if (upper.startsWith('SENSEX') || upper.startsWith('BANKEX')) return `BFO:${s}`;
+          if (['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'ALUMINIUM', 'LEAD'].some(c => upper.startsWith(c))) return `MCX:${s}`;
+          if (upper.startsWith('EURINR') || upper.startsWith('USDINR') || upper.startsWith('GBPINR') || upper.startsWith('JPYINR')) return `CDS:${s}`;
+          return `NFO:${s}`;
+        }
+        return `NSE:${s}`;
+      })();
+
+      const quickAddTimeout = new Promise<{ success: false; error: string }>((resolve) =>
+        setTimeout(() => resolve({ success: false, error: 'Add to position timed out' }), 25000)
+      );
+
+      const res = await Promise.race([
+        placeOrder({
+          symbol: symbol,
+          kite_instrument: kiteInst,
+          segment: segment,
+          side: pos.side,
+          qty: addQty,
+          lots: 0,
+          order_type: 'MARKET',
+          product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
+          client_price: currentPrice || pos.current_ltp || pos.avg_price || 0,
+          frontend_ask: activeLiveQuote?.ask || currentPrice,
+          frontend_bid: activeLiveQuote?.bid || currentPrice,
+          frontend_ltp: currentPrice,
+          client_click_time: Date.now(),
+          is_exit: false
+        }),
+        quickAddTimeout
+      ]);
+
+      if (res.success) {
+        showToast(`Successfully added ${addQty} to position!`);
+        notifyOrderEvent();
+      } else {
+        showToast(res.error || 'Failed to add to position', true);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to add to position', true);
+    } finally {
       quickEntryLock.current = false;
-      return;
+      setIsSubmitting(false);
+      setAddingPosId(null);
+      positionSnapshotRef.current = null;
+      window.dispatchEvent(new Event('global-loader-end'));
     }
-
-    showToast(`Adding ${addQty} to ${pos.side} position...`);
-    const res = await placeOrder({
-      symbol: symbol,
-      kite_instrument: symbol,
-      segment: segment,
-      side: pos.side,
-      qty: addQty,
-      lots: 0,
-      order_type: 'MARKET',
-      product_type: pos.product_type === 'CARRY' ? 'CARRY' : 'INTRADAY',
-      client_price: 0,
-      is_exit: false
-    });
-
-    if (res.success) {
-      showToast(`Successfully added ${addQty} to position!`);
-      refreshOrders();
-      refreshBalance();
-      refreshBalance();
-      window.dispatchEvent(new CustomEvent('position-closed'));
-    } else {
-      showToast(res.error || 'Failed to add to position', true);
-    }
-    
-    // Release entry lock after a short debounce to prevent mouse-bounces
-    setTimeout(() => { quickEntryLock.current = false; }, 500);
   };
+
+  // ── Safety Watchdog to prevent permanent button lockups ──
+  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isSubmitting || exitingPosIds.current.size > 0) {
+      if (watchdogTimerRef.current) clearTimeout(watchdogTimerRef.current);
+      // Reduced from 18 s → 10 s: fail fast so the user can retry sooner.
+      watchdogTimerRef.current = setTimeout(() => {
+        console.warn('[TradingChart Watchdog] Auto-clearing stuck submitting/exiting state');
+        setIsSubmitting(false);
+        setAddingPosId(null);
+        positionSnapshotRef.current = null;
+        exitingPosIds.current.clear();
+        quickEntryLock.current = false;
+        quickExitLock.current = false;
+        setForceRender(prev => prev + 1);
+        window.dispatchEvent(new Event('global-loader-end'));
+        // Refresh in case the order executed server-side while we were stuck
+        refreshPositions();
+        refreshBalance();
+      }, 10000);
+    } else {
+      if (watchdogTimerRef.current) {
+        clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
+    }
+  }, [isSubmitting, refreshPositions, refreshBalance]);
+
+  // ── Page-visibility safety net ──
+  // Mobile browsers throttle setTimeout / useEffect when the tab is backgrounded.
+  // If the user switches apps while waiting for an order, the watchdog (above) may
+  // never fire, leaving isSubmitting = true indefinitely.
+  // When the tab becomes visible again, check whether we've been stuck > 8 s and
+  // force-clear if so, then refresh positions in case the order went through.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      const elapsed = Date.now() - submitStartTimeRef.current;
+      const stuck =
+        (isSubmitting || quickEntryLock.current || exitingPosIds.current.size > 0) &&
+        submitStartTimeRef.current > 0 &&
+        elapsed > 8000;
+      if (!stuck) return;
+      console.warn('[TradingChart] Tab visible with stuck state after', elapsed, 'ms — force-clearing');
+      if (watchdogTimerRef.current) {
+        clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
+      setIsSubmitting(false);
+      setAddingPosId(null);
+      positionSnapshotRef.current = null;
+      exitingPosIds.current.clear();
+      quickEntryLock.current = false;
+      quickExitLock.current = false;
+      submitStartTimeRef.current = 0;
+      setForceRender(prev => prev + 1);
+      window.dispatchEvent(new Event('global-loader-end'));
+      // Refresh so newly-created positions are reflected immediately
+      refreshPositions();
+      refreshBalance();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isSubmitting, refreshPositions, refreshBalance]);
+
+  useEffect(() => {
+    return () => {
+      if (watchdogTimerRef.current) {
+        clearTimeout(watchdogTimerRef.current);
+      }
+    };
+  }, []);
 
   // ── Watch for position changes while submitting ──
   // Keep buttons in loading state until positions actually refresh and the UI changes
@@ -1626,6 +1835,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
       setIsSubmitting(false);
       setAddingPosId(null);
       positionSnapshotRef.current = null;
+      quickEntryLock.current = false;
       window.dispatchEvent(new Event('global-loader-end'));
       if (submittingTimeoutRef.current) {
         clearTimeout(submittingTimeoutRef.current);
@@ -1731,6 +1941,16 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   const chargeQty = orderQty;
   const chargeExposure = chargeQty * chargePrice;
 
+  // Fallback defaults if segSetting is missing or incomplete
+  const fallbackCommType = 'Per Crore';
+  let fallbackCommVal = 4500;
+  const sUpper = (dbSeg || '').toUpperCase();
+  if (sUpper.includes('FOREX') || sUpper.includes('CDS')) {
+    fallbackCommVal = 2000;
+  } else if (sUpper.includes('CRYPTO')) {
+    fallbackCommVal = 1000;
+  }
+
   const computeCharge = (commType: string, commVal: number) => {
     if (commType === 'Per Crore') return (chargeExposure * commVal) / 10000000;
     if (commType === 'Per Lot') return (chargeQty / lotSize) * commVal;
@@ -1750,17 +1970,19 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
   const gttCharge = (segSetting ? computeCharge(
     segSetting.gtt_commission_type || 'Per Trade',
     segSetting.gtt_commission_value ?? 10
-  ) : 0) * multiplier;
+  ) : computeCharge('Per Trade', 15));
 
   const carryCharge = (segSetting ? computeCharge(
     segSetting.carry_commission_type || segSetting.commission_type || 'Per Crore',
-    segSetting.carry_commission_value ?? segSetting.commission_value ?? 0
-  ) : 0) * multiplier;
+    segSetting.carry_commission_value ?? segSetting.commission_value ?? fallbackCommVal
+  ) : computeCharge(fallbackCommType, fallbackCommVal)) * multiplier;
 
-  const totalBrokerage = (
-    intradayCharge +
-    (orderCarry === 'carry' ? carryCharge : 0) +
-    (orderType === 'gtt' ? gttCharge : 0)
+  // NOTE: GTT is an execution type, NOT a product type — carry charges must NOT auto-apply on GTT+INTRADAY
+  const activeCarryCharge = orderCarry === 'carry' ? carryCharge : 0;
+  const activeGttCharge = orderType === 'gtt' ? gttCharge : 0;
+
+  const totalBrokerage = isExitFlow ? 0 : (
+    intradayCharge + activeCarryCharge + activeGttCharge
   );
   const marginPortion = calculateMarginPortion({
     segment: dbSeg,
@@ -1944,7 +2166,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
               border: 'none', borderRadius: 0, cursor: 'pointer',
               background: 'transparent',
               color: positionViewMode === 'cumulative' ? ((themeMode === 'dark' || themeMode === 'black' || themeMode === 'blue') ? '#2962FF' : 'var(--navy, #101828)') : 'var(--text-secondary, #6b7280)',
-              borderBottom: positionViewMode === 'cumulative' ? ((themeMode === 'dark' || themeMode === 'black' || themeMode === 'blue') ? '2.5px solid #2962FF' : '2.5px solid var(--navy, #101828)') : '2.5px solid transparent',
+              borderBottom: positionViewMode === 'cumulative' ? ((themeMode === 'dark' || themeMode === 'black') ? '2.5px solid #2962FF' : '2.5px solid var(--navy, #101828)') : '2.5px solid transparent',
               marginBottom: '-2px',
               transition: 'all 0.15s',
             }}
@@ -1959,7 +2181,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
               border: 'none', borderRadius: 0, cursor: 'pointer',
               background: 'transparent',
               color: positionViewMode === 'detailed' ? ((themeMode === 'dark' || themeMode === 'black' || themeMode === 'blue') ? '#2962FF' : 'var(--navy, #101828)') : 'var(--text-secondary, #6b7280)',
-              borderBottom: positionViewMode === 'detailed' ? ((themeMode === 'dark' || themeMode === 'black' || themeMode === 'blue') ? '2.5px solid #2962FF' : '2.5px solid var(--navy, #101828)') : '2.5px solid transparent',
+              borderBottom: positionViewMode === 'detailed' ? ((themeMode === 'dark' || themeMode === 'black') ? '2.5px solid #2962FF' : '2.5px solid var(--navy, #101828)') : '2.5px solid transparent',
               marginBottom: '-2px',
               transition: 'all 0.15s',
             }}
@@ -2074,7 +2296,49 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
     >
       {/* Top Toolbar */}
       <div className="tc-top-toolbar" onMouseLeave={() => setOpenTopFlyout(null)}>
-        {/* ── Back button removed per user request ── */}
+        {/* ── Back button ── */}
+        <button
+          className="tc-tb-btn tc-back-btn"
+          title="Back (Esc)"
+          aria-label="Back"
+          onClick={() => {
+            if (onCloseRef.current) {
+              onCloseRef.current();
+            } else {
+              const sheet = document.getElementById('chartSheet');
+              const overlay = document.getElementById('chartSheetOverlay');
+              if (sheet) sheet.classList.remove('open');
+              if (overlay) overlay.classList.remove('active');
+              window.history.back();
+            }
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary, #8b949e)',
+            cursor: 'pointer',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            marginRight: '2px',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--text-primary, #ffffff)';
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-secondary, #8b949e)';
+            e.currentTarget.style.background = 'transparent';
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+        </button>
 
         {/* ── Symbol ── */}
         {isSearchActive ? (
@@ -2127,11 +2391,12 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
                     : (res.segment || 'NSE');
 
               const newLoadId = Math.random().toString(36).substring(2, 8);
+              const cleanNewSymbol = normalizeComexTicker(newSymbol);
               setLoadId(newLoadId);
-              setSymbol(newSymbol);
+              setSymbol(cleanNewSymbol);
               setSegment(newSegment);
               setIsSearchActive(false);
-              setOrderBlockTitle(newSymbol);
+              setOrderBlockTitle(cleanNewSymbol);
 
               if (typeof window !== 'undefined' && typeof (window as any).__reactSetChartItem === 'function') {
                 (window as any).__reactSetChartItem({
@@ -2187,33 +2452,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
               </div>
               
               {/* Native React Countdown - Bypasses TradingView entirely */}
-              {(() => {
-                if (timeframe === 'day') return null;
-                const [timeLeft, setTimeLeft] = useState('');
-                useEffect(() => {
-                  const resMs = 
-                    timeframe === '1m' ? 60000 : timeframe === '2m' ? 120000 : timeframe === '3m' ? 180000 :
-                    timeframe === '5m' ? 300000 : timeframe === '10m' ? 600000 : timeframe === '15m' ? 900000 :
-                    timeframe === '30m' ? 1800000 : timeframe === '60m' ? 3600000 : 0;
-                  if (!resMs) return;
-                  const interval = setInterval(() => {
-                    const nowMs = Date.now();
-                    // Anchor to 09:15 for non-crypto 60m candles if needed, but standard modulo works for all intraday
-                    // The modulo handles the standard UTC epoch offsets perfectly for all timeframes <= 60m
-                    const next = Math.ceil(nowMs / resMs) * resMs;
-                    const diff = Math.max(0, next - nowMs);
-                    const m = Math.floor(diff / 60000);
-                    const s = Math.floor((diff % 60000) / 1000);
-                    setTimeLeft(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-                  }, 1000);
-                  return () => clearInterval(interval);
-                }, [timeframe]);
-                return timeLeft ? (
-                  <div style={{ marginLeft: '4px', fontSize: '12px', fontWeight: 600, color: '#f23645' }}>
-                    ({timeLeft})
-                  </div>
-                ) : null;
-              })()}
+              <CandleCountdown timeframe={timeframe} />
 
               {openTopFlyout === 'interval' && (
                 <div className="tc-top-flyout" style={{ minWidth: '110px' }}>
@@ -2340,7 +2579,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
       </div>
 
       {/* Content Split Container */}
-      <div style={{ display: 'flex', flexDirection: (isLandscape || isCssLandscape) ? 'row' : 'column', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: (isLandscape || isCssLandscape) ? 'row' : 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
         {/* Main Area */}
         <div className="tc-main-area" style={{ flex: 1, minWidth: 0, position: 'relative' }}>
@@ -2443,6 +2682,7 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
             flexDirection: 'column',
             width: '100%',
             flexShrink: 0,
+            overflow: 'hidden',
             zIndex: 10
           }}
         >
@@ -2467,10 +2707,44 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button className="trade-btn sell" onClick={() => showToast('Available soon')} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: '1.5px solid var(--red, #e53935)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                    <button className="trade-btn sell" onClick={() => {
+                      if (!currentInstrumentPosition) {
+                        showToast('No active position for SL', true);
+                        return;
+                      }
+                      if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
+                      else setIsPanelExpanded(false);
+                      setIsExitFlow(true);
+                      setIsAddMoreFlow(false);
+                      setExitPositionId(currentInstrumentPosition.id);
+                      setOrderSide(currentInstrumentPosition.side === 'BUY' ? 'SELL' : 'BUY');
+                      setQtyValue(currentInstrumentPosition.qty_open);
+                      setUseLots(false);
+                      setOrderType('sl');
+                      setPostOrderSegment('main');
+                      setOrderBlockTitle(`SL Exit · ${currentInstrumentPosition.symbol}`);
+                      setIsOrderBlockVisible(true);
+                    }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: '1.5px solid var(--red, #e53935)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                       <span className="btn-label" style={{ color: 'var(--red, #e53935)', fontSize: '11px', fontWeight: 600 }}>SL</span>
                     </button>
-                    <button className="trade-btn buy" onClick={() => showToast('Available soon')} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: '1.5px solid var(--green, #1db954)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                    <button className="trade-btn buy" onClick={() => {
+                      if (!currentInstrumentPosition) {
+                        showToast('No active position for TP', true);
+                        return;
+                      }
+                      if (isLandscape || isCssLandscape) setIsInfoPanelCollapsed(true);
+                      else setIsPanelExpanded(false);
+                      setIsExitFlow(true);
+                      setIsAddMoreFlow(false);
+                      setExitPositionId(currentInstrumentPosition.id);
+                      setOrderSide(currentInstrumentPosition.side === 'BUY' ? 'SELL' : 'BUY');
+                      setQtyValue(currentInstrumentPosition.qty_open);
+                      setUseLots(false);
+                      setOrderType('limit');
+                      setPostOrderSegment('main');
+                      setOrderBlockTitle(`TP Exit · ${currentInstrumentPosition.symbol}`);
+                      setIsOrderBlockVisible(true);
+                    }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: '1.5px solid var(--green, #1db954)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                       <span className="btn-label" style={{ color: 'var(--green, #1db954)', fontSize: '11px', fontWeight: 600 }}>TP</span>
                     </button>
                     <div className="pnl-toggle-btn" onClick={() => { setIsTradeOnChartActive(false); localStorage.setItem('isTradeOnChartActive', 'false'); }} style={{ background: 'var(--pill-bg, #1a2432)', color: 'var(--text-primary)', cursor: 'pointer', marginLeft: '4px' }}>
@@ -2696,7 +2970,6 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
                         if (['OPTIDX', 'FUTIDX', 'OPTSTK', 'FUTSTK', 'OPTCOM', 'FUTCOM', 'OPTCUR', 'FUTCUR'].includes(dbSeg)) {
                           kiteInstForOrder = isMcx ? `MCX:${baseKiteInst}` : `NFO:${baseKiteInst}`;
                         }
-                        
                         setSymbol(targetSymbol);
                         // Derive the correct display segment so mapSegmentToDbSegment works
                         if (chainContract) {
@@ -2913,14 +3186,14 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
                             <span style={{ color: 'var(--text-muted)' }}>Carry Charges</span>
-                            <span style={{ color: (orderCarry === 'carry' || orderType === 'gtt') ? 'var(--green)' : 'var(--text-muted)', fontWeight: 700 }}>
-                              ₹{(orderCarry === 'carry' || orderType === 'gtt' ? carryCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            <span style={{ color: activeCarryCharge > 0 ? 'var(--green)' : 'var(--text-muted)', fontWeight: 700 }}>
+                              ₹{activeCarryCharge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px' }}>
                             <span style={{ color: 'var(--text-muted)' }}>GTT Charges</span>
-                            <span style={{ color: orderType === 'gtt' ? 'var(--green)' : 'var(--text-muted)', fontWeight: 700 }}>
-                              ₹{(orderType === 'gtt' ? gttCharge : 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            <span style={{ color: activeGttCharge > 0 ? 'var(--green)' : 'var(--text-muted)', fontWeight: 700 }}>
+                              ₹{activeGttCharge.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
                         </div>
@@ -3012,7 +3285,16 @@ function TradingChartComponent({ symbol: propSymbol, segment: propSegment = '', 
       </div>
       {/* End of Content Split Container */}
       {toast.visible && (
-        <div className={`toast-message toast-show ${toast.isError ? 'neg' : ''}`}>
+        <div
+          className={`toast-message toast-show ${toast.isError ? 'neg' : ''}`}
+          onClick={() => {
+            if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+            toastTimerRef.current = null;
+            setToast({ visible: false, msg: '' });
+          }}
+          style={{ cursor: 'pointer' }}
+          title="Tap to dismiss"
+        >
           {toast.msg}
         </div>
       )}
