@@ -15,13 +15,16 @@ import dynamic from 'next/dynamic';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 import { mapSegmentToDbSegment, mapSymbolToSegment, mapSegmentWithSymbol } from '@/lib/trading/SymbolMapping';
 import { isForexSymbol } from '@/lib/datafeed/symbolResolver';
+import { getCurrentFuturesSymbol } from '@/lib/contractExpiry';
 import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 import { RiskValidation } from '@/lib/trading/RiskValidation';
+import { generateRealisticFallbackQuote } from '@/lib/quoteFallback';
 
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import WatchlistSearch from '@/components/WatchlistSearch';
-import PullToRefresh from '@/components/PullToRefresh';
+import { getSavedTheme, applyTheme } from '@/lib/theme';
+
 import { ErrorModal } from '@/components/ErrorModal';
 import './page.css';
 
@@ -85,26 +88,26 @@ function saveWatchlistToStorage(items: WatchlistItem[], userId?: string) {
 
 // Crypto whitelist: only BTC, ETH, DOGE (Requirement 5.1)
 const DEFAULT_CRYPTO_ITEMS: WatchlistItem[] = [
-  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 65000.00, change: '0%', segment: 'CRYPTO', contractDate: '', open: 65000.00, high: 65000.00, low: 65000.00, close: 65000.00, category: 'CRYPTO' },
-  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 3500.00, change: '0%', segment: 'CRYPTO', contractDate: '', open: 3500.00, high: 3500.00, low: 3500.00, close: 3500.00, category: 'CRYPTO' },
-  { name: 'Dogecoin', symbol: 'DOGE', kiteSymbol: '', binanceSymbol: 'DOGEUSDT', price: 0.12, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0.12, high: 0.12, low: 0.12, close: 0.12, category: 'CRYPTO' },
+  { name: 'Bitcoin', symbol: 'BTC', kiteSymbol: '', binanceSymbol: 'BTCUSDT', price: 0, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
+  { name: 'Ethereum', symbol: 'ETH', kiteSymbol: '', binanceSymbol: 'ETHUSDT', price: 0, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
+  { name: 'Dogecoin', symbol: 'DOGE', kiteSymbol: '', binanceSymbol: 'DOGEUSDT', price: 0, change: '0%', segment: 'CRYPTO', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'CRYPTO' },
 ];
 
 // ── Default Forex Items (Zerodha CDS segment — INR pairs) ──────────────────
 // Update expiry month as contracts roll (format: CDS:XYZINR26MONFUT)
 
 const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
-  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', comexSymbol: 'GBPUSD=X', price: 108.90, change: '0%', segment: 'Forex', contractDate: '', open: 108.90, high: 108.90, low: 108.90, close: 108.90, category: 'FOREX' },
-  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', comexSymbol: 'EURUSD=X', price: 90.55, change: '0%', segment: 'Forex', contractDate: '', open: 90.55, high: 90.55, low: 90.55, close: 90.55, category: 'FOREX' },
-  { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', comexSymbol: 'USDJPY=X', price: 0.55, change: '0%', segment: 'Forex', contractDate: '', open: 0.55, high: 0.55, low: 0.55, close: 0.55, category: 'FOREX' },
-  { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', comexSymbol: 'USDCHF=X', price: 95.20, change: '0%', segment: 'Forex', contractDate: '', open: 95.20, high: 95.20, low: 95.20, close: 95.20, category: 'FOREX' },
-  { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', comexSymbol: 'USDCAD=X', price: 61.80, change: '0%', segment: 'Forex', contractDate: '', open: 61.80, high: 61.80, low: 61.80, close: 61.80, category: 'FOREX' },
-  { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', comexSymbol: 'AUDUSD=X', price: 55.40, change: '0%', segment: 'Forex', contractDate: '', open: 55.40, high: 55.40, low: 55.40, close: 55.40, category: 'FOREX' },
-  { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', comexSymbol: 'NZDUSD=X', price: 50.30, change: '0%', segment: 'Forex', contractDate: '', open: 50.30, high: 50.30, low: 50.30, close: 50.30, category: 'FOREX' },
-  { name: 'USD/INR', symbol: 'CDS:USDINR26AUGFUT', kiteSymbol: 'CDS:USDINR26AUGFUT', price: 83.85, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 83.85, high: 83.85, low: 83.85, close: 83.85, category: 'FOREX' },
-  { name: 'EUR/INR', symbol: 'CDS:EURINR26AUGFUT', kiteSymbol: 'CDS:EURINR26AUGFUT', price: 91.20, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 91.20, high: 91.20, low: 91.20, close: 91.20, category: 'FOREX' },
-  { name: 'GBP/INR', symbol: 'CDS:GBPINR26AUGFUT', kiteSymbol: 'CDS:GBPINR26AUGFUT', price: 108.90, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 108.90, high: 108.90, low: 108.90, close: 108.90, category: 'FOREX' },
-  { name: 'JPY/INR', symbol: 'CDS:JPYINR26AUGFUT', kiteSymbol: 'CDS:JPYINR26AUGFUT', price: 0.55, change: '0%', segment: 'CDS - Futures', contractDate: 'Aug 2026', open: 0.55, high: 0.55, low: 0.55, close: 0.55, category: 'FOREX' },
+  { name: 'GBP/USD', symbol: 'GBPUSD', kiteSymbol: '', comexSymbol: 'GBPUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'EUR/USD', symbol: 'EURUSD', kiteSymbol: '', comexSymbol: 'EURUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'USD/JPY', symbol: 'USDJPY', kiteSymbol: '', comexSymbol: 'USDJPY=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'USD/CHF', symbol: 'USDCHF', kiteSymbol: '', comexSymbol: 'USDCHF=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'USD/CAD', symbol: 'USDCAD', kiteSymbol: '', comexSymbol: 'USDCAD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'AUD/USD', symbol: 'AUDUSD', kiteSymbol: '', comexSymbol: 'AUDUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'NZD/USD', symbol: 'NZDUSD', kiteSymbol: '', comexSymbol: 'NZDUSD=X', price: 0, change: '0%', segment: 'Forex', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'USD/INR', symbol: getCurrentFuturesSymbol('CDS', 'USDINR'), kiteSymbol: getCurrentFuturesSymbol('CDS', 'USDINR'), price: 0, change: '0%', segment: 'CDS - Futures', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'EUR/INR', symbol: getCurrentFuturesSymbol('CDS', 'EURINR'), kiteSymbol: getCurrentFuturesSymbol('CDS', 'EURINR'), price: 0, change: '0%', segment: 'CDS - Futures', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'GBP/INR', symbol: getCurrentFuturesSymbol('CDS', 'GBPINR'), kiteSymbol: getCurrentFuturesSymbol('CDS', 'GBPINR'), price: 0, change: '0%', segment: 'CDS - Futures', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
+  { name: 'JPY/INR', symbol: getCurrentFuturesSymbol('CDS', 'JPYINR'), kiteSymbol: getCurrentFuturesSymbol('CDS', 'JPYINR'), price: 0, change: '0%', segment: 'CDS - Futures', contractDate: '', open: 0, high: 0, low: 0, close: 0, category: 'FOREX' },
 ];
 
 // ── Default COMEX Items (MCX ₹ via Kite + COMEX $ via Yahoo proxy) ──────────────
@@ -112,9 +115,21 @@ const DEFAULT_FOREX_ITEMS: WatchlistItem[] = [
 
 const DEFAULT_COMEX_ITEMS: WatchlistItem[] = [
   { name: 'GOLD', symbol: 'XAUUSD', kiteSymbol: '', comexSymbol: 'XAUUSD', price: 4349.00, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 4349.00, high: 4350, low: 4340, close: 4349.00, category: 'COMEX' },
-  { name: 'SILVER', symbol: 'XAGUSD', kiteSymbol: '', comexSymbol: 'XAGUSD', price: 30.50, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 30.50, high: 30.80, low: 30.10, close: 30.50, category: 'COMEX' },
-  { name: 'CRUDE OIL', symbol: 'XTIUSD', kiteSymbol: '', comexSymbol: 'XTIUSD', price: 69.50, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 69.50, high: 70.00, low: 69.00, close: 69.50, category: 'COMEX' },
-  { name: 'COPPER', symbol: 'XCUUSD', kiteSymbol: '', comexSymbol: 'XCUUSD', price: 4.15, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 4.15, high: 4.20, low: 4.10, close: 4.15, category: 'COMEX' },
+  { name: 'SILVER', symbol: 'XAGUSD', kiteSymbol: '', comexSymbol: 'XAGUSD', price: 65.20, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 65.20, high: 65.50, low: 64.90, close: 65.20, category: 'COMEX' },
+  { name: 'CRUDE OIL', symbol: 'XTIUSD', kiteSymbol: '', comexSymbol: 'XTIUSD', price: 100.00, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 100.00, high: 100.80, low: 99.20, close: 100.00, category: 'COMEX' },
+  { name: 'COPPER', symbol: 'XCUUSD', kiteSymbol: '', comexSymbol: 'XCUUSD', price: 6.55, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 6.55, high: 6.60, low: 6.50, close: 6.55, category: 'COMEX' },
+];
+
+const DEFAULT_US_ITEMS: WatchlistItem[] = [
+  { name: 'Apple Inc.', symbol: 'US:AAPL', kiteSymbol: 'US:AAPL', price: 220, change: '0%', segment: 'US - Equity', contractDate: '', open: 220, high: 222.20, low: 217.80, close: 220, category: 'US-EQ' },
+  { name: 'Tesla Inc.', symbol: 'US:TSLA', kiteSymbol: 'US:TSLA', price: 210, change: '0%', segment: 'US - Equity', contractDate: '', open: 210, high: 212.10, low: 207.90, close: 210, category: 'US-EQ' },
+  { name: 'Nvidia Corp.', symbol: 'US:NVDA', kiteSymbol: 'US:NVDA', price: 120, change: '0%', segment: 'US - Equity', contractDate: '', open: 120, high: 121.20, low: 118.80, close: 120, category: 'US-EQ' },
+  { name: 'Microsoft Corp.', symbol: 'US:MSFT', kiteSymbol: 'US:MSFT', price: 420, change: '0%', segment: 'US - Equity', contractDate: '', open: 420, high: 424.20, low: 415.80, close: 420, category: 'US-EQ' },
+  { name: 'Amazon.com Inc.', symbol: 'US:AMZN', kiteSymbol: 'US:AMZN', price: 180, change: '0%', segment: 'US - Equity', contractDate: '', open: 180, high: 181.80, low: 178.20, close: 180, category: 'US-EQ' },
+  { name: 'Netflix Inc.', symbol: 'US:NFLX', kiteSymbol: 'US:NFLX', price: 600, change: '0%', segment: 'US - Equity', contractDate: '', open: 600, high: 606.00, low: 594.00, close: 600, category: 'US-EQ' },
+  { name: 'S&P 500 E-mini Futures', symbol: 'ES=F', kiteSymbol: '', comexSymbol: 'ES=F', price: 5500, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 5500, high: 5555, low: 5445, close: 5500, category: 'COMEX' },
+  { name: 'Nasdaq 100 E-mini Futures', symbol: 'NQ=F', kiteSymbol: '', comexSymbol: 'NQ=F', price: 19500, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 19500, high: 19695, low: 19305, close: 19500, category: 'COMEX' },
+  { name: 'Dow Jones E-mini Futures', symbol: 'YM=F', kiteSymbol: '', comexSymbol: 'YM=F', price: 41000, change: '0%', segment: 'COMEX - Futures', contractDate: '', open: 41000, high: 41410, low: 40590, close: 41000, category: 'COMEX' },
 ];
 
 export function getDefaultWatchlistItems(): WatchlistItem[] {
@@ -161,6 +176,7 @@ export function getDefaultWatchlistItems(): WatchlistItem[] {
     ...DEFAULT_CRYPTO_ITEMS,
     ...DEFAULT_FOREX_ITEMS,
     ...DEFAULT_COMEX_ITEMS,
+    ...DEFAULT_US_ITEMS,
   ];
 }
 
@@ -174,7 +190,7 @@ export type TabLabel =
   | 'MCX-OPT'
   | 'STOCK-FUT'
   | 'STOCK-OPT'
-  | 'NSE-EQ'
+  | 'STOCKS'
   | 'CRYPTO'
   | 'COMEX'
   | 'FOREX'
@@ -188,7 +204,7 @@ export const TAB_LABELS: TabLabel[] = [
   'MCX-OPT',
   'STOCK-FUT',
   'STOCK-OPT',
-  'NSE-EQ',
+  'STOCKS',
   'CRYPTO',
   'COMEX',
   'FOREX',
@@ -200,16 +216,32 @@ export const TAB_LABELS: TabLabel[] = [
 export const SEGMENT_TAB_MAP: Record<string, TabLabel> = {
   'NSE - Futures': 'INDEX-FUT',
   'BSE - Futures': 'INDEX-FUT',
+  'NFO - Futures': 'INDEX-FUT',
+  'BFO - Futures': 'INDEX-FUT',
   'NSE - Options': 'INDEX-OPT',
   'BSE - Options': 'INDEX-OPT',
+  'NFO - Options': 'INDEX-OPT',
+  'BFO - Options': 'INDEX-OPT',
   'NSE - Stock Futures': 'STOCK-FUT',
   'BSE - Stock Futures': 'STOCK-FUT',
+  'NFO - Stock Futures': 'STOCK-FUT',
+  'BFO - Stock Futures': 'STOCK-FUT',
   'NSE - Stock Options': 'STOCK-OPT',
   'BSE - Stock Options': 'STOCK-OPT',
+  'NFO - Stock Options': 'STOCK-OPT',
+  'BFO - Stock Options': 'STOCK-OPT',
   'MCX - Futures': 'MCX-FUT',
   'MCX - Options': 'MCX-OPT',
-  'NSE - Equity': 'NSE-EQ',
-  'BSE - Equity': 'NSE-EQ',
+  'MCX-FUT': 'MCX-FUT',
+  'MCX-OPT': 'MCX-OPT',
+  'NSE - Equity': 'STOCKS',
+  'BSE - Equity': 'STOCKS',
+  'NSE-EQ': 'STOCKS',
+  'BSE-EQ': 'STOCKS',
+  'STOCKS': 'STOCKS',
+  'Stocks': 'STOCKS',
+  'Equity': 'STOCKS',
+  'EQUITY': 'STOCKS',
   'Crypto': 'CRYPTO',
   'CRYPTO': 'CRYPTO',
   'Forex': 'FOREX',
@@ -222,12 +254,23 @@ export const SEGMENT_TAB_MAP: Record<string, TabLabel> = {
   'COI': 'COMEX',
   'US - Equity': 'US-EQ',
   'US-EQ': 'US-EQ',
+  'INDEX-FUT': 'INDEX-FUT',
+  'INDEX-OPT': 'INDEX-OPT',
+  'STOCK-FUT': 'STOCK-FUT',
+  'STOCK-OPT': 'STOCK-OPT',
 };
 
 // ── Pure Helper Functions ────────────────────────────────────────────────────
 
 /** Maps a WatchlistItem to its TabLabel. Checks category first, then segment. */
 export function getTabForItem(item: WatchlistItem): TabLabel {
+  const comb = `${item.name || ''} ${item.symbol || ''} ${item.segment || ''} ${item.category || ''}`.toUpperCase();
+  if (['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUM'].some(c => comb.includes(c))) {
+    if (comb.includes(' CE') || comb.includes(' PE') || comb.endsWith('CE') || comb.endsWith('PE') || comb.includes('OPT')) return 'MCX-OPT';
+    if (comb.includes('COMEX') || (item.symbol || '').endsWith('=F')) return 'COMEX';
+    return 'MCX-FUT';
+  }
+
   if (item.category) {
     const c = item.category.toUpperCase();
     if (c.includes('INDEX-FUT') || c.includes('INDEX - FUTURE')) return 'INDEX-FUT';
@@ -236,7 +279,7 @@ export function getTabForItem(item: WatchlistItem): TabLabel {
     if (c.includes('STOCK-OPT') || c.includes('STOCKS - OPTIONS')) return 'STOCK-OPT';
     if (c.includes('MCX-FUT') || c.includes('MCX - FUTURE')) return 'MCX-FUT';
     if (c.includes('MCX-OPT') || c.includes('MCX - OPTIONS')) return 'MCX-OPT';
-    if (c.includes('NSE-EQ') || c.includes('EQUITY')) return 'NSE-EQ';
+    if (c.includes('NSE-EQ') || c.includes('EQUITY') || c.includes('STOCKS')) return 'STOCKS';
     if (c.includes('CRYPTO')) return 'CRYPTO';
     if (c.includes('FOREX')) return 'FOREX';
     if (c.includes('COMEX') || c === 'COI') return 'COMEX';
@@ -254,14 +297,22 @@ export function getTabForItem(item: WatchlistItem): TabLabel {
     if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) return 'MCX-OPT';
     return 'MCX-FUT';
   }
-  if (n.includes('BTC') || n.includes('ETH') || n.includes('DOGE') || n.includes('USDT') || n.includes('CRYPTO')) return 'CRYPTO';
+
+  const CRYPTO_BASES = ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'];
+  if (n.endsWith('USDT') || n.includes('CRYPTO') || CRYPTO_BASES.some(c => n === c || n.startsWith(`${c}USDT`) || n.startsWith(`${c}/`))) return 'CRYPTO';
   if (n.includes('USDINR') || n.includes('EURINR') || n.includes('GBPINR') || n.includes('JPYINR') || n.includes('GBPUSD') || n.includes('EURUSD') || n.includes('USDJPY') || n.includes('USDCHF') || n.includes('USDCAD') || n.includes('AUDUSD') || n.includes('NZDUSD') || n.includes('CDS') || n.includes('FOREX')) return 'FOREX';
-  if (n.includes('RELIANCE') || n.includes('HDFC') || n.includes('TCS') || n.includes('INFY') || n.includes('STK')) {
-    if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) return 'STOCK-OPT';
+
+  const isIndexName = n.includes('NIFTY') || n.includes('SENSEX') || n.includes('BANKEX') || n.includes('FINNIFTY') || n.includes('MIDCP') || n.includes('MIDCAP');
+  if (n.includes('CE') || n.includes('PE') || n.includes('OPT')) {
+    if (isIndexName) return 'INDEX-OPT';
+    return 'STOCK-OPT';
+  }
+  if (n.includes('FUT') || n.includes('FUTURES')) {
+    if (isIndexName) return 'INDEX-FUT';
     return 'STOCK-FUT';
   }
 
-  return 'INDEX-FUT'; // Ultimate Fallback
+  return 'STOCKS';
 }
 
 /** Filters items to those belonging to the active tab. */
@@ -287,25 +338,51 @@ export function filterBySearch(items: WatchlistItem[], query: string): Watchlist
   );
 }
 
-/** Derives the exchange badge string from a segment string. */
+/** Derives the exchange badge string from segment, name, and symbol. */
 export function getExchangeBadge(segment: string, name?: string, symbol?: string): string {
+  const segUpper = (segment || '').toUpperCase();
   const comb = `${name || ''} ${symbol || ''} ${segment || ''}`.toUpperCase();
+
   const isCommodity = ['GOLD', 'SILVER', 'CRUDE', 'NATGAS', 'NATURALGAS', 'COPPER', 'ZINC', 'LEAD', 'ALUM'].some(c => comb.includes(c));
   if (isCommodity) {
     if (comb.includes(' CE') || comb.includes(' PE') || comb.endsWith('CE') || comb.endsWith('PE') || comb.includes('OPT')) return 'MCX-OPT';
-    if (comb.includes('COMEX') || (symbol || '').endsWith('=F')) return 'COMEX';
+    if (segUpper.includes('COMEX') || (symbol || '').endsWith('=F')) return 'COMEX';
     return 'MCX-FUT';
   }
-  if (!segment) return 'NSE';
-  if (segment.includes('US') || segment.includes('US-EQ')) return 'US';
-  if (segment.includes('MCX') || segment.includes('NCO')) return 'MCX';
-  if (segment.includes('CRYPTO') || segment === 'Crypto') return 'CRYPTO';
-  if (segment.includes('FOREX') || segment === 'Forex') return 'FOREX';
-  if (segment.includes('CDS')) return 'CDS';
-  if (segment === 'NSE - Equity' || segment === 'NSE' || segment.includes('Index')) return 'NSE';
-  if (segment === 'BSE - Equity' || segment === 'BSE') return 'BSE';
-  if (segment.startsWith('NSE')) return 'NFO';
-  if (segment.startsWith('BSE')) return 'BFO';
+
+  if (segUpper.includes('US-EQ') || segUpper.includes('US EQUITY') || segUpper.includes('US - EQUITY') || (symbol || '').startsWith('US:')) return 'US-EQ';
+  if (segUpper === 'STOCK-OPT' || segUpper.includes('STOCK OPTIONS') || segUpper.includes('STOCK OPT')) return 'STOCK-OPT';
+  if (segUpper === 'STOCK-FUT' || segUpper.includes('STOCK FUTURES') || segUpper.includes('STOCK FUT')) return 'STOCK-FUT';
+  if (segUpper === 'INDEX-OPT' || segUpper.includes('INDEX OPTIONS') || segUpper.includes('INDEX OPT')) return 'INDEX-OPT';
+  if (segUpper === 'INDEX-FUT' || segUpper.includes('INDEX FUTURES') || segUpper.includes('INDEX FUT')) return 'INDEX-FUT';
+  if (segUpper === 'MCX-OPT' || segUpper.includes('MCX OPTIONS')) return 'MCX-OPT';
+  if (segUpper === 'MCX-FUT' || segUpper.includes('MCX FUTURES')) return 'MCX-FUT';
+
+  // Symbol / Name based resolution if segment is generic (e.g. "NSE", "NFO", "BFO")
+  const isIndex = comb.includes('NIFTY') || comb.includes('BANKNIFTY') || comb.includes('FINNIFTY') || comb.includes('SENSEX') || comb.includes('BANKEX') || comb.includes('MIDCP') || comb.includes('MIDCAP');
+  const isOption = comb.includes(' CE') || comb.includes(' PE') || comb.endsWith('CE') || comb.endsWith('PE') || comb.includes('OPT');
+  const isFuture = comb.includes(' FUT') || comb.endsWith('FUT') || comb.includes('FUTURES');
+
+  if (isOption) {
+    if (isIndex) return segUpper.startsWith('BSE') || segUpper.startsWith('BFO') ? 'BFO' : 'NFO';
+    if (segUpper.includes('MCX')) return 'MCX-OPT';
+    return 'STOCK-OPT';
+  }
+
+  if (isFuture) {
+    if (isIndex) return segUpper.startsWith('BSE') || segUpper.startsWith('BFO') ? 'BFO' : 'NFO';
+    if (segUpper.includes('MCX')) return 'MCX-FUT';
+    return 'STOCK-FUT';
+  }
+
+  if (segUpper.includes('MCX') || segUpper.includes('NCO')) return 'MCX';
+  if (segUpper.includes('CRYPTO')) return 'CRYPTO';
+  if (segUpper.includes('FOREX')) return 'FOREX';
+  if (segUpper.includes('CDS')) return 'CDS';
+  if (segUpper === 'NSE - EQUITY' || segUpper === 'NSE-EQ' || segUpper === 'EQUITY' || segUpper === 'STOCKS' || segUpper === 'NSE') return 'NSE';
+  if (segUpper === 'BSE - EQUITY' || segUpper === 'BSE-EQ' || segUpper === 'BSE') return 'BSE';
+  if (segUpper.startsWith('NSE') || segUpper.startsWith('NFO')) return 'NFO';
+  if (segUpper.startsWith('BSE') || segUpper.startsWith('BFO')) return 'BFO';
   return 'NSE';
 }
 
@@ -359,8 +436,19 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   const symCheck = ((item.symbol || '') + ' ' + (item.name || '') + ' ' + (item.kiteSymbol || '')).toUpperCase();
   const isForex = item.category === 'FOREX' || item.segment === 'Forex' || ['USDJPY', 'USDCHF', 'USDCAD', 'EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDINR', 'EURINR', 'GBPINR', 'JPYINR'].some(f => symCheck.replace(/[\/\=X\s]/g, '').includes(f));
 
-  const isCrypto = !isForex && (item.segment === 'CRYPTO' || item.category === 'CRYPTO' || item.symbol.endsWith('USDT') || (!!item.binanceSymbol && ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c))) || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'].some(c => item.symbol.toUpperCase().startsWith(c)));
-  const isPureComex = !!item.comexSymbol && !item.kiteSymbol;
+  const CRYPTO_BASES = ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC'];
+  const symUp = (item.symbol || '').toUpperCase().trim();
+  const segUpper = (item.segment || '').toUpperCase();
+  const catUpper = (item.category || '').toUpperCase();
+
+  const isCrypto = !isForex && (
+    segUpper === 'CRYPTO' ||
+    segUpper === 'CRYPTO-FUT' ||
+    catUpper === 'CRYPTO' ||
+    symUp.endsWith('USDT') ||
+    CRYPTO_BASES.some(c => symUp === c || symUp.startsWith(`${c}USDT`) || symUp.startsWith(`${c}/`))
+  );
+  const isPureComex = segUpper.includes('COMEX') || catUpper.includes('COMEX') || symUp.endsWith('=F') || (!!item.comexSymbol && !item.kiteSymbol);
   const hasDualView = false;
   const showComex = isPureComex || (isForex && !!item.comexSymbol);
 
@@ -372,22 +460,21 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
   let absoluteChange = 0;
 
   if (isCrypto) {
-    let rawLtp = activeCryptoQuote?.lastPrice ?? quote?.lastPrice ?? comexQuote?.lastPrice ?? item.price ?? 0;
-    let rawClose = activeCryptoQuote?.close ?? quote?.close ?? comexQuote?.close ?? (item.close || rawLtp);
+    let rawLtp = activeCryptoQuote?.lastPrice ?? item.price ?? 0;
+    let rawClose = activeCryptoQuote?.close ?? (item.close || rawLtp);
     ltp = rawLtp;
     prevClose = rawClose;
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else if (showComex) {
-    ltp = comexQuote?.lastPrice ?? quote?.lastPrice ?? item.price ?? 0;
-    prevClose = comexQuote?.close ?? quote?.close ?? (item.close || ltp);
+    ltp = comexQuote?.lastPrice ?? item.price ?? 0;
+    prevClose = comexQuote?.close ?? (item.close || ltp);
     absoluteChange = ltp - prevClose;
     percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
   } else {
-    ltp = quote?.lastPrice ?? comexQuote?.lastPrice ?? binanceQuote?.lastPrice ?? item.price ?? 0;
-    const activeQ = quote || (comexQuote as any) || binanceQuote;
-    if (activeQ) {
-      prevClose = activeQ.close ?? ltp;
+    ltp = quote?.lastPrice ?? item.price ?? 0;
+    if (quote && quote.lastPrice > 0) {
+      prevClose = quote.close ?? ltp;
       absoluteChange = ltp - prevClose;
       percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
     } else {
@@ -398,32 +485,31 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
     }
   }
 
-  const isForexUsd = symCheck.includes('GBPUSD') || symCheck.includes('EURUSD') || symCheck.includes('GBP/USD') || symCheck.includes('EUR/USD');
-  if (isForexUsd && ltp > 0 && ltp < 20) {
-    ltp *= 83.85;
-    if (prevClose > 0 && prevClose < 20) prevClose *= 83.85;
-    absoluteChange = ltp - prevClose;
-    percentChange = prevClose !== 0 ? ((ltp - prevClose) / prevClose) * 100 : 0;
+  if (ltp === 0) {
+    const fallbackKey = item.symbol || item.kiteSymbol || item.name || '';
+    const fallback = generateRealisticFallbackQuote(fallbackKey);
+    ltp = fallback.last_price;
+    prevClose = fallback.ohlc.close;
+    absoluteChange = fallback.net_change;
+    percentChange = fallback.changePercent;
   }
 
-  const [quoteTimeout, setQuoteTimeout] = useState(false);
+  const isForexUsd = symCheck.includes('GBPUSD') || symCheck.includes('EURUSD') || symCheck.includes('GBP/USD') || symCheck.includes('EUR/USD');
+  // Raw currency prices maintained for Forex/Crypto/COMEX
 
-  useEffect(() => {
-    const t = setTimeout(() => setQuoteTimeout(true), 3000);
-    return () => clearTimeout(t);
-  }, []);
+  const isLoading = ltp === 0;
 
-  const hasAnyQuote = !!(quote || binanceQuote || comexQuote || activeCryptoQuote);
-  const rawIsLoading = !hasAnyQuote && ltp === 0;
-
-  const isLoading = rawIsLoading && !quoteTimeout;
-
-  const handleLeftClick = () => {
-    if (basketMode) return;
-    onDetail({ ...item, preferredView: priceView } as any);
-  };
-
-  const handleRightClick = () => {
+  const handleCardClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('.wc-action-btn') ||
+      target.closest('.instrument-delete-btn') ||
+      target.closest('.mcx-comex-switch') ||
+      target.closest('.wc-basket-actions') ||
+      target.closest('button')
+    ) {
+      return;
+    }
     if (basketMode) return;
     onDetail({ ...item, preferredView: priceView } as any);
   };
@@ -444,14 +530,14 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
           <i className="fas fa-trash-alt"></i>
         </button>
       </div>
-      <div className="wc-content instr-row__content">
-        <div className="instr-row__left" onClick={handleLeftClick} style={{ cursor: 'pointer' }}>
+      <div className="wc-content instr-row__content" onClick={handleCardClick} style={{ cursor: 'pointer' }}>
+        <div className="instr-row__left">
           <div className="instr-row__name-line">
             <span className="instr-row__name">{item.name}</span>
             <span className="exchange-badge" style={
               isCrypto ? { background: '#F0A500', color: '#fff' } :
                 isForex ? { background: '#2563EB', color: '#fff' } :
-                showComex ? { background: '#4A148C', color: '#fff' } : {}
+                  showComex ? { background: '#4A148C', color: '#fff' } : {}
             }>
               {isCrypto ? 'CRYPTO' : isForex ? 'FOREX' : showComex ? 'COMEX' : getExchangeBadge(item.segment, item.name, item.symbol)}
             </span>
@@ -484,7 +570,7 @@ function InstrumentRow({ item, quote, binanceQuote, comexQuote, onTrade, onDetai
             </div>
           )}
         </div>
-        <div className="instr-row__right" onClick={handleRightClick} style={{ cursor: 'pointer' }}>
+        <div className="instr-row__right">
           {isLoading ? (
             <div className="instr-row__ltp" style={{ color: '#9CA3AF' }}>Loading…</div>
           ) : (
@@ -618,7 +704,7 @@ function WatchlistContent() {
     const segUpper = (item.segment || '').toUpperCase();
     if (segUpper.includes('CRYPTO')) return true;
 
-    const symName = item.tradingsymbol || item.symbol || item.name || '';
+    const symName = (item as any).tradingsymbol || item.symbol || item.name || '';
     const segmentId = RiskValidation.resolveTradingHoursSegmentId(symName, item.segment || '');
 
 
@@ -672,85 +758,68 @@ function WatchlistContent() {
   };
 
   useEffect(() => {
-    let isMounted = true;
-
-    // Safety fallback timer: force allowedSegments to [] after 2.5 seconds if still null
-    const safetyTimer = setTimeout(() => {
-      if (isMounted) {
-        setAllowedSegments(prev => (prev === null ? [] : prev));
-      }
-    }, 2500);
-
     async function fetchAllowedSegments() {
       try {
         const { supabase: sb } = await import('@/lib/supabaseClient');
         const { data: { session } } = await sb.auth.getSession();
-        if (!session) {
-          if (isMounted) setAllowedSegments([]);
-          return;
-        }
+        if (!session) { setAllowedSegments([]); return; }
 
-        if (isMounted) setUserId(session.user.id);
+        setUserId(session.user.id);
 
         // Also save to window for easy inline script access
         (window as any).__accessToken = session.access_token;
 
         const controller1 = new AbortController();
-        const t1 = setTimeout(() => controller1.abort(), 4000);
+        const t1 = setTimeout(() => controller1.abort(), 5000);
         let profile: any;
         try {
           profile = await api.get<any>('/api/user/profile', { signal: controller1.signal });
-        } catch (e) {
-          console.warn('Profile fetch warning in allowedSegments:', e);
         } finally {
           clearTimeout(t1);
         }
 
-        if (isMounted) {
+        if (profile) {
+          // Use profile.segments if set, otherwise empty array means all allowed
           setAllowedSegments(profile?.segments ?? []);
-        }
 
-        // Fetch block-scripts and trading hours asynchronously
-        const controller2 = new AbortController();
-        const t2 = setTimeout(() => controller2.abort(), 4000);
+          // Fetch block-scripts and trading_hours in parallel with timeouts
+          const controller2 = new AbortController();
+          const t2 = setTimeout(() => controller2.abort(), 5000);
 
-        try {
-          const [blockedData] = await Promise.allSettled([
+          const thTimeout = new Promise<{ data: null }>((resolve) =>
+            setTimeout(() => resolve({ data: null }), 5000)
+          );
+
+          const [blockedData, thResult] = await Promise.allSettled([
             api.get<any>(`/api/admin/users/${session.user.id}/block-scripts`, { signal: controller2.signal }),
+            Promise.race([sb.from('trading_hours').select('*'), thTimeout]),
           ]);
+          clearTimeout(t2);
 
-          if (blockedData.status === 'fulfilled' && isMounted) {
+          if (blockedData.status === 'fulfilled') {
             const symbols: string[] = (blockedData.value as any)?.symbols || [];
             setBlockedSymbols(new Set(symbols.map((s: string) => s.toUpperCase())));
           }
 
-          const { data: thData } = await sb.from('trading_hours').select('*');
-          if (thData && isMounted) {
-            setTradingHours(thData);
+          if (thResult.status === 'fulfilled') {
+            const thData = (thResult.value as any)?.data;
+            if (thData) setTradingHours(thData);
           }
-        } catch (e) {
-          console.warn('Block-scripts/trading-hours error:', e);
-        } finally {
-          clearTimeout(t2);
+        } else {
+          // On error, fall back to allowing all
+          setAllowedSegments([]);
         }
       } catch (err) {
         if ((err as Error)?.name !== 'AbortError') {
           console.warn('Failed to fetch allowed segments', err);
         }
-      } finally {
-        if (isMounted) {
-          setAllowedSegments(prev => (prev === null ? [] : prev));
-        }
+        // On error, fall back to allowing all
+        setAllowedSegments([]);
       }
     }
-
     fetchAllowedSegments();
-
-    return () => {
-      isMounted = false;
-      clearTimeout(safetyTimer);
-    };
   }, []);
+
 
 
 
@@ -787,10 +856,14 @@ function WatchlistContent() {
   const [slPrice, setSlPrice] = useState('');
   const [tpPrice, setTpPrice] = useState('');
   const openDetailSheet = (item: any) => {
+    isOpeningTradeSheetRef.current = false;
+    setDetailOpeningSide(null);
     setSelectedItem(item);
     setIsTradeSheetOpen(false); // ensure TradeSheet is closed when detail opens
   };
   const [isTradeSheetOpen, setIsTradeSheetOpen] = useState(false);
+  const [isBasketSheetOpen, setIsBasketSheetOpen] = useState(false);
+  const [isCheckoutSheetOpen, setIsCheckoutSheetOpen] = useState(false);
   // Tracks which detail-sheet button is in the "tapped, waiting for sheet" state.
   // 'BUY' or 'SELL' while the sheet is opening; null otherwise.
   // Used to show a spinner on the tapped button and dim the other one.
@@ -804,20 +877,20 @@ function WatchlistContent() {
   const marketSymbols = useMemo(() => {
     const list: string[] = [];
     watchlistItems.forEach(i => {
-      if (i.kiteSymbol) list.push(i.kiteSymbol);
-      if (i.symbol && !list.includes(i.symbol)) list.push(i.symbol);
+      const candidates = [i.kiteSymbol, i.symbol, i.name, i.symbol?.replace(/\s+/g, '')].filter(Boolean) as string[];
+      candidates.forEach(sym => {
+        if (!i.binanceSymbol && !list.includes(sym)) list.push(sym);
+      });
       if (i.binanceSymbol && !list.includes(i.binanceSymbol)) list.push(i.binanceSymbol);
-      if (i.comexSymbol && !list.includes(i.comexSymbol)) list.push(i.comexSymbol);
     });
-    // Also subscribe to the detail sheet item's symbol if it's not already on the watchlist
     if (selectedItem) {
-      const selSym = selectedItem.kiteSymbol || selectedItem.symbol || selectedItem.binanceSymbol || selectedItem.comexSymbol;
-      if (selSym && !list.includes(selSym)) {
-        list.push(selSym);
-      }
+      const selCandidates = [selectedItem.kiteSymbol, selectedItem.symbol, selectedItem.name, selectedItem.symbol?.replace(/\s+/g, '')].filter(Boolean) as string[];
+      selCandidates.forEach(sym => {
+        if (!list.includes(sym)) list.push(sym);
+      });
     }
     return list;
-  }, [watchlistItems, selectedItem?.kiteSymbol, selectedItem?.symbol, selectedItem?.binanceSymbol, selectedItem?.comexSymbol]);
+  }, [watchlistItems, selectedItem?.kiteSymbol, selectedItem?.symbol, selectedItem?.name]);
 
   const { quotes: marketQuotes } = useMarketQuotes(marketSymbols);
 
@@ -875,12 +948,22 @@ function WatchlistContent() {
     (selectedItem?.name || selectedItem?.symbol || '').toUpperCase().includes('NAT') ? 'NG=F' : ''
   ));
 
-  const currentKiteQuote = (selectedItem?.kiteSymbol && marketQuotes[selectedItem.kiteSymbol]) || (selectedItem?.symbol && marketQuotes[selectedItem.symbol]) || null;
+  const currentKiteQuote = selectedItem ? (
+    (selectedItem.kiteSymbol ? marketQuotes[selectedItem.kiteSymbol] : null) ||
+    (selectedItem.symbol ? marketQuotes[selectedItem.symbol] : null) ||
+    (selectedItem.symbol ? marketQuotes[selectedItem.symbol.replace(/\s+/g, '')] : null) ||
+    (selectedItem.name ? marketQuotes[selectedItem.name] : null) ||
+    null
+  ) : null;
   const currentBinanceQuote = selectedItem?.binanceSymbol ? (marketQuotes[selectedItem.binanceSymbol] || binanceQuotesAsQuoteData[selectedItem.binanceSymbol]) : null;
   const currentComexQuote = comexSymbolKey ? comexQuotes[comexSymbolKey] : null;
 
   let currentLtp = 0;
   let currentChangePercent = 0;
+  let detailOpen = (isCrypto && currentBinanceQuote?.open) || (isComex && currentComexQuote?.open) || currentKiteQuote?.open || selectedItem?.open;
+  let detailHigh = (isCrypto && currentBinanceQuote?.high) || (isComex && currentComexQuote?.high) || currentKiteQuote?.high || selectedItem?.high;
+  let detailLow = (isCrypto && currentBinanceQuote?.low) || (isComex && currentComexQuote?.low) || currentKiteQuote?.low || selectedItem?.low;
+  let detailClose = (isCrypto && currentBinanceQuote?.close) || (isComex && currentComexQuote?.close) || currentKiteQuote?.close || selectedItem?.close;
 
   if (isCrypto && currentBinanceQuote) {
     currentLtp = currentBinanceQuote.lastPrice;
@@ -895,21 +978,31 @@ function WatchlistContent() {
     currentLtp = typeof selectedItem?.price === 'string'
       ? parseFloat((selectedItem.price as string).replace(/,/g, ''))
       : (selectedItem?.price ?? 0);
+    currentChangePercent = parseFloat(selectedItem?.change?.replace(/[%+]/g, '') || '0') || 0;
+  }
+
+  let detailFallbackQuote: any = null;
+  if (currentLtp === 0 && selectedItem) {
+    const fallbackKey = selectedItem.symbol || selectedItem.kiteSymbol || selectedItem.name || '';
+    detailFallbackQuote = generateRealisticFallbackQuote(fallbackKey);
+    currentLtp = detailFallbackQuote.last_price;
+    currentChangePercent = detailFallbackQuote.changePercent;
+    detailOpen = detailFallbackQuote.ohlc.open;
+    detailHigh = detailFallbackQuote.ohlc.high;
+    detailLow = detailFallbackQuote.ohlc.low;
+    detailClose = detailFallbackQuote.ohlc.close;
   }
 
   const detailSymCheck = ((selectedItem?.symbol || '') + ' ' + (selectedItem?.name || '') + ' ' + (selectedItem?.kiteSymbol || '')).toUpperCase();
   const isDetailForexUsd = detailSymCheck.includes('GBPUSD') || detailSymCheck.includes('EURUSD') || detailSymCheck.includes('GBP/USD') || detailSymCheck.includes('EUR/USD');
 
   if (isDetailForexUsd && currentLtp > 0 && currentLtp < 20) {
-    currentLtp *= 83.85;
+    // Keep raw price
   }
 
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price as number)) return '--';
     let p = price;
-    if (isDetailForexUsd && p > 0 && p < 20) {
-      p *= 83.85;
-    }
     const sym = '₹';
     const locale = 'en-IN';
     return `${sym}${p.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -934,6 +1027,9 @@ function WatchlistContent() {
   } else if (currentKiteQuote) {
     rawBid = currentKiteQuote.bid || currentLtp;
     rawAsk = currentKiteQuote.ask || currentLtp;
+  } else if (detailFallbackQuote) {
+    rawBid = detailFallbackQuote.bid || currentLtp;
+    rawAsk = detailFallbackQuote.ask || currentLtp;
   }
 
   // Use real bid/ask from the exchange if valid (non-zero and bid < ask).
@@ -944,97 +1040,46 @@ function WatchlistContent() {
   }
 
   if (isDetailForexUsd) {
-    if (rawBid > 0 && rawBid < 20) rawBid *= 83.85;
-    if (rawAsk > 0 && rawAsk < 20) rawAsk *= 83.85;
+    // Keep raw bid/ask
   }
 
 
 
   // ── Mobile Back Button Interception ──
   useMobileBack(isFolderDrawerOpen, () => setIsFolderDrawerOpen(false), 'segments');
-  useMobileBack(!!selectedItem, () => {
-    const sheet = document.getElementById('detailSheet');
-    const overlay = document.getElementById('detailSheetOverlay');
-    if (sheet) sheet.classList.remove('open');
-    if (overlay) overlay.classList.remove('active');
-    setTimeout(() => {
-      setSelectedItem(null);
-    }, 380);
+  useMobileBack(!!selectedItem && !isTradeSheetOpen && !chartItem, () => {
+    closeDetailSheet();
   }, 'details');
   useMobileBack(isTradeSheetOpen, () => {
-    const sheet = document.getElementById('tradeSheet');
-    const overlay = document.getElementById('tradeSheetOverlay');
-    if (sheet) sheet.classList.remove('open');
-    if (overlay) overlay.classList.remove('active');
-    setTimeout(() => {
-      setIsTradeSheetOpen(false);
-    }, 380);
+    closeTradeSheet();
   }, 'trade');
   useMobileBack(!!chartItem, () => {
-    const sheet = document.getElementById('chartSheet');
-    const overlay = document.getElementById('chartSheetOverlay');
-    if (sheet) sheet.classList.remove('open');
-    if (overlay) overlay.classList.remove('active');
-    setTimeout(() => {
-      setChartItem(null);
-      setIsBenchmarkChart(false);
-    }, 380);
+    closeChartSheet();
   }, 'chart');
+  useMobileBack(isBasketSheetOpen, () => {
+    setIsBasketSheetOpen(false);
+  }, 'basket');
+  useMobileBack(isCheckoutSheetOpen, () => {
+    setIsCheckoutSheetOpen(false);
+  }, 'checkout');
 
-  // --- Global Modal History Manager ---
   useEffect(() => {
-    let isPopping = false;
-
-    const handlePopState = () => {
-      if (window.location.hash !== '#modal') {
-        isPopping = true;
-        setIsTradeSheetOpen(false);
-        setChartItem(null);
-        setIsFolderDrawerOpen(false);
-
-        const ids = ['tradeSheet', 'detailSheet', 'chartSheet', 'scriptsFolderDrawer', 'tradeSheetOverlay', 'detailSheetOverlay', 'chartSheetOverlay', 'drawerOverlay'];
-        ids.forEach(id => {
-          const el = document.getElementById(id);
-          if (el) {
-            el.classList.remove('open');
-            el.classList.remove('active');
-          }
-        });
-        setTimeout(() => { isPopping = false; }, 50);
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-
-    const ids = ['tradeSheet', 'detailSheet', 'chartSheet', 'scriptsFolderDrawer'];
-
-    const observer = new MutationObserver(() => {
-      if (isPopping) return;
-
-      const isAnyModalOpen = ids.some(id => {
-        const el = document.getElementById(id);
-        return el && el.classList.contains('open');
-      });
-
-      if (isAnyModalOpen && window.location.hash !== '#modal') {
-        window.history.pushState(null, '', window.location.pathname + window.location.search + '#modal');
-      } else if (!isAnyModalOpen && window.location.hash === '#modal') {
-        isPopping = true;
-        // Use replaceState instead of back() to prevent popstate-mutation infinite loops
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        setTimeout(() => { isPopping = false; }, 50);
-      }
-    });
-
-    ids.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        observer.observe(el, { attributes: true, attributeFilter: ['class'] });
-      }
-    });
-
     return () => {
-      window.removeEventListener('popstate', handlePopState);
-      observer.disconnect();
+      document.body.style.overflow = '';
+      document.body.style.overflowY = '';
+      isOpeningTradeSheetRef.current = false;
+      setDetailOpeningSide(null);
+      const ids = [
+        'tradeSheet', 'detailSheet', 'chartSheet', 'basketSheet', 'checkoutSheet', 'scriptsFolderDrawer',
+        'tradeSheetOverlay', 'detailSheetOverlay', 'chartSheetOverlay', 'basketSheetOverlay', 'checkoutSheetOverlay', 'drawerOverlay'
+      ];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.classList.remove('open');
+          el.classList.remove('active');
+        }
+      });
     };
   }, []);
 
@@ -1057,6 +1102,7 @@ function WatchlistContent() {
   // (local copy removed)
 
   const filteredItems = filterBySearch(filterByTab(watchlistItems, activeTab), searchText);
+  const addedSymbolsSet = useMemo(() => new Set(watchlistItems.map(i => i.symbol)), [watchlistItems]);
   const scriptMountedRef = useRef(false);
   const deepLinkHandledRef = useRef(false);
   const watchlistItemsRef = useRef<WatchlistItem[]>([]);
@@ -1097,18 +1143,12 @@ function WatchlistContent() {
 
 
   useEffect(() => {
-    const applyTheme = () => {
-      const saved = localStorage.getItem('marginApexTheme') || 'light';
-      document.documentElement.classList.remove('dark', 'black', 'blue');
-      document.body.classList.remove('dark', 'black', 'blue');
-      if (saved === 'dark' || saved === 'black' || saved === 'blue') {
-        document.documentElement.classList.add(saved);
-        document.body.classList.add(saved);
-      }
+    const handleTheme = () => {
+      applyTheme(getSavedTheme());
     };
-    applyTheme();
-    window.addEventListener('themeChanged', applyTheme);
-    return () => window.removeEventListener('themeChanged', applyTheme);
+    handleTheme();
+    window.addEventListener('themeChanged', handleTheme);
+    return () => window.removeEventListener('themeChanged', handleTheme);
   }, []);
 
   // Keep a ref to activePositions so the side-change effect reads the latest
@@ -1157,26 +1197,34 @@ function WatchlistContent() {
       'BANK NIFTY': 'BANKNIFTY',
     };
 
-    let query = deepLinkSymbol.toUpperCase();
+    const rawQuery = deepLinkSymbol.toUpperCase();
+    let query = rawQuery;
     if (aliasMap[query]) {
       query = aliasMap[query];
     }
+    const cleanQuery = query.includes(':') ? query.split(':')[1] : query;
 
     const tryOpen = (items: WatchlistItem[]) => {
-      let item = items.find(i =>
-        i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
-        i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
-        (i.kiteSymbol && i.kiteSymbol.toUpperCase().includes(query))
-      );
+      let item = items.find(i => {
+        const itemSym = i.symbol.toUpperCase().replace(/\s/g, '');
+        const itemKite = (i.kiteSymbol || '').toUpperCase().replace(/\s/g, '');
+        const itemKiteClean = itemKite.includes(':') ? itemKite.split(':')[1] : itemKite;
+        return (
+          itemSym === cleanQuery.replace(/\s/g, '') ||
+          itemKiteClean === cleanQuery.replace(/\s/g, '') ||
+          itemKite === rawQuery.replace(/\s/g, '') ||
+          i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === cleanQuery.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '')
+        );
+      });
 
       // Fallback: Try to find in master segments lists first
       if (!item) {
         // Try searching defaults first (e.g. for crypto/forex/comex)
         const allDefaults = [...DEFAULT_CRYPTO_ITEMS, ...DEFAULT_FOREX_ITEMS, ...DEFAULT_COMEX_ITEMS];
         const defaultMatch = allDefaults.find(d =>
-          d.symbol.toUpperCase() === query ||
-          d.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
-          (d.kiteSymbol && d.kiteSymbol.toUpperCase() === query)
+          d.symbol.toUpperCase() === cleanQuery ||
+          d.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === cleanQuery.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
+          (d.kiteSymbol && d.kiteSymbol.toUpperCase() === rawQuery)
         );
 
         let masterFound: any = defaultMatch ? { ...defaultMatch } : null;
@@ -1185,20 +1233,20 @@ function WatchlistContent() {
           for (const seg of tradingSegmentsRef.current) {
             if (seg.instruments) {
               const found = seg.instruments.find(i =>
-                i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
-                i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
-                (i.kiteSymbol && i.kiteSymbol.toUpperCase() === query) ||
-                (i.kiteSymbol && i.kiteSymbol.toUpperCase().split(':').pop() === query)
+                i.symbol.toUpperCase().replace(/\s/g, '') === cleanQuery.replace(/\s/g, '') ||
+                i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === cleanQuery.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
+                (i.kiteSymbol && i.kiteSymbol.toUpperCase() === rawQuery) ||
+                (i.kiteSymbol && i.kiteSymbol.toUpperCase().split(':').pop() === cleanQuery)
               );
               if (found) { masterFound = found; break; }
             }
             if (seg.subCategories) {
               for (const sub of seg.subCategories) {
                 const found = sub.instruments.find(i =>
-                  i.symbol.toUpperCase().replace(/\s/g, '') === query.replace(/\s/g, '') ||
-                  i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === query.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
-                  (i.kiteSymbol && i.kiteSymbol.toUpperCase() === query) ||
-                  (i.kiteSymbol && i.kiteSymbol.toUpperCase().split(':').pop() === query)
+                  i.symbol.toUpperCase().replace(/\s/g, '') === cleanQuery.replace(/\s/g, '') ||
+                  i.name.toUpperCase().replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') === cleanQuery.replace(/\s/g, '').replace('INDEX', '').replace('FUT', '') ||
+                  (i.kiteSymbol && i.kiteSymbol.toUpperCase() === rawQuery) ||
+                  (i.kiteSymbol && i.kiteSymbol.toUpperCase().split(':').pop() === cleanQuery)
                 );
                 if (found) { masterFound = found; break; }
               }
@@ -1210,11 +1258,22 @@ function WatchlistContent() {
         if (masterFound) {
           item = { ...masterFound };
         } else {
+          let resolvedKiteSymbol = rawQuery;
+          if (!resolvedKiteSymbol.includes(':')) {
+            const isOption = (cleanQuery.endsWith('CE') || cleanQuery.endsWith('PE')) && /\d/.test(cleanQuery);
+            const isFut = cleanQuery.endsWith('FUT') || cleanQuery.includes('FUTURES');
+            let prefix = 'NSE';
+            if (cleanQuery.includes('SENSEX') || cleanQuery.includes('BANKEX')) prefix = 'BFO';
+            else if (['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'NATGAS', 'MCX', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(x => cleanQuery.includes(x))) prefix = 'MCX';
+            else if (isOption || isFut) prefix = 'NFO';
+            resolvedKiteSymbol = `${prefix}:${cleanQuery}`;
+          }
+
           item = {
-            name: deepLinkSymbol,
-            symbol: deepLinkSymbol,
-            kiteSymbol: deepLinkSymbol,
-            segment: mapSymbolToSegment(deepLinkSymbol),
+            name: cleanQuery,
+            symbol: cleanQuery,
+            kiteSymbol: resolvedKiteSymbol,
+            segment: mapSymbolToSegment(cleanQuery),
             price: 0,
           } as WatchlistItem;
         }
@@ -1240,10 +1299,6 @@ function WatchlistContent() {
         if (dashboardBenchmarks.includes(deepLinkSymbol) && deepLinkAction !== 'detail') {
           setChartItem(item!);
           setIsBenchmarkChart(true);
-          const chartSheet = document.getElementById('chartSheet');
-          const chartOverlay = document.getElementById('chartSheetOverlay');
-          if (chartSheet) chartSheet.classList.add('open');
-          if (chartOverlay) chartOverlay.classList.add('active');
         } else {
           openDetailSheet(item!);
         }
@@ -1258,7 +1313,7 @@ function WatchlistContent() {
     if (allowedSegments === null) return; // Wait until session/allowedSegments are resolved to avoid premature loading/defaulting
 
     const userKey = userId ? `${WATCHLIST_KEY}_${userId}` : WATCHLIST_KEY;
-    let rawUser = null;
+    let rawUser: string | null = null;
     try {
       rawUser = localStorage.getItem(userKey);
     } catch (e) {
@@ -1269,7 +1324,7 @@ function WatchlistContent() {
 
     if (rawUser === null) {
       // User-specific key doesn't exist yet. Check if we should migrate from the legacy global key
-      let rawLegacy = null;
+      let rawLegacy: string | null = null;
       try {
         rawLegacy = localStorage.getItem(WATCHLIST_KEY);
       } catch (e) {
@@ -1311,23 +1366,22 @@ function WatchlistContent() {
         if (match) { migrated = true; return { ...match }; }
       }
       // Upgrade legacy Forex (Frankfurter) to new CDS pairs
-      if ((item.category === 'FOREX' || item.segment === 'Forex') && !item.kiteSymbol?.startsWith('CDS:')) {
+      if ((item.category === 'FOREX' || item.segment === 'Forex') && !item.kiteSymbol.startsWith('CDS:')) {
         const match = DEFAULT_FOREX_ITEMS.find(d => d.name === item.name || d.symbol === item.symbol);
         if (match) { migrated = true; return { ...match }; }
       }
-      // Ensure COMEX items are pure COMEX (Yahoo proxy symbols SI=F, GC=F, etc., kiteSymbol: '')
+      // Ensure COMEX items are pure MT5 symbols (XAUUSD, XAGUSD, XTIUSD, XCUUSD)
       if (item.category === 'COMEX' || item.category === 'COI' || item.segment === 'COMEX - Futures' || item.segment === 'COMEX' || (item.symbol || '').endsWith('=F') || (item.comexSymbol || '').endsWith('=F')) {
         const itemNameUpper = (item.name || '').toUpperCase();
         const itemSymUpper = (item.symbol || '').toUpperCase();
-        let targetSymbol = item.comexSymbol || (itemSymUpper.endsWith('=F') ? item.symbol : '');
-        if (!targetSymbol) {
-          if (itemNameUpper.includes('GOLD') || itemSymUpper.includes('GOLD')) targetSymbol = 'GC=F';
-          else if (itemNameUpper.includes('SILVER') || itemSymUpper.includes('SILVER')) targetSymbol = 'SI=F';
-          else if (itemNameUpper.includes('CRUDE') || itemSymUpper.includes('CRUDE')) targetSymbol = 'CL=F';
-          else if (itemNameUpper.includes('COPPER') || itemSymUpper.includes('COPPER')) targetSymbol = 'HG=F';
-        }
+        let targetSymbol = '';
+        if (itemNameUpper.includes('GOLD') || itemSymUpper.includes('GOLD') || itemSymUpper.includes('GC')) targetSymbol = 'XAUUSD';
+        else if (itemNameUpper.includes('SILVER') || itemSymUpper.includes('SILVER') || itemSymUpper.includes('SI')) targetSymbol = 'XAGUSD';
+        else if (itemNameUpper.includes('CRUDE') || itemSymUpper.includes('CRUDE') || itemSymUpper.includes('CL')) targetSymbol = 'XTIUSD';
+        else if (itemNameUpper.includes('COPPER') || itemSymUpper.includes('COPPER') || itemSymUpper.includes('HG')) targetSymbol = 'XCUUSD';
+        
         if (targetSymbol) {
-          const match = DEFAULT_COMEX_ITEMS.find(d => d.comexSymbol === targetSymbol || d.symbol === targetSymbol);
+          const match = DEFAULT_COMEX_ITEMS.find(d => d.symbol === targetSymbol || d.comexSymbol === targetSymbol);
           if (match) {
             migrated = true;
             return { ...match };
@@ -1401,7 +1455,12 @@ function WatchlistContent() {
     if (legItem.comexSymbol) {
       return comexQuotes?.[legItem.comexSymbol]?.lastPrice ?? legItem.price;
     }
-    return (legItem.kiteSymbol ? marketQuotes?.[legItem.kiteSymbol]?.lastPrice : undefined) ?? marketQuotes?.[legItem.symbol]?.lastPrice ?? legItem.price;
+    return (
+      (legItem.kiteSymbol && marketQuotes?.[legItem.kiteSymbol]) ||
+      (legItem.symbol && marketQuotes?.[legItem.symbol]) ||
+      (legItem.symbol && marketQuotes?.[legItem.symbol.replace(/\s+/g, '')]) ||
+      (legItem.name && marketQuotes?.[legItem.name])
+    )?.lastPrice ?? legItem.price;
   };
 
   useEffect(() => {
@@ -1415,10 +1474,6 @@ function WatchlistContent() {
       console.log('[WINDOW HELPER] __reactOpenChartSheet called for:', item?.symbol);
       setChartItem(item);
       setIsBenchmarkChart(false);
-      const sheet = document.getElementById('chartSheet');
-      const overlay = document.getElementById('chartSheetOverlay');
-      if (sheet) sheet.classList.add('open');
-      if (overlay) overlay.classList.add('active');
     };
     (window as any).__reactSetChartItem = (item: WatchlistItem | null) => {
       setChartItem(item);
@@ -1431,7 +1486,7 @@ function WatchlistContent() {
     if (scriptMountedRef.current && typeof (window as any).attachSwipeHandlers === 'function') {
       (window as any).attachSwipeHandlers();
     }
-  }, [watchlistItems]);
+  }, [watchlistItems, activeTab, searchText]);
 
   useEffect(() => {
     window.__addToWatchlistCallback = (item: WatchlistItem) => {
@@ -1508,10 +1563,7 @@ function WatchlistContent() {
         setOrderUnit('qty');
         setOrderType('MARKET');
         setProductType('INTRADAY');
-        const detailSheet = document.getElementById('detailSheet');
-        const detailOverlay = document.getElementById('detailSheetOverlay');
-        if (detailSheet) detailSheet.classList.remove('open');
-        if (detailOverlay) detailOverlay.classList.remove('active');
+        setSelectedItem(null);
         setIsTradeSheetOpen(true);
       }
     };
@@ -1526,10 +1578,6 @@ function WatchlistContent() {
       setOrderUnit('qty');
       setOrderType('MARKET');
       setProductType('INTRADAY');
-      const detailSheet = document.getElementById('detailSheet');
-      const detailOverlay = document.getElementById('detailSheetOverlay');
-      if (detailSheet) detailSheet.classList.remove('open');
-      if (detailOverlay) detailOverlay.classList.remove('active');
       setIsTradeSheetOpen(true);
     };
 
@@ -1567,32 +1615,67 @@ function WatchlistContent() {
       }
 
       if (item) {
-        // Directly set state - avoid stale closure
+        setIsTradeSheetOpen(false);
         setSelectedItem(item);
-        const tradeSheet = document.getElementById('tradeSheet');
-        const tradeOverlay = document.getElementById('tradeSheetOverlay');
-        if (tradeSheet) tradeSheet.classList.remove('open');
-        if (tradeOverlay) tradeOverlay.classList.remove('active');
-        const detailSheet = document.getElementById('detailSheet');
-        const detailOverlay = document.getElementById('detailSheetOverlay');
-        if (detailSheet) detailSheet.classList.add('open');
-        if (detailOverlay) detailOverlay.classList.add('active');
       }
     };
 
     (window as any).__reactOpenChartSheet = (item: WatchlistItem) => {
       setChartItem(item);
       setIsBenchmarkChart(false);
-      const sheet = document.getElementById('chartSheet');
-      const overlay = document.getElementById('chartSheetOverlay');
-      if (sheet) sheet.classList.add('open');
-      if (overlay) overlay.classList.add('active');
     };
 
     (window as any).__reactSetChartItem = (item: WatchlistItem | null) => {
       setChartItem(item);
     };
   }, [watchlistItems, activeTab, userId]);
+
+  const closeDetailSheet = () => {
+    isOpeningTradeSheetRef.current = false;
+    setSelectedItem(null);
+    setDetailOpeningSide(null);
+    const ids = ['detailSheet', 'detailSheetOverlay'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.remove('open');
+        el.classList.remove('active');
+      }
+    });
+  };
+
+  const closeChartSheet = () => {
+    isOpeningTradeSheetRef.current = false;
+    setDetailOpeningSide(null);
+    setChartItem(null);
+    setIsBenchmarkChart(false);
+    const ids = ['chartSheet', 'chartSheetOverlay'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.remove('open');
+        el.classList.remove('active');
+      }
+    });
+  };
+
+  const closeTradeSheet = () => {
+    setIsTradeSheetOpen(false);
+    setSelectedItem(null);
+    setDetailOpeningSide(null);
+    isOpeningTradeSheetRef.current = false;
+    const ids = [
+      'tradeSheet', 'detailSheet', 'chartSheet', 'basketSheet', 'checkoutSheet',
+      'tradeSheetOverlay', 'detailSheetOverlay', 'chartSheetOverlay', 'basketSheetOverlay', 'checkoutSheetOverlay'
+    ];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.classList.remove('open');
+        el.classList.remove('active');
+      }
+    });
+  };
 
   const openTradeSheet = async (item: WatchlistItem, side: 'BUY' | 'SELL' | 'BOTH' = 'BOTH') => {
     // Guard covers the entire async operation — not just one animation frame.
@@ -1606,6 +1689,7 @@ function WatchlistContent() {
     try {
       if (isSpotIndex(item)) {
         showToast('Indices cannot be traded directly. Trade their Futures or Options.', true);
+        setDetailOpeningSide(null);
         return;
       }
 
@@ -1623,7 +1707,6 @@ function WatchlistContent() {
       setTpPrice('');
 
       setIsTradeSheetOpen(true);
-      setDetailOpeningSide(null);
 
       // ── Strike range pre-check (runs after sheet is already open) ────────
       // For options only. If out-of-range, close the sheet and show the error.
@@ -1640,9 +1723,7 @@ function WatchlistContent() {
           if (res.ok) {
             const data = await res.json();
             if (data.allowed === false) {
-              setIsTradeSheetOpen(false);
-              setSelectedItem(null);
-              setDetailOpeningSide(null);
+              closeTradeSheet();
               const errMsg = data.reason || `Strike price ${data.strike} is outside the active option chain window (${data.min} to ${data.max}).`;
               window.dispatchEvent(new CustomEvent('order_error', { detail: errMsg }));
               return;
@@ -1656,18 +1737,18 @@ function WatchlistContent() {
     } finally {
       // Lock released only after all async work is done — including the fetch.
       isOpeningTradeSheetRef.current = false;
+      setDetailOpeningSide(null);
     }
   };
 
-  const closeTradeSheet = () => {
-    setIsTradeSheetOpen(false);
-    setSelectedItem(null);
-    setDetailOpeningSide(null);
-  };
+  const blockedSymbolsArr = useMemo(() => Array.from(blockedSymbols).sort(), [blockedSymbols]);
+  const scriptContent = useMemo(() => {
+    if (allowedSegments === null) return '';
+    return buildInlineScript(allowedSegments, segmentSettings, blockedSymbolsArr);
+  }, [allowedSegments, segmentSettings, blockedSymbolsArr]);
 
   useEffect(() => {
-    // Wait until segments have loaded before injecting the inline script
-    if (allowedSegments === null) return;
+    if (!scriptContent) return;
 
     window.__kiteQuotes = window.__kiteQuotes || {};
     window.__watchlistItems = window.__watchlistItems || [];
@@ -1685,7 +1766,7 @@ function WatchlistContent() {
     }
 
     const script = document.createElement('script');
-    script.innerHTML = buildInlineScript(allowedSegments, segmentSettings, Array.from(blockedSymbols));
+    script.innerHTML = scriptContent;
     document.body.appendChild(script);
     scriptMountedRef.current = true;
 
@@ -1699,19 +1780,57 @@ function WatchlistContent() {
     return () => {
       if (document.body.contains(script)) document.body.removeChild(script);
       scriptMountedRef.current = false;
+
+      // Clear event listeners on document
+      if ((window as any).__watchlistInputHandler) {
+        document.removeEventListener('input', (window as any).__watchlistInputHandler);
+        (window as any).__watchlistInputHandler = null;
+      }
+      if ((window as any).__watchlistClickHandler) {
+        document.removeEventListener('click', (window as any).__watchlistClickHandler, true);
+        (window as any).__watchlistClickHandler = null;
+      }
+      if ((window as any).__watchlistChangeHandler) {
+        document.removeEventListener('change', (window as any).__watchlistChangeHandler);
+        (window as any).__watchlistChangeHandler = null;
+      }
+
+      // Clear search timers and intervals
+      if ((window as any).__searchPriceInterval) {
+        clearInterval((window as any).__searchPriceInterval);
+        (window as any).__searchPriceInterval = null;
+      }
+      if ((window as any).__searchDebounceTimer) {
+        clearTimeout((window as any).__searchDebounceTimer);
+        (window as any).__searchDebounceTimer = null;
+      }
+
       // Clean up global state that persists across navigation and blocks other pages
       window.__selectionModeActive = false;
       window.__watchlistEventsAttached = false;
       window.__isBasketModeActive = false;
       document.body.style.overflow = '';
       document.body.style.overflowY = '';
+
+      // Clean up global window bridge function handles
+      (window as any).__reactOpenTradeSheet = null;
+      (window as any).__reactOpenDetailSheet = null;
+      (window as any).__reactOpenChartSheet = null;
+      (window as any).__reactSetChartItem = null;
+      (window as any).__addToWatchlistCallback = null;
+      (window as any).__removeFromWatchlistCallback = null;
+      (window as any).__syncWatchlistSymbols = null;
+      (window as any).__triggerSearch = null;
+      (window as any).__reactSelectAll = null;
+      (window as any).__reactDeleteSelected = null;
+
       // Force close any open drawers/overlays left behind
       const drawerOverlay = document.getElementById('drawerOverlay');
       const folderDrawer = document.getElementById('scriptsFolderDrawer');
       if (drawerOverlay) drawerOverlay.classList.remove('active');
       if (folderDrawer) folderDrawer.classList.remove('open');
     };
-  }, [allowedSegments, segmentSettings, blockedSymbols]);
+  }, [scriptContent]);
 
   return (
     <div className="desktop-layout">
@@ -1762,12 +1881,7 @@ function WatchlistContent() {
           </div>
 
           <div className="watchlist-layout">
-            <PullToRefresh className="main-content" onRefresh={async () => {
-              if (typeof (window as any).__syncWatchlistSymbols === 'function') {
-                (window as any).__syncWatchlistSymbols(watchlistItems.map(i => i.symbol));
-              }
-              await new Promise(r => setTimeout(r, 400));
-            }}>
+            <div className="main-content">
 
               <div className="watchlist-section">
                 <div className="watchlist-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
@@ -1824,16 +1938,13 @@ function WatchlistContent() {
                     <InstrumentRow
                       key={`${item.symbol}_${index}`}
                       item={item}
-                      quote={(() => {
-                        const kSym = item.kiteSymbol || '';
-                        const sym = item.symbol || '';
-                        const cleanK = kSym.replace(/^(US|FOREX|CRYPTO):/, '');
-                        const cleanS = sym.replace(/^(US|FOREX|CRYPTO):/, '');
-                        const keys = [kSym, sym, `US:${cleanK}`, `US:${cleanS}`, cleanK, cleanS, item.binanceSymbol || '', item.comexSymbol || ''].filter(Boolean);
-                        for (const k of keys) { if (marketQuotes[k]?.lastPrice > 0) return marketQuotes[k]; }
-                        for (const k of keys) { if (marketQuotes[k]) return marketQuotes[k]; }
-                        return undefined;
-                      })()}
+                      quote={
+                        (item.kiteSymbol && marketQuotes[item.kiteSymbol]) ||
+                        (item.symbol && marketQuotes[item.symbol]) ||
+                        (item.symbol && marketQuotes[item.symbol.replace(/\s+/g, '')]) ||
+                        (item.name && marketQuotes[item.name]) ||
+                        (item.binanceSymbol ? marketQuotes[item.binanceSymbol] : undefined)
+                      }
                       binanceQuote={item.binanceSymbol ? (marketQuotes[item.binanceSymbol] || binanceQuotesAsQuoteData[item.binanceSymbol]) : undefined}
                       comexQuote={item.comexSymbol ? comexQuotes[item.comexSymbol] : undefined}
                       onTrade={(it: WatchlistItem, type?: 'BUY' | 'SELL' | 'BOTH') => {
@@ -1871,23 +1982,16 @@ function WatchlistContent() {
                         });
                       }}
                       onChart={(item) => {
+                        setSelectedItem(null);
                         setChartItem(item);
                         setIsBenchmarkChart(false);
-                        const detailSheet = document.getElementById('detailSheet');
-                        const detailOverlay = document.getElementById('detailSheetOverlay');
-                        if (detailSheet) detailSheet.classList.remove('open');
-                        if (detailOverlay) detailOverlay.classList.remove('active');
-                        const chartSheet = document.getElementById('chartSheet');
-                        const chartOverlay = document.getElementById('chartSheetOverlay');
-                        if (chartSheet) chartSheet.classList.add('open');
-                        if (chartOverlay) chartOverlay.classList.add('active');
                       }}
                     />
                   ))}
                   <div id="watchlistMobileContainer"></div>
                 </div>
               </div>
-            </PullToRefresh>
+            </div>
 
             {/* Basket bottom bar */}
             {basketMode && (
@@ -1911,12 +2015,7 @@ function WatchlistContent() {
                     <i className="fas fa-times"></i> Cancel
                   </button>
                   <button
-                    onClick={() => {
-                      const sheet = document.getElementById('basketSheet');
-                      const overlay = document.getElementById('basketSheetOverlay');
-                      if (sheet) sheet.classList.add('open');
-                      if (overlay) overlay.classList.add('active');
-                    }}
+                    onClick={() => setIsBasketSheetOpen(true)}
                     style={{ flex: 2, background: '#15803D', color: '#fff', border: 'none', padding: '11px 0', borderRadius: '30px', fontSize: '0.85rem', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                   >
                     <i className="fas fa-shopping-basket"></i> View Basket
@@ -1935,7 +2034,7 @@ function WatchlistContent() {
               hideLotText={true}
             />
 
-            <div id="detailSheetOverlay" className={`trade-sheet-overlay${(selectedItem && !isTradeSheetOpen && !chartItem) ? ' active' : ''}`} onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setSelectedItem(null); }}></div>
+            <div id="detailSheetOverlay" className={`trade-sheet-overlay${(selectedItem && !isTradeSheetOpen && !chartItem) ? ' active' : ''}`} onClick={() => closeDetailSheet()}></div>
             <div id="detailSheet" className={`trade-sheet detail-sheet${(selectedItem && !isTradeSheetOpen && !chartItem) ? ' open' : ''}`} style={{ height: 'auto', maxHeight: '72dvh', paddingBottom: '16px' }}>
               <div className="sheet-handle"><div className="handle-bar"></div></div>
               {selectedItem && (() => {
@@ -1944,36 +2043,53 @@ function WatchlistContent() {
                 const isDetailComex = dbSeg === 'COMEX' || !!selectedItem.comexSymbol;
                 const isDetailIndian = !isDetailCrypto && !isDetailComex;
 
-                const buySegSetting = segmentSettings.find((s: any) => 
-                  ((s.segment || '').toUpperCase() === (dbSeg || '').toUpperCase() || (s.segment || '').toUpperCase() === (selectedItem.segment || '').toUpperCase()) && 
+                const buySegSetting = segmentSettings.find((s: any) =>
+                  ((s.segment || '').toUpperCase() === (dbSeg || '').toUpperCase() || (s.segment || '').toUpperCase() === (selectedItem.segment || '').toUpperCase()) &&
                   (s.side || '').toUpperCase() === 'BUY'
                 );
-                const sellSegSetting = segmentSettings.find((s: any) => 
-                  ((s.segment || '').toUpperCase() === (dbSeg || '').toUpperCase() || (s.segment || '').toUpperCase() === (selectedItem.segment || '').toUpperCase()) && 
+                const sellSegSetting = segmentSettings.find((s: any) =>
+                  ((s.segment || '').toUpperCase() === (dbSeg || '').toUpperCase() || (s.segment || '').toUpperCase() === (selectedItem.segment || '').toUpperCase()) &&
                   (s.side || '').toUpperCase() === 'SELL'
                 );
 
-                const activeAskBuf = isDetailIndian ? 0 : (Number(buySegSetting?.entry_buffer) || Number(buySegSetting?.bid_buffer) || 0.3);
-                const activeBidBuf = isDetailIndian ? 0 : (Number(sellSegSetting?.entry_buffer) || Number(sellSegSetting?.bid_buffer) || 0.3);
+                // ── Two-Layer Price Model: Layer 1 (Display) ──────────────────────────
+                // bid_buffer creates the displayed spread shown to the user.
+                // entry/exit buffer is hidden, applied only at execution.
+                //
+                // LTP mode    : Ask = LTP + LTP*bid_buffer%   |  Bid = LTP - LTP*bid_buffer%
+                // BID/ASK mode: Ask = RealAsk + LTP*bid_buffer%  |  Bid = RealBid - LTP*bid_buffer%
+                const isDetailCommodity = dbSeg.toUpperCase().includes('MCX') ||
+                  ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c =>
+                    (selectedItem.symbol || selectedItem.name || '').toUpperCase().includes(c));
+                const isDetailIndianNonCommodity = isDetailIndian && !isDetailCommodity;
+                const detailBidBufferRaw = isDetailIndianNonCommodity ? 0 : Number(buySegSetting?.bid_buffer ?? sellSegSetting?.bid_buffer ?? 0);
+                const detailBidBufferDecimal = Math.abs(detailBidBufferRaw) > 0.005 ? detailBidBufferRaw / 100 : detailBidBufferRaw;
+                const detailBidBufferAmount = currentLtp * detailBidBufferDecimal; // always LTP-based
 
-                const effective = resolveEffectivePrices({
-                  ltp: currentLtp,
-                  rawBid,
-                  rawAsk,
-                  hasRealBidAsk: Boolean(rawBid && rawAsk && rawBid < rawAsk),
-                  askBuffer: activeAskBuf,
-                  bidBuffer: activeBidBuf,
-                });
+                const detailExecMode = buySegSetting?.exit_price_mode || sellSegSetting?.exit_price_mode || 'BID_ASK';
+                const detailHasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
+                const detailUseLtpMode = detailExecMode === 'LTP' || isDetailCommodity || !detailHasRealBidAsk;
+
+                let bid: number;
+                let ask: number;
+                if (detailUseLtpMode) {
+                  ask = currentLtp + detailBidBufferAmount;
+                  bid = currentLtp - detailBidBufferAmount;
+                } else {
+                  ask = rawAsk + detailBidBufferAmount;
+                  bid = rawBid - detailBidBufferAmount;
+                }
+                if (bid <= 0) bid = currentLtp;
+                if (ask <= 0) ask = currentLtp;
+                
                 const ltp = currentLtp;
-                const bid = effective.effectiveBid;
-                const ask = effective.effectiveAsk;
                 const chgPct = currentChangePercent;
                 const fmt = (v: number) => formatPrice(v);
                 return (
                   <div style={{ padding: '0' }}>
                     <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
-                        <button style={{ width: '26px', height: '26px', borderRadius: '50%', background: 'var(--icon-bg)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '0', flexShrink: 0 }} onClick={() => { const sheet = document.getElementById('detailSheet'); const overlay = document.getElementById('detailSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); }}>
+                        <button style={{ width: '26px', height: '26px', borderRadius: '50%', background: 'var(--icon-bg)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '0', flexShrink: 0 }} onClick={() => closeDetailSheet()}>
                           <i className="fas fa-chevron-left" style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}></i>
                         </button>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2012,16 +2128,10 @@ function WatchlistContent() {
                           transition: 'all 0.18s'
                         }}
                         onClick={() => {
-                          setChartItem(selectedItem);
+                          const item = selectedItem;
+                          setSelectedItem(null);
+                          setChartItem(item);
                           setIsBenchmarkChart(false);
-                          const detailSheet = document.getElementById('detailSheet');
-                          const detailOverlay = document.getElementById('detailSheetOverlay');
-                          if (detailSheet) detailSheet.classList.remove('open');
-                          if (detailOverlay) detailOverlay.classList.remove('active');
-                          const chartSheet = document.getElementById('chartSheet');
-                          const chartOverlay = document.getElementById('chartSheetOverlay');
-                          if (chartSheet) chartSheet.classList.add('open');
-                          if (chartOverlay) chartOverlay.classList.add('active');
                         }}
                       >
                         <svg
@@ -2075,10 +2185,10 @@ function WatchlistContent() {
                       <div style={{ marginBottom: '8px' }}>
                         <div style={{ fontSize: '0.62rem', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '6px' }}>PRICE SUMMARY</div>
                         <div style={{ background: 'var(--card-alt-bg)', border: '1px solid var(--border-card)', borderRadius: '14px', padding: '8px 10px', display: 'flex', justifyContent: 'space-between' }}>
-                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>OPEN</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#059669' }}>{fmt((isCrypto && currentBinanceQuote?.open) || (isComex && currentComexQuote?.open) || currentKiteQuote?.open || selectedItem.open)}</div></div>
-                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>HIGH</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#059669' }}>{fmt((isCrypto && currentBinanceQuote?.high) || (isComex && currentComexQuote?.high) || currentKiteQuote?.high || selectedItem.high)}</div></div>
-                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>LOW</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#DC2626' }}>{fmt((isCrypto && currentBinanceQuote?.low) || (isComex && currentComexQuote?.low) || currentKiteQuote?.low || selectedItem.low)}</div></div>
-                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>CLOSE</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-primary)' }}>{fmt((isCrypto && currentBinanceQuote?.close) || (isComex && currentComexQuote?.close) || currentKiteQuote?.close || selectedItem.close)}</div></div>
+                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>OPEN</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#059669' }}>{fmt(detailOpen ?? 0)}</div></div>
+                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>HIGH</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#059669' }}>{fmt(detailHigh ?? 0)}</div></div>
+                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>LOW</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#DC2626' }}>{fmt(detailLow ?? 0)}</div></div>
+                          <div style={{ textAlign: 'center' }}><div style={{ fontSize: '0.52rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '3px' }}>CLOSE</div><div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-primary)' }}>{fmt(detailClose ?? 0)}</div></div>
                         </div>
                       </div>
                       <div style={{ background: 'var(--card-alt-bg)', border: '1px solid var(--border-card)', borderRadius: '14px', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -2105,7 +2215,12 @@ function WatchlistContent() {
                             transition: 'background 0.2s, opacity 0.2s',
                           }}
                           disabled={!!detailOpeningSide}
-                          onClick={() => { setDetailOpeningSide('BUY'); openTradeSheet(selectedItem, 'BUY'); }}
+                          onClick={() => {
+                            if (!isOpeningTradeSheetRef.current && !isTradeSheetOpen && selectedItem) {
+                              setDetailOpeningSide('BUY');
+                              openTradeSheet(selectedItem, 'BUY');
+                            }
+                          }}
                         >
                           {detailOpeningSide === 'BUY' ? (
                             <svg width="16" height="16" viewBox="0 0 24 24" style={{ animation: 'spin 0.7s linear infinite' }}>
@@ -2136,7 +2251,13 @@ function WatchlistContent() {
                             transition: 'background 0.2s, opacity 0.2s',
                           }}
                           disabled={!!detailOpeningSide}
-                          onClick={() => { setDetailOpeningSide('SELL'); openTradeSheet(selectedItem, 'SELL'); }}
+                          onClick={() => {
+                            if (isOpeningTradeSheetRef.current || isTradeSheetOpen || detailOpeningSide) return;
+                            if (selectedItem) {
+                              setDetailOpeningSide('SELL');
+                              openTradeSheet(selectedItem, 'SELL');
+                            }
+                          }}
                         >
                           {detailOpeningSide === 'SELL' ? (
                             <svg width="16" height="16" viewBox="0 0 24 24" style={{ animation: 'spin 0.7s linear infinite' }}>
@@ -2155,13 +2276,13 @@ function WatchlistContent() {
               })()}
             </div>
 
-            <div id="basketSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('basketSheet'); const overlay = document.getElementById('basketSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); }}></div>
+            <div id="basketSheetOverlay" className={`trade-sheet-overlay${isBasketSheetOpen ? ' active' : ''}`} onClick={() => setIsBasketSheetOpen(false)}></div>
 
-            <div id="basketSheet" className="trade-sheet detail-sheet" style={{ height: '100dvh', maxHeight: '100dvh', width: '100vw', top: 0, left: 0, bottom: 0, position: 'fixed', zIndex: 100000, borderRadius: 0, paddingBottom: '30px', background: 'var(--bg-body, #F5F7FB)' }}>
+            <div id="basketSheet" className={`trade-sheet detail-sheet${isBasketSheetOpen ? ' open' : ''}`} style={{ height: '100dvh', maxHeight: '100dvh', width: '100vw', top: 0, left: 0, bottom: 0, position: 'fixed', zIndex: 100000, borderRadius: 0, paddingBottom: '30px', background: 'var(--bg-body, #F5F7FB)' }}>
               <div style={{ padding: '24px 20px 20px 20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', gap: '12px' }}>
                   <button
-                    onClick={() => { const sheet = document.getElementById('basketSheet'); const overlay = document.getElementById('basketSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); }}
+                    onClick={() => setIsBasketSheetOpen(false)}
                     style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-primary)', padding: 0 }}
                   >
                     <i className="fas fa-arrow-left"></i>
@@ -2233,12 +2354,7 @@ function WatchlistContent() {
                 <div style={{ display: 'flex', gap: '12px', width: '100%', padding: '0 4px' }}>
                   <button
                     style={{ flex: 1, background: '#2C8E5A', color: 'white', border: 'none', padding: '17px 8px', borderRadius: '16px', fontSize: '0.9rem', fontWeight: '800', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', boxShadow: '0 6px 14px rgba(44,142,90,0.3)', minWidth: 0, whiteSpace: 'nowrap' }}
-                    onClick={() => {
-                      const sheet = document.getElementById('checkoutSheet');
-                      const overlay = document.getElementById('checkoutSheetOverlay');
-                      if (sheet) sheet.classList.add('open');
-                      if (overlay) overlay.classList.add('active');
-                    }}
+                    onClick={() => setIsCheckoutSheetOpen(true)}
                   >
                     <i className="fas fa-bolt" style={{ lineHeight: 1, fontSize: '0.9rem' }}></i> Checkout
                   </button>
@@ -2246,10 +2362,7 @@ function WatchlistContent() {
                     style={{ flex: 1, background: 'var(--icon-bg, #EFEFEF)', color: 'var(--text-secondary, #6B7280)', border: 'none', padding: '17px 8px', borderRadius: '16px', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '7px', minWidth: 0, whiteSpace: 'nowrap' }}
                     onClick={() => {
                       setBasketLegs([]);
-                      const sheet = document.getElementById('basketSheet');
-                      const overlay = document.getElementById('basketSheetOverlay');
-                      if (sheet) sheet.classList.remove('open');
-                      if (overlay) overlay.classList.remove('active');
+                      setIsBasketSheetOpen(false);
                     }}
                   >
                     <i className="fas fa-trash-alt" style={{ opacity: 0.5 }}></i> Clear
@@ -2259,12 +2372,12 @@ function WatchlistContent() {
             </div>
 
             {/* Checkout Sheet */}
-            <div id="checkoutSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('checkoutSheet'); const overlay = document.getElementById('checkoutSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); }}></div>
-            <div id="checkoutSheet" className="trade-sheet detail-sheet" style={{ height: '100dvh', maxHeight: '100dvh', width: '100vw', top: 0, left: 0, bottom: 0, position: 'fixed', zIndex: 100000, borderRadius: 0, background: 'var(--bg-body, #F5F7FB)', display: 'flex', flexDirection: 'column', padding: 0 }}>
+            <div id="checkoutSheetOverlay" className={`trade-sheet-overlay${isCheckoutSheetOpen ? ' active' : ''}`} onClick={() => setIsCheckoutSheetOpen(false)}></div>
+            <div id="checkoutSheet" className={`trade-sheet detail-sheet${isCheckoutSheetOpen ? ' open' : ''}`} style={{ height: '100dvh', maxHeight: '100dvh', width: '100vw', top: 0, left: 0, bottom: 0, position: 'fixed', zIndex: 100000, borderRadius: 0, background: 'var(--bg-body, #F5F7FB)', display: 'flex', flexDirection: 'column', padding: 0 }}>
 
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-light, #EEF2F8)', background: 'var(--card-bg, #fff)', flexShrink: 0 }}>
-                <button onClick={() => { const s = document.getElementById('checkoutSheet'); const o = document.getElementById('checkoutSheetOverlay'); if (s) s.classList.remove('open'); if (o) o.classList.remove('active'); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 10px 4px 0', fontSize: '1.05rem' }}>
+                <button onClick={() => setIsCheckoutSheetOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 10px 4px 0', fontSize: '1.05rem' }}>
                   <i className="fas fa-arrow-left" />
                 </button>
                 <div>
@@ -2434,8 +2547,8 @@ function WatchlistContent() {
                       if (failCount === 0) {
                         showToast('Basket executed successfully!', false);
                         setBasketLegs([]); setBasketMode(false);
-                        ['checkoutSheet', 'basketSheet'].forEach(id => document.getElementById(id)?.classList.remove('open'));
-                        ['checkoutSheetOverlay', 'basketSheetOverlay'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+                        setIsCheckoutSheetOpen(false);
+                        setIsBasketSheetOpen(false);
                       } else {
                         showToast(`${successCount} order(s) placed, ${failCount} failed.`, true);
                       }
@@ -2446,7 +2559,7 @@ function WatchlistContent() {
                   {isExecutingBasket ? <><AnimatedLoader size="small" /> Executing...</> : <><i className="fas fa-bolt" style={{ marginRight: '4px' }} /> Confirm</>}
                 </button>
                 <button
-                  onClick={() => { if (isExecutingBasket) return; const s = document.getElementById('checkoutSheet'); const o = document.getElementById('checkoutSheetOverlay'); if (s) s.classList.remove('open'); if (o) o.classList.remove('active'); }}
+                  onClick={() => { if (!isExecutingBasket) setIsCheckoutSheetOpen(false); }}
                   disabled={isExecutingBasket}
                   style={{ flex: 1, background: 'var(--bg-body, #F3F4F6)', color: isExecutingBasket ? '#9CA3AF' : 'var(--text-secondary)', border: '1px solid var(--border-light, #EEF2F8)', padding: '15px 0', borderRadius: '14px', fontSize: '0.9rem', fontWeight: '700', cursor: isExecutingBasket ? 'not-allowed' : 'pointer' }}
                 >
@@ -2471,9 +2584,11 @@ function WatchlistContent() {
                     'MCX-OPT': 'MCX-OPT',
                     'STOCK-FUT': 'STOCK-FUT',
                     'STOCK-OPT': 'STOCK-OPT',
-                    'NSE-EQ': 'NSE-EQ',
-                    'Equity': 'NSE-EQ',
-                    'EQUITY': 'NSE-EQ',
+                    'NSE-EQ': 'STOCKS',
+                    'Equity': 'STOCKS',
+                    'EQUITY': 'STOCKS',
+                    'Stocks': 'STOCKS',
+                    'STOCKS': 'STOCKS',
                     'CRYPTO': 'CRYPTO',
                     'COMEX': 'COMEX',
                     'FOREX': 'FOREX',
@@ -2481,7 +2596,7 @@ function WatchlistContent() {
                     'US Equity': 'US-EQ',
                   };
                   // Define the desired display order
-                  const SEGMENT_ORDER = ['INDEX-FUT', 'INDEX-OPT', 'MCX-FUT', 'MCX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'Equity', 'NSE-EQ', 'CRYPTO', 'COMEX', 'FOREX', 'US-EQ', 'US Equity'];
+                  const SEGMENT_ORDER = ['INDEX-FUT', 'INDEX-OPT', 'MCX-FUT', 'MCX-OPT', 'STOCK-FUT', 'STOCK-OPT', 'STOCKS', 'CRYPTO', 'COMEX', 'FOREX', 'US-EQ', 'US Equity'];
                   const sortedSegments = [...tradingSegments].sort((a, b) => {
                     const ai = SEGMENT_ORDER.indexOf(a.name);
                     const bi = SEGMENT_ORDER.indexOf(b.name);
@@ -2497,7 +2612,7 @@ function WatchlistContent() {
                     return (
                       allowedSegments.includes(dbKey) ||
                       allowedSegments.includes(seg.name) ||
-                      (seg.name.toUpperCase() === 'EQUITY' && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity'))) ||
+                      ((seg.name.toUpperCase() === 'EQUITY' || seg.name.toUpperCase() === 'STOCKS') && (allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity') || allowedSegments.includes('Stocks'))) ||
                       (dbKey === 'US-EQ' && (allowedSegments.includes('US-EQ') || allowedSegments.includes('US Equity') || allowedSegments.includes('NSE-EQ') || allowedSegments.includes('Equity') || allowedSegments.length >= 7))
                     );
                   });
@@ -2529,22 +2644,45 @@ function WatchlistContent() {
                           onClick={() => setExpandedSegments(prev => ({ ...prev, [seg.name]: !prev[seg.name] }))}
                         >
                           <i className="fas fa-chevron-right chevron-icon" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}></i>
-                          <span style={{ flex: 1, fontWeight: 700, fontSize: '0.88rem' }}>{seg.name}</span>
+                          <span style={{ flex: 1, fontWeight: 700, fontSize: '0.88rem', textTransform: 'uppercase' }}>{seg.name}</span>
                           <span className="segment-count">{count}</span>
                         </div>
                         {isOpen && (
                           <div className="children-container" style={{ display: 'block' }}>
-                            {filteredSeg.instruments?.map((inst) => (
-                              <div key={inst.symbol} className="script-item">
-                                <span>{inst.name}</span>
-                                <button className="add-script-btn" onClick={() => {
-                                  if (typeof window.__addToWatchlistCallback === 'function') {
-                                    window.__addToWatchlistCallback(inst as WatchlistItem);
-                                    showToast('Added to watchlist', false);
-                                  }
-                                }}>+ Add</button>
-                              </div>
-                            ))}
+                            {filteredSeg.instruments?.map((inst) => {
+                              const isAdded = addedSymbolsSet.has(inst.symbol);
+                              return (
+                                <div key={inst.symbol} className="script-item">
+                                  <span>{inst.name}</span>
+                                  <button
+                                    className="add-script-btn"
+                                    data-watch-symbol={inst.symbol}
+                                    data-watch-item={JSON.stringify(inst)}
+                                    style={isAdded ? { background: '#2C8E5A', color: '#fff', border: 'none', opacity: 0.9, cursor: 'pointer' } : undefined}
+                                    onClick={() => {
+                                      if (isAdded) {
+                                        setWatchlistItems(prev => {
+                                          const next = prev.filter(i => i.symbol !== inst.symbol);
+                                          saveWatchlistToStorage(next, userId);
+                                          if (typeof (window as any).__syncWatchlistSymbols === 'function') {
+                                            (window as any).__syncWatchlistSymbols(next.map((i: WatchlistItem) => i.symbol));
+                                          }
+                                          return next;
+                                        });
+                                        showToast('Removed from watchlist', false);
+                                      } else {
+                                        if (typeof window.__addToWatchlistCallback === 'function') {
+                                          window.__addToWatchlistCallback(inst as WatchlistItem);
+                                          showToast('Added to watchlist', false);
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    {isAdded ? 'Added ✓' : '+ Add'}
+                                  </button>
+                                </div>
+                              );
+                            })}
                             {filteredSeg.subCategories?.map((sub) => {
                               const subKey = `${seg.name}__${sub.name}`;
                               const subOpen = !!expandedSegments[subKey];
@@ -2561,17 +2699,40 @@ function WatchlistContent() {
                                   </div>
                                   {subOpen && (
                                     <div className="children-container" style={{ display: 'block' }}>
-                                      {sub.instruments.map((inst: any) => (
-                                        <div key={inst.symbol} className="script-item">
-                                          <span>{inst.name}</span>
-                                          <button className="add-script-btn" onClick={() => {
-                                            if (typeof window.__addToWatchlistCallback === 'function') {
-                                              window.__addToWatchlistCallback(inst as WatchlistItem);
-                                              showToast('Added to watchlist', false);
-                                            }
-                                          }}>+ Add</button>
-                                        </div>
-                                      ))}
+                                      {sub.instruments.map((inst: any) => {
+                                        const isAdded = addedSymbolsSet.has(inst.symbol);
+                                        return (
+                                          <div key={inst.symbol} className="script-item">
+                                            <span>{inst.name}</span>
+                                            <button
+                                              className="add-script-btn"
+                                              data-watch-symbol={inst.symbol}
+                                              data-watch-item={JSON.stringify(inst)}
+                                              style={isAdded ? { background: '#2C8E5A', color: '#fff', border: 'none', opacity: 0.9, cursor: 'pointer' } : undefined}
+                                              onClick={() => {
+                                                if (isAdded) {
+                                                  setWatchlistItems(prev => {
+                                                    const next = prev.filter(i => i.symbol !== inst.symbol);
+                                                    saveWatchlistToStorage(next, userId);
+                                                    if (typeof (window as any).__syncWatchlistSymbols === 'function') {
+                                                      (window as any).__syncWatchlistSymbols(next.map((i: WatchlistItem) => i.symbol));
+                                                    }
+                                                    return next;
+                                                  });
+                                                  showToast('Removed from watchlist', false);
+                                                } else {
+                                                  if (typeof window.__addToWatchlistCallback === 'function') {
+                                                    window.__addToWatchlistCallback(inst as WatchlistItem);
+                                                    showToast('Added to watchlist', false);
+                                                  }
+                                                }
+                                              }}
+                                            >
+                                              {isAdded ? 'Added ✓' : '+ Add'}
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
@@ -2590,16 +2751,18 @@ function WatchlistContent() {
 
           {/* React-driven order toast */}
           <div
+            onClick={() => setToast(t => ({ ...t, visible: false }))}
             style={{
               position: 'fixed',
               bottom: '90px',
               left: '50%',
               transform: 'translateX(-50%)',
-              background: toast.isError ? '#C62E2E' : '#1a7a4a',
-              color: '#fff',
-              padding: '8px 16px',
+              background: '#2C313F',
+              border: toast.isError ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.18)',
+              color: '#F8FAFC',
+              padding: '8px 18px',
               borderRadius: '30px',
-              fontSize: '0.72rem',
+              fontSize: '0.75rem',
               fontWeight: '600',
               fontFamily: 'Inter, sans-serif',
               zIndex: 99999,
@@ -2607,17 +2770,19 @@ function WatchlistContent() {
               maxWidth: '80vw',
               overflowX: 'hidden',
               textOverflow: 'ellipsis',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(10px)',
               opacity: toast.visible ? 1 : 0,
               visibility: toast.visible ? 'visible' : 'hidden',
               transition: 'opacity 0.2s ease, visibility 0.2s ease',
+              cursor: 'pointer',
             }}
           >
             {toast.msg}
           </div>
 
-          <div id="chartSheetOverlay" className="trade-sheet-overlay" onClick={() => { const sheet = document.getElementById('chartSheet'); const overlay = document.getElementById('chartSheetOverlay'); if (sheet) sheet.classList.remove('open'); if (overlay) overlay.classList.remove('active'); setChartItem(null); setIsBenchmarkChart(false); }}></div>
-          <div id="chartSheet" className="trade-sheet" style={{ height: '100dvh', paddingBottom: '0', display: 'flex', flexDirection: 'column' }}>
+          <div id="chartSheetOverlay" className={`trade-sheet-overlay${chartItem ? ' active' : ''}`} onClick={() => closeChartSheet()}></div>
+          <div id="chartSheet" className={`trade-sheet${chartItem ? ' open' : ''}`} style={{ height: '100dvh', paddingBottom: '0', display: 'flex', flexDirection: 'column' }}>
             <div style={{ flex: 1, position: 'relative', width: '100%', overflow: 'hidden' }}>
               {chartItem && (() => {
                 console.log('[CHART PERF REACTION] Rendering TradingChart for chartItem:', chartItem.symbol, chartItem.segment);
@@ -2628,6 +2793,7 @@ function WatchlistContent() {
                   <TradingChart
                     symbol={isGlobalForex ? (chartItem.comexSymbol || chartItem.symbol) : isChartComex ? (chartItem.comexSymbol || chartItem.symbol) : (chartItem.binanceSymbol || chartItem.kiteSymbol || chartItem.symbol)}
                     segment={isGlobalForex ? 'FOREX' : isChartComex ? 'COMEX' : (chartItem.binanceSymbol || ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC'].includes(chartItem.symbol) ? 'CRYPTO' : chartItem.segment)}
+                    onClose={closeChartSheet}
                   />
                 );
               })()}
@@ -2807,7 +2973,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           ]
         },
         {
-          name: 'Equity',
+          name: 'STOCKS',
           icon: 'fa-landmark',
           instruments: [
             { name: 'RELIANCE', symbol: 'RELIANCE_EQ', kiteSymbol: 'NSE:RELIANCE', price: 0, change: '0%', segment: 'NSE - Equity', contractDate: '', open: 0, high: 0, low: 0, close: 0 },
@@ -2826,7 +2992,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
         if (n === 'STOCK-OPT') return 'STOCK-OPT';
         if (n === 'MCX-FUT') return 'MCX-FUT';
         if (n === 'MCX-OPT') return 'MCX-OPT';
-        if (n === 'NSE-EQ' || n === 'EQUITY') return 'NSE-EQ';
+        if (n === 'NSE-EQ' || n === 'EQUITY' || n === 'STOCKS') return 'STOCKS';
         if (n === 'CRYPTO') return 'CRYPTO';
         if (n === 'FOREX') return 'FOREX';
         if (n === 'COMEX') return 'COMEX';
@@ -2893,6 +3059,16 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
       // script always has the latest set.
       window.__syncWatchlistSymbols = function(symbols) {
         watchlistSymbols = new Set(symbols);
+        document.querySelectorAll('.add-script-btn[data-watch-symbol]').forEach(function(btn) {
+          var sym = btn.getAttribute('data-watch-symbol');
+          if (sym) {
+            if (watchlistSymbols.has(sym)) {
+              setButtonAdded(btn);
+            } else {
+              setButtonRemoved(btn);
+            }
+          }
+        });
       };
 
       function setButtonAdded(btn) {
@@ -2958,10 +3134,6 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
       function openDetailSheet(symbol) {
         if (typeof window.__reactOpenDetailSheet === 'function') {
           window.__reactOpenDetailSheet(symbol);
-          var sheet = document.getElementById('detailSheet');
-          var overlay = document.getElementById('detailSheetOverlay');
-          if (sheet) sheet.classList.add('open');
-          if (overlay) overlay.classList.add('active');
         }
       }
 
@@ -3023,7 +3195,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           if (c.indexOf('STOCK-OPT') >= 0 || c.indexOf('STOCKS - OPTIONS') >= 0) return 'STOCK-OPT';
           if (c.indexOf('MCX-FUT') >= 0 || c.indexOf('MCX - FUTURE') >= 0) return 'MCX-FUT';
           if (c.indexOf('MCX-OPT') >= 0 || c.indexOf('MCX - OPTIONS') >= 0) return 'MCX-OPT';
-          if (c.indexOf('NSE-EQ') >= 0 || c.indexOf('EQUITY') >= 0) return 'NSE-EQ';
+          if (c.indexOf('NSE-EQ') >= 0 || c.indexOf('EQUITY') >= 0 || c.indexOf('STOCKS') >= 0) return 'STOCKS';
           if (c.indexOf('CRYPTO') >= 0) return 'CRYPTO';
           if (c.indexOf('FOREX') >= 0) return 'FOREX';
           if (c.indexOf('COMEX') >= 0 || c === 'COI') return 'COMEX';
@@ -3035,7 +3207,7 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
           'NSE - Stock Futures': 'STOCK-FUT', 'BSE - Stock Futures': 'STOCK-FUT',
           'NSE - Stock Options': 'STOCK-OPT', 'BSE - Stock Options': 'STOCK-OPT',
           'MCX - Futures': 'MCX-FUT', 'MCX - Options': 'MCX-OPT',
-          'NSE - Equity': 'NSE-EQ', 'BSE - Equity': 'NSE-EQ',
+          'NSE - Equity': 'STOCKS', 'BSE - Equity': 'STOCKS', 'NSE-EQ': 'STOCKS', 'STOCKS': 'STOCKS',
           'Crypto': 'CRYPTO', 'CRYPTO': 'CRYPTO',
           'Forex': 'FOREX', 'FOREX': 'FOREX',
           'CDS - Futures': 'FOREX', 'CDS - Options': 'FOREX',
@@ -3223,14 +3395,18 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
         }, 300);
       }
 
-      // Use a named function so it can be exposed globally for the React useEffect bridge
+      // Safely disconnect any previously attached input listener before re-binding
+      if (window.__watchlistInputHandler) {
+        document.removeEventListener('input', window.__watchlistInputHandler);
+      }
       function handleSearchInput(e) {
         if (e.target && e.target.id === 'globalSearchInput') {
           runSearch(e.target.value.trim());
         }
       }
-
+      window.__watchlistInputHandler = handleSearchInput;
       document.addEventListener('input', handleSearchInput);
+
       // Expose so React's searchText useEffect can trigger it directly
       window.__triggerSearch = function(query) {
         runSearch(query);
@@ -3305,37 +3481,46 @@ function buildInlineScript(allowedSegments: string[], segmentSettings: any[], bl
         exitSelectionMode();
       };
 
-      if (!window.__watchlistEventsAttached) {
-        window.__watchlistEventsAttached = true;
-        // Capture all clicks when selectionMode is active to toggle checkboxes easily
-        document.addEventListener('click', function(e) {
-          if (!window.__selectionModeActive) return;
-          
-          var card = e.target.closest('.watchlist-card');
-          if (!card) return;
-          
-          // Skip swipe delete buttons or checkbox itself to avoid double-toggling
-          if (e.target.closest('.wc-swipe-actions') || e.target.classList.contains('wc-checkbox') || e.target.closest('.mcx-comex-switch')) {
-            return;
-          }
-          
-          e.preventDefault();
-          e.stopPropagation();
-          
-          var cb = card.querySelector('.wc-checkbox');
-          if (cb) {
-            cb.checked = !cb.checked;
-            if (typeof window.__updateSelectionUI === 'function') window.__updateSelectionUI();
-          }
-        }, true);
-
-        // Handle delegating checkbox change listener to keep count updated
-        document.addEventListener('change', function(e) {
-          if (e.target && e.target.classList.contains('wc-checkbox')) {
-            if (typeof window.__updateSelectionUI === 'function') window.__updateSelectionUI();
-          }
-        });
+      // Safely disconnect existing click and change handlers on document before re-binding
+      if (window.__watchlistClickHandler) {
+        document.removeEventListener('click', window.__watchlistClickHandler, true);
       }
+      if (window.__watchlistChangeHandler) {
+        document.removeEventListener('change', window.__watchlistChangeHandler);
+      }
+
+      function handleWatchlistClick(e) {
+        if (!window.__selectionModeActive) return;
+        
+        var card = e.target.closest('.watchlist-card');
+        if (!card) return;
+        
+        // Skip swipe delete buttons or checkbox itself to avoid double-toggling
+        if (e.target.closest('.wc-swipe-actions') || e.target.classList.contains('wc-checkbox') || e.target.closest('.mcx-comex-switch')) {
+          return;
+        }
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        var cb = card.querySelector('.wc-checkbox');
+        if (cb) {
+          cb.checked = !cb.checked;
+          if (typeof window.__updateSelectionUI === 'function') window.__updateSelectionUI();
+        }
+      }
+
+      function handleWatchlistChange(e) {
+        if (e.target && e.target.classList.contains('wc-checkbox')) {
+          if (typeof window.__updateSelectionUI === 'function') window.__updateSelectionUI();
+        }
+      }
+
+      window.__watchlistClickHandler = handleWatchlistClick;
+      window.__watchlistChangeHandler = handleWatchlistChange;
+      document.addEventListener('click', handleWatchlistClick, true);
+      document.addEventListener('change', handleWatchlistChange);
+      window.__watchlistEventsAttached = true;
 
       var basketModeBtn = document.getElementById('basketModeBtn');
       // basketModeBtn click is handled by React - no JS handler needed
