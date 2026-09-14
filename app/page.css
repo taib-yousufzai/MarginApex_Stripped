@@ -44,9 +44,12 @@
   --nav-border: #E8ECF0;
   --expiry-bg: linear-gradient(135deg, #C62828, #B71C1C);
   --footer-bg: #FFFFFF;
+  --footer-active: #006400;
+  --drawer-bg: #FFFFFF;
   --drawer-handle: #006400;
   --whatsapp-bg: linear-gradient(135deg, #006400, #0A5F52);
   --gold-silver-gradient: linear-gradient(135deg, #E8E8E8 0%, #D4AF37 30%, #FFD700 50%, #F0C040 70%, #C0C0C0 100%);
+  --footer-nav-height: 4.0625rem;
   --expiry-drawer-bg: #FFFFFF;
   --expiry-drawer-overlay: rgba(0, 0, 0, 0.5);
 }
@@ -127,7 +130,6 @@ body.dark {
     padding-left: 0;
   }
 }
-
 
 /* ===== WHATSAPP BUTTONS ===== */
 .whatsapp-community,
@@ -807,7 +809,8 @@ body.black .market-rect-expired-badge {
   bottom: 5.625rem;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(30, 35, 45, 0.95);
+  background: #2C313F;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(0.5rem);
   color: #FFFFFF !important;
   padding: 0.875rem 1.5rem;
@@ -888,6 +891,8 @@ body.black .market-rect-expired-badge {
     /* Tightest padding */
   }
 
+  .whatsapp-community,
+  .whatsapp-support,
   .margin-settings-row,
   .option-chain-section,
   .expiry-block {
@@ -903,6 +908,14 @@ body.black .market-rect-expired-badge {
     gap: 0.375rem !important;
   }
 
+  .whatsapp-inner {
+    padding: 0.75rem 0.875rem !important;
+    gap: 0.5rem !important;
+  }
+
+  .whatsapp-headline {
+    font-size: 0.8rem !important;
+  }
 
   .footer-nav {
     height: var(--footer-nav-height);
@@ -1020,11 +1033,26 @@ body.black .market-rect-expired-badge {
     gap: 2rem;
     align-items: start;
     grid-template-areas:
+      "whatsapp whatsapp"
       "terminal learning"
       "margin learning"
       "options learning"
       "expiry expiry"
-      "markets markets";
+      "markets markets"
+      "support support";
+  }
+
+  .whatsapp-community {
+    grid-area: whatsapp;
+    max-width: 100%;
+    box-shadow: 0 0.25rem 0.75rem rgba(15, 80, 50, 0.3);
+  }
+
+  .whatsapp-support {
+    grid-area: support;
+    max-width: 100%;
+    margin-top: 0 !important;
+    box-shadow: 0 0.25rem 0.75rem rgba(15, 80, 50, 0.3);
   }
 
   .terminal-card-highlight,
@@ -1540,26 +1568,32 @@ body.blue .notif-item {
   max-height: 100svh !important;
 }
 
-/* Force normal document flow (flex items) instead of out-of-flow positioning */
+/* Header stays fixed at top — does not scroll with content */
 .home-isolated-container .nav-bar-full {
-  position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  right: auto !important;
+  position: sticky !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
   width: 100% !important;
-  z-index: 100 !important;
+  z-index: 200 !important;
   flex-shrink: 0 !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
 }
 
 .home-isolated-scroll {
   flex: 1 !important;
-  min-height: 0 !important; /* CRITICAL: Allows flex item to shrink below content height */
+  min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  scroll-behavior: smooth !important;
-  overscroll-behavior-y: auto !important;
+  overscroll-behavior-y: contain !important;
   padding-top: 0 !important;
+  padding-bottom: 6.25rem !important;
+}
+
+.market-hour-pill {
+  display: flex;
   align-items: center;
   gap: 0.375rem;
   padding: 0.25rem 0.625rem;
@@ -1653,17 +1687,7 @@ body.black .notif-item {
   border-bottom-color: var(--border-light, #111);
 }
 
-
-
-
-
 /* ===== BLUE MODE OVERRIDES ===== */
-
-
-
-/* ========================================= */
-/* AMOLED SUPER BLACK OVERRIDES */
-/* ========================================= */
 
 body.blue {
   --bg-body: #0B141E;
@@ -1708,55 +1732,8 @@ body.blue {
   --expiry-drawer-bg: #0B141E;
 }
 
-
 body.blue .notif-item {
   border-bottom-color: var(--border-light, #131C27);
-}
-
-/* ========================================= */
-/* HOME PAGE CSS LEAKAGE ISOLATION */
-/* ========================================= */
-.home-isolated-layout {
-  overflow: visible !important;
-}
-
-.home-isolated-viewport {
-  flex: 1 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-
-.home-isolated-container {
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-  height: 100svh !important; /* CRITICAL: 100svh prevents iOS from pushing the footer below the screen when URL bar expands */
-  max-height: 100svh !important;
-}
-
-/* Header stays fixed at top — does not scroll with content */
-.home-isolated-container .nav-bar-full {
-  position: sticky !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100% !important;
-  z-index: 200 !important;
-  flex-shrink: 0 !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-}
-
-.home-isolated-scroll {
-  flex: 1 !important;
-  min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
-  padding-top: 0 !important;
-  padding-bottom: 6.25rem !important;
 }
 
 .home-isolated-container .toast-msg {

@@ -7,14 +7,15 @@ import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
 
 
 /**
- * Fetch bid/ask/ltp quotes for a mixed batch of instruments (Kite + Binance crypto).
+ * Fetch bid/ask quotes for a mixed batch of instruments (Kite + Binance crypto).
  * Each entry in the map is keyed by the instrument's lookup key.
+ * Returns { bid, ask, ltp } per symbol.
  */
 async function fetchQuoteBatch(
   kiteInstruments: string[],
   cryptoSymbols: string[]
-): Promise<Record<string, { bid?: number; ask?: number; ltp?: number }>> {
-  const quotesMap: Record<string, { bid?: number; ask?: number; ltp?: number }> = {};
+): Promise<Record<string, { bid: number; ask: number; ltp?: number }>> {
+  const quotesMap: Record<string, { bid: number; ask: number; ltp?: number }> = {};
   const allSymbols = [...kiteInstruments, ...cryptoSymbols];
   if (allSymbols.length === 0) return quotesMap;
 
@@ -28,15 +29,11 @@ async function fetchQuoteBatch(
       const cached = await redis.hget('market:quotes', sym);
       if (cached) {
         const q = JSON.parse(cached);
-        const bid = Number(q.bid ?? q.buy_price ?? 0);
-        const ask = Number(q.ask ?? q.sell_price ?? 0);
-        const ltp = Number(q.last_price ?? q.ltp ?? 0);
-        if (ltp > 0 || (bid > 0 && ask > 0)) {
-          quotesMap[sym] = {
-            bid: bid > 0 ? bid : undefined,
-            ask: ask > 0 ? ask : undefined,
-            ltp: ltp > 0 ? ltp : undefined,
-          };
+        const ltp = Number(q.last_price ?? q.ltp ?? q.price ?? 0);
+        const bid = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? 0);
+        const ask = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? 0);
+        if (bid > 0 || ask > 0 || ltp > 0) {
+          quotesMap[sym] = { bid, ask, ltp: ltp > 0 ? ltp : undefined };
           missing.delete(sym);
         }
       }
@@ -49,23 +46,18 @@ async function fetchQuoteBatch(
   try {
     const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || (process.env.NODE_ENV === 'production' ? 'https://marginapexx-production.up.railway.app' : 'http://localhost:8080');
     const params = new URLSearchParams({ symbols: Array.from(missing).join(',') });
-    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(2500) });
+    const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(200) });
     if (resTicker.ok) {
       const json = await resTicker.json();
       if (json.success && json.data) {
         for (const sym of Array.from(missing)) {
-          const rawSymbol = sym.includes(':') ? sym.split(':')[1] : sym;
-          const q = json.data[sym] || json.data[rawSymbol];
-          if (q) {
+          if (json.data[sym]) {
+            const q = json.data[sym];
+            const ltp = Number(q.last_price ?? q.ltp ?? q.price ?? 0);
             const bid = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? 0);
             const ask = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? 0);
-            const ltp = Number(q.last_price ?? q.ltp ?? q.price ?? 0);
-            if (ltp > 0 || (bid > 0 && ask > 0)) {
-              quotesMap[sym] = {
-                bid: bid > 0 ? bid : undefined,
-                ask: ask > 0 ? ask : undefined,
-                ltp: ltp > 0 ? ltp : undefined,
-              };
+            if (bid > 0 || ask > 0 || ltp > 0) {
+              quotesMap[sym] = { bid, ask, ltp: ltp > 0 ? ltp : undefined };
               missing.delete(sym);
             }
           }
@@ -89,22 +81,18 @@ async function fetchQuoteBatch(
         missingKite.forEach(i => params.append('i', i));
         const res = await fetch(`https://api.kite.trade/quote?${params}`, {
           headers: { 'X-Kite-Version': '3', Authorization: `token ${apiKey}:${session.accessToken}` },
-          cache: 'no-store', signal: AbortSignal.timeout(3000),
+          cache: 'no-store', signal: AbortSignal.timeout(200),
         });
         if (res && res.ok) {
           const data = await res.json() as { data?: Record<string, any> };
           for (const inst of missingKite) {
             const quote = data.data?.[inst];
             if (quote) {
+              const ltp = Number(quote.last_price ?? 0);
               const bid = Number(quote.depth?.buy?.[0]?.price ?? 0);
               const ask = Number(quote.depth?.sell?.[0]?.price ?? 0);
-              const ltp = Number(quote.last_price ?? 0);
-              if (ltp > 0 || (bid > 0 && ask > 0)) {
-                quotesMap[inst] = {
-                  bid: bid > 0 ? bid : undefined,
-                  ask: ask > 0 ? ask : undefined,
-                  ltp: ltp > 0 ? ltp : undefined,
-                };
+              if (bid > 0 || ask > 0 || ltp > 0) {
+                quotesMap[inst] = { bid, ask, ltp: ltp > 0 ? ltp : undefined };
                 missing.delete(inst);
               }
             }
@@ -121,14 +109,26 @@ async function fetchQuoteBatch(
   if (missingCrypto.length > 0) {
     await Promise.all(missingCrypto.map(async (sym) => {
       try {
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(200) });
         if (res.ok) {
           const data = await res.json();
           const bid = parseFloat(data.bidPrice);
           const ask = parseFloat(data.askPrice);
-          if (bid > 0 && ask > 0) {
-            quotesMap[sym] = { bid, ask, ltp: (bid + ask) / 2 };
+          const ltp = (bid + ask) / 2;
+          if (bid > 0 || ask > 0 || ltp > 0) {
+            quotesMap[sym] = { bid, ask, ltp: ltp > 0 ? ltp : undefined };
             missing.delete(sym);
+          }
+        } else {
+          // Fallback to /ticker/price if bookTicker fails
+          const resPrice = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { cache: 'no-store', signal: AbortSignal.timeout(200) });
+          if (resPrice.ok) {
+            const pData = await resPrice.json();
+            const ltp = parseFloat(pData.price);
+            if (ltp > 0) {
+              quotesMap[sym] = { bid: 0, ask: 0, ltp };
+              missing.delete(sym);
+            }
           }
         }
       } catch (err) {
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const lookupId = profileResult.data?.parent_id ?? user.id;
 
     const { data: segSettings } = await admin.from(targetTable)
-      .select('segment, side, exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value')
+      .select('segment, side, exit_buffer, profit_hold_sec, loss_hold_sec, entry_buffer, commission_type, commission_value, carry_commission_type, carry_commission_value, bid_buffer')
       .eq('user_id', lookupId);
 
     const segSettingsMap = new Map<string, any>();
@@ -238,42 +238,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
     // 4. Process closings sequentially to avoid database deadlocks.
-    // All positions belong to the same user so they compete for locks on the
-    // same wallet row. Running them in parallel causes deadlock storms.
     const results: any[] = [];
 
     for (const { pos, lookupKey } of posSymbols) {
       try {
-        // Check market hours
-        const symbol = pos.symbol || '';
-        const dbSegment = pos.settlement || '';
-        const exchangeName = symbol.includes(':') ? symbol.split(':')[0] : 'NSE';
-        const ex = exchangeName.toUpperCase();
-        const segUpper = dbSegment.toUpperCase();
-
-        if (!segUpper.includes('CRYPTO')) {
-          const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
+        // Note: Position exits (closing open positions) are allowed off-hours so users/system are never trapped in open positions.
 
 
-          const segmentHour = tradingHoursMap.get(segmentId);
-          if (segmentHour) {
-            if (!segmentHour.is_active) {
-              results.push({ positionId: pos.id, success: false, error: 'market is closed' });
-              continue;
-            }
-
-            const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-
-
-            const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
-            if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
-              results.push({ positionId: pos.id, success: false, error: 'market is closed' });
-              continue;
-            }
-          }
-        }
-
-        // Get settings and LTP
+        // Get settings and price parameters
         const segSetting = segSettingsMap.get(`${pos.settlement ?? ''}|${pos.side}`);
         const rawExitBuffer = segSetting?.exit_buffer;
         const exitBuffer = (rawExitBuffer !== undefined && rawExitBuffer !== null && !isNaN(Number(rawExitBuffer)))
@@ -282,18 +254,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const profitHoldSec = segSetting?.profit_hold_sec ?? 120;
         const lossHoldSec = segSetting?.loss_hold_sec ?? 0;
 
-        // Resolve quote & fallback LTP matching single position close route
+        // Resolve price components from quote batch with fallback to position LTP / entry_price
         const quote = quotesMap[lookupKey];
-        const baseLtp = quote?.ltp ?? (quote?.bid && quote?.ask ? (quote.bid + quote.ask) / 2 : null) ?? Number(pos.ltp ?? pos.entry_price);
+        const rawBid = quote?.bid && quote.bid > 0 ? quote.bid : null;
+        const rawAsk = quote?.ask && quote.ask > 0 ? quote.ask : null;
+        const baseLtp = quote?.ltp ?? (rawBid && rawAsk ? (rawBid + rawAsk) / 2 : null) ?? Number(pos.ltp ?? pos.entry_price ?? 0);
 
-        if (!baseLtp || isNaN(baseLtp) || baseLtp <= 0) {
+        if (!baseLtp || baseLtp <= 0) {
           results.push({ positionId: pos.id, success: false, error: 'Market quote unavailable for this instrument' });
           continue;
         }
 
-        const rawBid = quote?.bid ?? null;
-        const rawAsk = quote?.ask ?? null;
-        const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
+        const isCommodity = (pos.settlement || '').toUpperCase().includes('MCX') ||
+          ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c => (pos.symbol || '').toUpperCase().includes(c));
+
+        const hasRealBidAsk = isCommodity ? false : Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
 
         const effective = resolveEffectivePrices({
           ltp: baseLtp,
@@ -304,23 +279,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           bidBuffer: Number(segSetting?.bid_buffer ?? 0),
         });
 
-        // Exit price computation matching single-close route
         let exitPrice: number;
         if (pos.side === 'BUY') {
-          // Closing a long position → sell at effective bid minus buffer
+          // Closing a long → sell at effective bid with exitBuffer applied
           exitPrice = effective.effectiveBid * (1 - exitBuffer);
         } else {
-          // Closing a short position → buy back at effective ask plus buffer
+          // Closing a short → buy at effective ask with exitBuffer applied
           exitPrice = effective.effectiveAsk * (1 + exitBuffer);
         }
         exitPrice = Math.round(exitPrice * 100) / 100;
 
         const pnlValue = pos.side === 'BUY'
-          ? (effective.effectiveBid - Number(pos.entry_price)) * Number(pos.qty_open)
-          : (Number(pos.entry_price) - effective.effectiveAsk) * Number(pos.qty_open);
+          ? (exitPrice - Number(pos.entry_price)) * Number(pos.qty_open)
+          : (Number(pos.entry_price) - exitPrice) * Number(pos.qty_open);
 
         const durationSec = Math.floor((Date.now() - new Date(pos.entry_time).getTime()) / 1000);
-        const requiredHold = pnlValue > 0 ? profitHoldSec : lossHoldSec;
+        const requiredHold = pnlValue >= 0 ? profitHoldSec : lossHoldSec;
 
         if (durationSec < requiredHold) {
           results.push({
@@ -346,8 +320,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           });
         }
 
-        // Call RPC — sequential execution eliminates deadlocks, but keep one
-        // retry just in case an external process touches the same row.
+        // Call RPC — sequential execution eliminates deadlocks
         let pnl: any;
         let rpcErr: any;
         
@@ -385,11 +358,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Cancel open pending orders for all successfully closed positions/symbols
+    const successfulPosIds = results.filter(r => r.success).map(r => r.positionId);
+    if (successfulPosIds.length > 0) {
+      (async () => {
+        try {
+          const { PositionService } = await import('@/lib/trading/PositionService');
+          const closedPositions = positions.filter(p => successfulPosIds.includes(p.id));
+          for (const pos of closedPositions) {
+            await PositionService.cancelPendingOrdersForClosedPosition(admin, user.id, pos.id, pos.symbol);
+          }
+        } catch (cancelErr) {
+          console.warn('[POST /api/positions/close] Non-fatal error cleaning up pending orders:', cancelErr);
+        }
+      })();
+    }
+
     return NextResponse.json({ success: true, results }, { status: 200 });
   } catch (err: any) {
     console.error('[POST /api/positions/close] Request error:', err);
     return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
   }
 }
+
 
 

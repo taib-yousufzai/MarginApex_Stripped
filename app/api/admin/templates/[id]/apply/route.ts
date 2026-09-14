@@ -89,7 +89,7 @@ export async function POST(
 
     // 3. Build segment_settings upsert rows for all users × all template segments
     if (templateSegments.length > 0) {
-      const segRows = [];
+      const segRows: any[] = [];
       for (const userId of userIds) {
         for (const s of templateSegments) {
           segRows.push({
@@ -137,7 +137,7 @@ export async function POST(
 
     // 4. Build scalper_segment_settings upsert rows
     if (templateScalperSegments.length > 0) {
-      const scalperRows = [];
+      const scalperRows: any[] = [];
       for (const userId of userIds) {
         for (const s of templateScalperSegments) {
           scalperRows.push({

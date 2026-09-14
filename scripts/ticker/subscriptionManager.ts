@@ -47,22 +47,6 @@ export class SubscriptionManager {
         'NSE:NIFTY FIN SERVICE',
         'NSE:NIFTY MID SELECT',
         'BSE:BANKEX',
-        'US:AAPL',
-        'US:TSLA',
-        'US:NVDA',
-        'US:MSFT',
-        'US:AMZN',
-        'US:GOOGL',
-        'US:META',
-        'US:NFLX',
-        'US:AMD',
-        'US:INTC',
-        'US:SPY',
-        'US:QQQ',
-        'US:DIA',
-        'US:ES=F',
-        'US:NQ=F',
-        'US:YM=F',
       ]);
 
       // 1. Fetch symbols from watchlists
@@ -100,7 +84,6 @@ export class SubscriptionManager {
               else if (s.includes('NCO') || s.includes('NSE COMMODITY')) exchange = 'NCO';
               else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
               else if (s.includes('BSE') || s.includes('BFO')) exchange = 'BFO';
-              else if (s.includes('US')) exchange = 'US';
               else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
               if (sym.startsWith('SENSEX') || sym.startsWith('BANKEX')) exchange = 'BFO';
             }
@@ -133,7 +116,6 @@ export class SubscriptionManager {
                 else if (s.includes('NCO') || s.includes('NSE COMMODITY')) exchange = 'NCO';
                 else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
                 else if (s.includes('BSE') || s.includes('BFO')) exchange = 'BFO';
-                else if (s.includes('US')) exchange = 'US';
                 else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
                 if (sym.startsWith('SENSEX') || sym.startsWith('BANKEX')) exchange = 'BFO';
               }

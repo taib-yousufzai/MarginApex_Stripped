@@ -2,7 +2,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import http from 'http';
 
-// Load environment variables from .env.local
+// Load environment variables from .env first, then .env.local (which can override)
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
 // @ts-ignore
@@ -14,7 +15,6 @@ import { SubscriptionManager } from './subscriptionManager.ts';
 import { DbBatchWriter } from './dbWriter.ts';
 import { TickProcessor } from './processor.ts';
 import { BinanceTicker } from './binance.ts';
-import { USStockTicker } from './usStock.ts';
 import { WebSocketGateway } from './gateway.ts';
 import { CandleAggregator } from './candleAggregator.ts';
 
@@ -30,7 +30,6 @@ class TickerDaemon {
   private dbWriter: DbBatchWriter;
   private processor: TickProcessor;
   private binanceTicker: BinanceTicker;
-  private usStockTicker: USStockTicker;
   private sessionMonitor: KiteSessionMonitor;
 
   private gateway!: WebSocketGateway;
@@ -50,7 +49,6 @@ class TickerDaemon {
     this.dbWriter = new DbBatchWriter(50);
     this.processor = new TickProcessor(this.subscriptionManager, this.dbWriter);
     this.binanceTicker = new BinanceTicker(this.dbWriter);
-    this.usStockTicker = new USStockTicker(this.dbWriter);
     this.sessionMonitor = new KiteSessionMonitor();
   }
 
@@ -125,7 +123,6 @@ class TickerDaemon {
             lastLoginAttempt: sessionStatus.lastLoginAttempt?.toISOString() ?? null,
             lastLoginFailure: sessionStatus.lastLoginFailure?.toISOString() ?? null,
             binanceConnected: this.binanceTicker ? this.binanceTicker.connected : false,
-            usStockConnected: this.usStockTicker ? this.usStockTicker.connected : false,
             activeOrders: 0,
             activePositions: 0,
             timestamp: new Date().toISOString(),
@@ -201,9 +198,8 @@ class TickerDaemon {
     // 2. Start database batch writer
     this.dbWriter.start();
 
-    // 3. Start Binance WebSocket Ticker & US Stock Ticker
+    // 3. Start Binance WebSocket Ticker
     this.binanceTicker.start();
-    this.usStockTicker.start();
 
     // 4. Try to initialize Kite Ticker with current session from DB
     const initialSession = await getSharedKiteSession().catch(() => null);
@@ -465,9 +461,8 @@ class TickerDaemon {
           this.ticker.disconnect();
         }
 
-        logger.info('Stopping Binance WebSocket Ticker and US Stock Ticker...');
+        logger.info('Stopping Binance WebSocket Ticker...');
         this.binanceTicker.stop();
-        this.usStockTicker.stop();
 
         this.candleAggregator.stop();
 

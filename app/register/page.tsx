@@ -7,6 +7,7 @@ import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { api, ApiError } from '@/lib/api';
 import RiskRulesPopup from '@/components/RiskRulesPopup';
+import { getSavedTheme, applyTheme } from '@/lib/theme';
 import '../login/page.css';
 
 // ─── OTP Input component — 6 auto-advance boxes ───────────────────────────────
@@ -103,36 +104,64 @@ function RegisterForm() {
 
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
+  const resetTurnstile = () => {
+    setTurnstileToken(null);
+    if (typeof window !== 'undefined' && (window as any).turnstile) {
+      try {
+        const container = document.getElementById('cf-turnstile');
+        if (container && container.children.length > 0) {
+          (window as any).turnstile.reset('#cf-turnstile');
+        }
+      } catch {
+        // Widget may not be active in current DOM state
+      }
+    }
+  };
+
   useEffect(() => {
     const ref = searchParams.get('ref');
     if (ref) setBrokerRef(ref);
-    try {
-      const saved = localStorage.getItem('marginApexTheme');
-      document.body.classList.remove('dark', 'black', 'blue');
-    if (saved === 'dark') document.body.classList.add('dark');
-    else { const t = localStorage.getItem('marginApexTheme'); if (t === 'black') document.body.classList.add('black'); }
-    } catch { /* noop */ }
+    const sync = () => applyTheme(getSavedTheme());
+    sync();
+    window.addEventListener('themeChanged', sync);
 
     // Load Cloudflare Turnstile script if site key exists
     if (siteKey && typeof window !== 'undefined') {
       const existingScript = document.getElementById('cf-turnstile-script');
+      const renderWidget = () => {
+        if ((window as any).turnstile) {
+          try {
+            const container = document.getElementById('cf-turnstile');
+            if (container && container.children.length === 0) {
+              (window as any).turnstile.render('#cf-turnstile', {
+                sitekey: siteKey,
+                callback: (token: string) => setTurnstileToken(token),
+                'expired-callback': () => setTurnstileToken(null),
+                'error-callback': () => setTurnstileToken(null),
+              });
+            }
+          } catch {
+            // Ignore render error if already active
+          }
+        }
+      };
+
       if (!existingScript) {
         const script = document.createElement('script');
         script.id = 'cf-turnstile-script';
         script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
         script.async = true;
         script.defer = true;
-        script.onload = () => {
-          if ((window as any).turnstile) {
-            (window as any).turnstile.render('#cf-turnstile', {
-              sitekey: siteKey,
-              callback: (token: string) => setTurnstileToken(token),
-            });
-          }
-        };
+        script.onload = renderWidget;
         document.head.appendChild(script);
+      } else {
+        renderWidget();
       }
     }
+
+    return () => {
+      window.removeEventListener('themeChanged', sync);
+    };
   }, [searchParams, siteKey]);
 
   // Countdown timer for resend
@@ -174,6 +203,7 @@ function RegisterForm() {
       } else {
         setFormError('Failed to send OTP');
       }
+      resetTurnstile();
     } finally {
       setIsLoading(false);
     }
@@ -410,7 +440,7 @@ function RegisterForm() {
             </div>
 
             <div style={{ textAlign: 'center', marginTop: 8 }}>
-              <button onClick={() => { setStep('form'); setOtp(''); setFormError(''); }}
+              <button onClick={() => { setStep('form'); setOtp(''); setFormError(''); resetTurnstile(); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '0.875rem' }}>
                 ← Change email
               </button>

@@ -5,6 +5,7 @@ import { toUdfResolution, CHART_TYPE_MAP } from '@/lib/datafeed/resolutionUtils'
 import { Candle, Timeframe } from '@/components/chart/types';
 import AnimatedLoader from '@/components/AnimatedLoader';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
+import { getSavedTheme } from '@/lib/theme';
 import { formatShortName } from '@/lib/datafeed/symbolResolver';
 
 // ─── Supporting types ────────────────────────────────────────────────────────
@@ -45,13 +46,17 @@ let globalWidgetDestroyCount = 0;
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getIsDark(): boolean {
-  if (typeof document === 'undefined') return true;
+  if (typeof document === 'undefined') return false;
+  const saved = getSavedTheme();
+  if (saved === 'dark' || saved === 'black' || saved === 'blue') return true;
+  if (saved === 'light') return false;
   return (
     document.body.classList.contains('dark') ||
     document.body.classList.contains('black') ||
+    document.body.classList.contains('blue') ||
     document.documentElement.classList.contains('dark') ||
     document.documentElement.classList.contains('black') ||
-    !document.body.classList.contains('light')
+    document.documentElement.classList.contains('blue')
   );
 }
 
@@ -182,6 +187,7 @@ export default function ChartContainer({
 
       // Clear legacy TradingView localStorage settings that may lock or corrupt price scales / main series visibility
       try {
+        localStorage.removeItem('niveshx_tv_layout');
         localStorage.removeItem('marginapexx_tv_layout');
         Object.keys(localStorage).forEach(key => {
           if (key.startsWith('tradingview.')) {
@@ -297,11 +303,15 @@ export default function ChartContainer({
         try {
           tvWidgetRef.current.save((state: any) => {
             if (state) {
-              localStorage.setItem('marginapexx_tv_layout', JSON.stringify(state));
+              try {
+                localStorage.setItem('marginapexx_tv_layout', JSON.stringify(state));
+              } catch (storageErr) {
+                // Quietly handle QuotaExceededError when browser localStorage capacity is reached
+              }
             }
           });
         } catch (e) {
-          console.error('Failed to save chart layout:', e);
+          // Ignore save state errors
         }
       };
 
@@ -374,7 +384,7 @@ export default function ChartContainer({
 
   // ── Task 8.5: Live quote forwarding ──────────────────────────────────────
   const { quotes: marketQuotes } = useMarketQuotes([symbol]);
-  const activeQuote = marketQuotes[symbol] || liveQuote;
+  const activeQuote: any = marketQuotes[symbol] || liveQuote;
 
   useEffect(() => {
     let lastPrice = activeQuote?.lastPrice ?? activeQuote?.last_price;
@@ -395,15 +405,40 @@ export default function ChartContainer({
   // ── Task 8.5: Theme sync via MutationObserver ─────────────────────────────
 
   useEffect(() => {
-    const observer = new MutationObserver(() => {
+    const syncTheme = () => {
       const dark = getIsDark();
       setIsDark(dark);
       const theme = dark ? 'dark' : 'light';
-      if (!isReadyRef.current) { pendingRef.current.theme = theme; return; }
-      tvWidgetRef.current?.changeTheme(theme);
-    });
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+      if (!isReadyRef.current) { pendingRef.current.theme = theme; }
+      else {
+        tvWidgetRef.current?.changeTheme(theme);
+      }
+      try {
+        const iframe = containerRef.current?.querySelector('iframe');
+        if (iframe) {
+          const appTheme = getSavedTheme();
+          iframe.setAttribute('data-theme', appTheme);
+          if (iframe.contentDocument && iframe.contentDocument.documentElement) {
+            iframe.contentDocument.documentElement.setAttribute('data-theme', appTheme);
+          }
+        }
+      } catch (e) {}
+    };
+
+    syncTheme();
+
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+
+    window.addEventListener('themeChanged', syncTheme);
+    window.addEventListener('storage', syncTheme);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('themeChanged', syncTheme);
+      window.removeEventListener('storage', syncTheme);
+    };
   }, []);
 
   // ── Task 8.6: Render ──────────────────────────────────────────────────────

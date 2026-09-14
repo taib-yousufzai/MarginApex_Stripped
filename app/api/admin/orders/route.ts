@@ -6,13 +6,14 @@
 
 import { requireAdmin } from '../_auth';
 import { getRole } from '../../../../lib/auth';
-import { getAccessibleUserIds } from '../../../../lib/hierarchy';
+import { getDescendantUserIds } from '../../../../lib/hierarchy';
+import { sanitizeOrderInfo } from '@/lib/trading/orderSanitizer';
 
 export async function GET(request: Request): Promise<Response> {
   try {
     const authResult = await requireAdmin(request);
     if (authResult instanceof Response) return authResult;
-    const { adminClient } = authResult;
+    const { adminClient, callerUser } = authResult;
 
     const url = new URL(request.url);
     const tab        = url.searchParams.get('tab') ?? null;
@@ -26,18 +27,24 @@ export async function GET(request: Request): Promise<Response> {
     const rows       = rowsParam ? Math.min(parseInt(rowsParam, 10), 500) : 50;
     const page       = Math.max(1, parseInt(pageParam, 10));
 
-    // Fetch accessible profiles for user name/client_id lookup & scoping
-    const callerRole = getRole(authResult.callerUser);
-    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+    const callerRole = getRole(callerUser);
+    const callerId = callerUser.id;
 
-    let profilesQuery = adminClient.from('profiles').select('id, email, full_name, client_id').eq('demo_user', isDemo);
-    if (accessibleIds !== null) {
-      if (accessibleIds.length === 0) {
-        return Response.json({ orders: [], total: 0 }, { status: 200 });
+    // Fetch allowed profiles based on caller's role hierarchy
+    let pQuery = adminClient.from('profiles').select('id, email, full_name, client_id').eq('demo_user', isDemo);
+    if (callerRole === 'broker') {
+      pQuery = pQuery.eq('parent_id', callerId);
+    } else if (callerRole === 'admin') {
+      const descendantIds = await getDescendantUserIds(adminClient, callerId, callerRole);
+      if (descendantIds !== null) {
+        if (descendantIds.length === 0) {
+          return Response.json({ orders: [], total: 0 }, { status: 200 });
+        }
+        pQuery = pQuery.in('id', descendantIds);
       }
-      profilesQuery = profilesQuery.in('id', accessibleIds);
     }
-    const { data: profiles } = await profilesQuery;
+    const { data: profiles } = await pQuery;
+
     const profileMap: Record<string, { full_name: string; email: string; client_id: string }> = {};
     (profiles ?? []).forEach((p: any) => { profileMap[p.id] = p; });
 
@@ -112,6 +119,7 @@ export async function GET(request: Request): Promise<Response> {
     // Merge profile info into each order
     const merged = (data ?? []).map((r: any) => ({
       ...r,
+      info: sanitizeOrderInfo(r.info) ?? '',
       user_name: profileMap[r.user_id]?.full_name || profileMap[r.user_id]?.email || r.user_id,
       user_client_id: profileMap[r.user_id]?.client_id || '',
     }));

@@ -18,7 +18,7 @@
 import { requireAuth } from '../../../../lib/api-middleware';
 import { getRole } from '../../../../lib/auth'; // trigger recompile
 import { auditLog } from '../../../../lib/audit';
-import { getAccessibleUserIds } from '../../../../lib/hierarchy';
+import { getDescendantUserIds } from '../../../../lib/hierarchy';
 
 export async function GET(request: Request): Promise<Response> {
   try {
@@ -31,20 +31,26 @@ export async function GET(request: Request): Promise<Response> {
     const isDemo = demoParam === 'true';
     const fetchAll = demoParam === 'all' || demoParam === null;
 
-    // 1. Fetch profiles scoped to caller hierarchy
+    // 1. Fetch profiles (filtered by hierarchy for admin and broker)
     const callerRole = getRole(authResult.callerUser);
-    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+    const callerId = authResult.callerUser.id;
 
     let pQuery = adminClient
       .from('profiles')
       .select('id, client_id, email, full_name, phone, role, parent_id, segments, active, read_only, demo_user, intraday_sq_off, auto_sqoff, showcase_auto_sqoff, sqoff_method, balance, settlement_amount, created_at, scheduled_delete_at, trading_mode, mode_locked_until, template_id, history_reset_at');
     
-    if (accessibleIds !== null) {
-      if (accessibleIds.length === 0) {
-        return Response.json([], { status: 200 });
+    if (callerRole === 'broker') {
+      pQuery = pQuery.eq('parent_id', callerId);
+    } else if (callerRole === 'admin') {
+      const descendantIds = await getDescendantUserIds(adminClient, callerId, callerRole);
+      if (descendantIds !== null) {
+        if (descendantIds.length === 0) {
+          return Response.json([], { status: 200 });
+        }
+        pQuery = pQuery.in('id', descendantIds);
       }
-      pQuery = pQuery.in('id', accessibleIds);
     }
+
     if (!fetchAll) {
       pQuery = pQuery.eq('demo_user', isDemo);
     }
@@ -201,9 +207,10 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
-    if (['admin', 'broker'].includes(callerRole) && !profileFields.parent_id) {
+    if (!profileFields.parent_id && (callerRole === 'admin' || callerRole === 'broker')) {
       profileFields.parent_id = callerUser.id;
     }
+
 
     // Generate a unique 6-character uppercase alphanumeric client_id
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -268,8 +275,8 @@ export async function POST(request: Request): Promise<Response> {
     // Step 6.5: Initialize default segment_settings and scalper_segment_settings for active segments if specified
     const activeSegments = body.segments;
     if (Array.isArray(activeSegments) && activeSegments.length > 0) {
-      const defaultSettingsRows = [];
-      const defaultScalperSettingsRows = [];
+      const defaultSettingsRows: any[] = [];
+      const defaultScalperSettingsRows: any[] = [];
       for (const seg of activeSegments) {
         for (const side of ['BUY', 'SELL'] as const) {
           defaultSettingsRows.push({
@@ -318,8 +325,8 @@ export async function POST(request: Request): Promise<Response> {
 
       if (defaultSettingsRows.length > 0) {
         const [segInitRes, scalperInitRes] = await Promise.all([
-          adminClient.from('segment_settings').insert(defaultSettingsRows),
-          adminClient.from('scalper_segment_settings').insert(defaultScalperSettingsRows)
+          adminClient.from('segment_settings').upsert(defaultSettingsRows, { onConflict: 'user_id,segment,side' }),
+          adminClient.from('scalper_segment_settings').upsert(defaultScalperSettingsRows, { onConflict: 'user_id,segment,side' })
         ]);
 
         if (segInitRes.error || scalperInitRes.error) {
@@ -375,7 +382,7 @@ export async function POST(request: Request): Promise<Response> {
               const { id: _id, template_id: _tid, ...rest } = s;
               return { ...rest, user_id: newUser.id };
             });
-            await adminClient.from('segment_settings').insert(rows);
+            await adminClient.from('segment_settings').upsert(rows, { onConflict: 'user_id,segment,side' });
           }
 
           if (scalperRows.data && scalperRows.data.length > 0) {
@@ -383,7 +390,7 @@ export async function POST(request: Request): Promise<Response> {
               const { id: _id, template_id: _tid, ...rest } = s;
               return { ...rest, user_id: newUser.id };
             });
-            await adminClient.from('scalper_segment_settings').insert(rows);
+            await adminClient.from('scalper_segment_settings').upsert(rows, { onConflict: 'user_id,segment,side' });
           }
         }
       } catch (templateErr) {

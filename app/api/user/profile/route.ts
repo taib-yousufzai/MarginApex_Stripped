@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const [profileRes, bankRes] = await Promise.all([
         admin
             .from('profiles')
-            .select('client_id, full_name, email, phone, role, segments, created_at, date_of_birth, city, state, pan_number, bank_name, account_no, ifsc, webhook_token, trading_mode, template_id')
+            .select('client_id, full_name, email, phone, role, segments, created_at, date_of_birth, city, state, pan_number, bank_name, account_no, ifsc, webhook_token, trading_mode, template_id, referral_code')
             .eq('id', user.id)
             .single(),
         admin
@@ -34,6 +34,9 @@ export async function GET(request: NextRequest) {
     }
 
     const profile = profileRes.data;
+    if (Array.isArray(profile.segments)) {
+      profile.segments = profile.segments.map((s: string) => (s === 'NSE-EQ' || s === 'NSE - EQUITY' || s === 'Equity') ? 'STOCKS' : s);
+    }
     
     // Override with primary bank account if it exists
     if (bankRes.data) {

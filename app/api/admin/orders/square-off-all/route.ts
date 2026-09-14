@@ -12,8 +12,6 @@
  * No brokerage is charged on emergency admin square-offs.
  */
 import { requireAdmin } from '../../_auth';
-import { getRole } from '@/lib/auth';
-import { getAccessibleUserIds } from '@/lib/hierarchy';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 
 export async function POST(request: Request): Promise<Response> {
@@ -22,24 +20,12 @@ export async function POST(request: Request): Promise<Response> {
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 
-    const callerRole = getRole(callerUser);
-    const accessibleIds = await getAccessibleUserIds(adminClient, callerUser.id, callerRole);
-
-    let query = adminClient
+    // Fetch all open positions
+    const { data: openPositions, error: fetchErr } = await adminClient
       .from('positions')
       .select('id, user_id, symbol, side, settlement, qty_open, entry_price, ltp, product_type, carry_brokerage_paid')
       .eq('status', 'open')
       .gt('qty_open', 0);
-
-    if (accessibleIds !== null) {
-      if (accessibleIds.length === 0) {
-        return Response.json({ squaredOff: 0, errors: 0 }, { status: 200 });
-      }
-      query = query.in('user_id', accessibleIds);
-    }
-
-    // Fetch open positions
-    const { data: openPositions, error: fetchErr } = await query;
 
     if (fetchErr) {
       console.error('[square-off-all] fetch error:', fetchErr.message);

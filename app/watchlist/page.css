@@ -11,7 +11,6 @@
     max-width: 100%;
     margin: 0 auto;
     background: var(--bg-body, #f3f6fb);
-    box-shadow: 0 0 1.25rem rgba(0, 0, 0, 0.05);
     position: relative;
     overflow: hidden;
 }
@@ -33,6 +32,9 @@
     display: flex;
     flex-direction: column;
     gap: 0;
+    position: sticky;
+    top: 0;
+    z-index: 20;
 }
 
 .mobile-app .header-top {
@@ -292,7 +294,7 @@
     background: var(--bg-body, #f3f6fb);
     display: flex;
     flex-direction: column;
-    padding-bottom: calc(var(--footer-nav-height, 4.0625rem) + env(safe-area-inset-bottom, 0px) + 0.9375rem) !important;
+    padding-bottom: calc(var(--footer-nav-height, 4.0625rem) + env(safe-area-inset-bottom, 0px) + 2.5rem) !important;
 }
 
 .search-results-section {
@@ -1055,7 +1057,6 @@ html.black .select-all-btn, body.black .select-all-btn {
     border-radius: 1.25rem 1.25rem 0 0;
     z-index: 9999;
     transform: translateY(100%);
-    transition: transform 0.38s cubic-bezier(0.25, 0.9, 0.35, 1.05);
     box-shadow: 0 -0.5rem 2.5rem rgba(0, 0, 0, 0.18);
     display: flex;
     flex-direction: column;
@@ -2922,7 +2923,6 @@ body.dark .instrument-delete-btn:hover {
         visibility: visible !important;
         z-index: 99999 !important;
         box-shadow: 0 -0.625rem 1.875rem rgba(0, 0, 0, 0.2) !important;
-        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
         background: var(--container-bg, #FFFFFF) !important;
         display: flex !important;
         flex-direction: column !important;

@@ -48,6 +48,11 @@ vi.mock('@supabase/supabase-js', () => ({
   })),
 }));
 
+vi.mock('@/lib/hierarchy', () => ({
+  isUserInHierarchy: vi.fn().mockResolvedValue(true),
+  getDescendantUserIds: vi.fn().mockResolvedValue(null),
+}));
+
 // ---------------------------------------------------------------------------
 // Import handlers AFTER mocks are set up
 // ---------------------------------------------------------------------------
@@ -625,14 +630,22 @@ describe('Admin API - Property 8: DELETE never calls auth.admin.deleteUser', () 
         nonEmptyStringArb,
         async (userId) => {
           vi.clearAllMocks();
-          mockGetUser.mockResolvedValue({ data: { user: makeUser('admin') }, error: null });
+          try {
+            const { getRedisClient } = await import('@/lib/redis');
+            const redis = getRedisClient();
+            if (redis && typeof (redis as any).flushall === 'function') {
+              await (redis as any).flushall();
+            }
+          } catch {}
+
+          mockGetUser.mockResolvedValue({ data: { user: makeUser('super_admin') }, error: null });
           mockDeleteUser.mockResolvedValue({ data: {}, error: null });
           setupUpdateChain({
             data: { scheduled_delete_at: '2099-01-01T00:00:00.000Z' },
             error: null,
           });
 
-          const req = makeDeleteRequest(userId, 'Bearer admin-token');
+          const req = makeDeleteRequest(userId, 'Bearer super-admin-pbt-token');
           const res = await DELETE(req, { params: { id: userId } });
           const body = await res.json();
 

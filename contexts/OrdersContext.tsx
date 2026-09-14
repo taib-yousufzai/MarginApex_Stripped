@@ -4,6 +4,9 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { supabase } from '@/lib/supabaseClient';
 import type { MyOrder } from '@/lib/types/order';
 import { api, ApiError } from '@/lib/api';
+import { getSharedSessionSync } from '@/lib/sharedSession';
+
+import { soundEngine } from '@/lib/audio';
 
 export interface OrdersContextType {
   orders: MyOrder[];
@@ -11,6 +14,10 @@ export interface OrdersContextType {
   error: string | null;
   refresh: () => Promise<void>;
   cancelOrder: (id: string) => Promise<{ success: boolean; error?: string }>;
+  updateOrderLocally: (updatedOrder: MyOrder) => void;
+  addOptimisticOrder: (order: MyOrder) => void;
+  removeOptimisticOrder: (tempId: string) => void;
+  swapOptimisticOrder: (tempId: string, realOrder: MyOrder) => void;
 }
 
 const OrdersDataContext = createContext<OrdersContextType | null>(null);
@@ -26,15 +33,30 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
   const fetchOrders = useCallback(async () => {
     try {
       const data = await api.get<{ orders: MyOrder[] }>('/api/orders?limit=100');
-      globalOrdersCache = data.orders ?? [];
-      setOrders(globalOrdersCache);
+      const fetchedOrders = data.orders ?? [];
+
+      setOrders(prev => {
+        const fetchedIds = new Set(fetchedOrders.map(o => o.id));
+        const now = Date.now();
+
+        // Preserve SUBMITTING orders and recent local orders (< 8s old) not yet in DB read response
+        const pendingLocalOrders = prev.filter(o => {
+          if (fetchedIds.has(o.id)) return false;
+          if (o.status === 'SUBMITTING') return true;
+          const createdTime = new Date(o.created_at || now).getTime();
+          const age = now - (isNaN(createdTime) ? now : createdTime);
+          return age < 8000;
+        });
+
+        const merged = [...pendingLocalOrders, ...fetchedOrders];
+        globalOrdersCache = merged;
+        return merged;
+      });
       setError(null);
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(`API error ${err.status}`);
-      } else {
-        setError('Network error loading orders');
-      }
+      console.warn('[OrdersContext] Transient error fetching orders:', err);
+      // Retain existing orders cache and suppress UI error banner
+      setError(null);
     } finally {
       setLoading(false);
     }
@@ -52,6 +74,15 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
         () => {
           fetchOrders();
         }
+      )
+      // Also listen to positions table — virtual SL/Target pending orders are
+      // generated from open positions, so a new/updated position must trigger a refresh.
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'positions' },
+        () => {
+          fetchOrders();
+        }
       );
       
     channel.subscribe((status) => {
@@ -60,14 +91,20 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
 
     // Refresh whenever any component places an order or closes a position
     const handleOrderPlaced = () => fetchOrders();
+    const handleOrderExecuted = () => {
+      soundEngine.playOrderExecuted();
+      fetchOrders();
+    };
     window.addEventListener('order_placed', handleOrderPlaced);
     window.addEventListener('position-closed', handleOrderPlaced);
+    window.addEventListener('position_closed', handleOrderPlaced);
+    window.addEventListener('order_executed', handleOrderExecuted);
 
     async function init() {
       // Wait for a valid session before fetching — prevents a 401 flash on
       // first load when Supabase hasn't yet restored the session from storage.
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { token } = getSharedSessionSync();
+      if (!token) {
         setLoading(false);
         return;
       }
@@ -75,7 +112,7 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
       await fetchOrders();
       if (cancelled) return;
       intervalRef.current = setInterval(() => {
-        if (!isSubscribed && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
           fetchOrders();
         }
       }, Math.max(refreshInterval, 8000));
@@ -97,9 +134,46 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
       supabase.removeChannel(channel);
       window.removeEventListener('order_placed', handleOrderPlaced);
       window.removeEventListener('position-closed', handleOrderPlaced);
+      window.removeEventListener('position_closed', handleOrderPlaced);
+      window.removeEventListener('order_executed', handleOrderPlaced);
     };
   }, [fetchOrders, refreshInterval]);
 
+
+  const updateOrderLocally = useCallback((updatedOrder: MyOrder) => {
+    setOrders(prev => {
+      const exists = prev.some(o => o.id === updatedOrder.id);
+      const newOrders = exists
+        ? prev.map(o => (o.id === updatedOrder.id ? { ...o, ...updatedOrder } : o))
+        : [updatedOrder, ...prev];
+      globalOrdersCache = newOrders;
+      return newOrders;
+    });
+  }, []);
+
+  const addOptimisticOrder = useCallback((optimisticOrder: MyOrder) => {
+    setOrders(prev => {
+      const newOrders = [optimisticOrder, ...prev];
+      globalOrdersCache = newOrders;
+      return newOrders;
+    });
+  }, []);
+
+  const removeOptimisticOrder = useCallback((tempId: string) => {
+    setOrders(prev => {
+      const newOrders = prev.filter(o => o.id !== tempId);
+      globalOrdersCache = newOrders;
+      return newOrders;
+    });
+  }, []);
+
+  const swapOptimisticOrder = useCallback((tempId: string, realOrder: MyOrder) => {
+    setOrders(prev => {
+      const newOrders = prev.map(o => (o.id === tempId ? realOrder : o));
+      globalOrdersCache = newOrders;
+      return newOrders;
+    });
+  }, []);
 
   const cancelOrder = useCallback(async (id: string) => {
     try {
@@ -113,7 +187,17 @@ export const OrdersDataProvider = ({ children, refreshInterval = 5000 }: { child
   }, [fetchOrders]);
 
   return (
-    <OrdersDataContext.Provider value={{ orders, loading, error, refresh: fetchOrders, cancelOrder }}>
+    <OrdersDataContext.Provider value={{
+      orders,
+      loading,
+      error,
+      refresh: fetchOrders,
+      cancelOrder,
+      updateOrderLocally,
+      addOptimisticOrder,
+      removeOptimisticOrder,
+      swapOptimisticOrder,
+    }}>
       {children}
     </OrdersDataContext.Provider>
   );

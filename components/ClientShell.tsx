@@ -15,7 +15,8 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     '/register',
     '/forgot-password',
     '/reset-password',
-    '/accept-invite'
+    '/accept-invite',
+    '/ourcalculation'
   ];
   
   const isNoShellRoute = noShellRoutes.includes(pathname) || pathname.startsWith('/admin');
@@ -41,7 +42,12 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   // ── Global toast for async order errors ──────────────────────────────
   const [toastMsg, setToastMsg] = React.useState('');
   const [toastVisible, setToastVisible] = React.useState(false);
-  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    if (!toastVisible) return;
+    const timer = setTimeout(() => setToastVisible(false), 1000);
+    return () => clearTimeout(timer);
+  }, [toastVisible, toastMsg]);
 
   React.useEffect(() => {
     const onStart = (e: any) => {
@@ -50,8 +56,8 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     };
     const onEnd = () => setIsGlobalLoading(false);
 
-    const onExitStart = () => {
-      setLoadingText('Exiting Position...');
+    const onExitStart = (e: any) => {
+      setLoadingText(e?.detail || 'Exiting Position...');
       setIsGlobalLoading(true);
     };
     const onExitEnd = () => setIsGlobalLoading(false);
@@ -61,8 +67,6 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       if (!msg) return;
       setToastMsg(String(msg));
       setToastVisible(true);
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setToastVisible(false), 4000);
     };
 
     const onOrderError = (e: Event) => {
@@ -83,7 +87,6 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       window.removeEventListener('exit-overlay-end', onExitEnd);
       window.removeEventListener('toast_msg', onToast);
       window.removeEventListener('order_error', onOrderError);
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
@@ -107,13 +110,15 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       {/* Global toast for async order failure messages */}
       <div
         className={`global-toast${toastVisible ? ' show' : ''}`}
+        onClick={() => setToastVisible(false)}
         style={{
           position: 'fixed',
           bottom: 90,
           left: '50%',
           transform: `translateX(-50%) translateY(${toastVisible ? 0 : 20}px)`,
-          background: '#B91C1C',
-          color: '#fff',
+          background: '#2C313F',
+          border: '1px solid rgba(255, 255, 255, 0.18)',
+          color: '#F8FAFC',
           padding: '10px 22px',
           borderRadius: 30,
           fontSize: '0.84rem',
@@ -121,12 +126,13 @@ export default function ClientShell({ children }: { children: React.ReactNode })
           zIndex: 200000,
           opacity: toastVisible ? 1 : 0,
           transition: 'opacity 0.3s, transform 0.3s',
-          pointerEvents: 'none',
+          cursor: 'pointer',
           whiteSpace: 'nowrap',
           maxWidth: '90vw',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          boxShadow: '0 4px 16px rgba(185,28,28,0.4)',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
+          backdropFilter: 'blur(10px)',
         }}
       >
         {toastMsg}

@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import { useKitePositions } from '@/hooks/useKitePositions';
-import { isUserVisibleInfo, sanitizeOrderInfo } from '@/lib/trading/orderSanitizer';
-import { fmtSymbolName, fmtPrice, fmtQty, fmtTime, fmtDate } from '@/lib/format';
 import { useMobileBack } from '@/hooks/useMobileBack';
 import { api } from '@/lib/api';
 
@@ -14,6 +12,8 @@ import type { TradeSheetItem } from '@/components/TradeSheet';
 const TradeSheet = dynamic(() => import('@/components/TradeSheet'), { ssr: false });
 import './page.css';
 import dynamic from 'next/dynamic';
+import { isUserVisibleInfo, sanitizeOrderInfo } from '@/lib/trading/orderSanitizer';
+import { fmtSymbolName, fmtPrice, fmtQty, fmtTime, fmtDate } from '@/lib/format';
 
 const TradingChart = dynamic(() => import('@/components/TradingChart'), { ssr: false });
 
@@ -76,36 +76,45 @@ export default function OrderPage() {
 
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 1800);
   };
 
-  const handleCancel = async (id: string) => {
-    const res = await cancelOrder(id);
-    if (res.success) {
-      showToast('Order cancelled successfully');
-    } else {
-      showToast(`Error: ${res.error}`);
-    }
+  const handleCancel = (id: string) => {
+    showToast('Order cancelled successfully');
+    cancelOrder(id).then(res => {
+      if (res.success) {
+        refresh();
+      } else {
+        showToast(`Error: ${res.error}`);
+        refresh();
+      }
+    }).catch((err: any) => {
+      showToast(`Error: ${err?.message || 'Cancel failed'}`);
+      refresh();
+    });
   };
 
   const handleModify = (order: any) => {
     setModifyingOrderId(order.id);
     setTradeSheetSide(order.side);
     setTradeSheetItem({
+      id: order.id,
       name: order.symbol,
       symbol: order.symbol,
-      kiteSymbol: order.kite_instrument,
+      kiteSymbol: order.kite_instrument || order.symbol,
       segment: order.segment,
-      price: order.fill_price || 0,
-    });
+      price: order.client_price || order.price || order.trigger_price || order.fill_price || 0,
+    } as any);
     setTradeSheetInitialOrder({
       qty: order.qty,
       order_type: order.order_type,
       product_type: order.product_type,
-      client_price: order.client_price || order.fill_price,
+      client_price: order.client_price || order.price || order.fill_price,
       trigger_price: order.trigger_price,
       stop_loss: order.stop_loss,
       target: order.target,
+      is_exit: order.is_exit,
+      linked_position_id: order.linked_position_id,
     });
   };
 
@@ -117,8 +126,14 @@ export default function OrderPage() {
     }, 80);
   };
 
-  const openOrders = orders.filter(o => o.status === 'PENDING');
-  const closedOrders = orders.filter(o => o.status !== 'PENDING');
+  const isPendingOrder = (status?: string) => {
+    if (!status) return false;
+    const s = status.toUpperCase();
+    return s === 'PENDING' || s === 'TRIGGER_PENDING' || s === 'OPEN' || s === 'VALIDATION_PENDING';
+  };
+
+  const openOrders = orders.filter(o => isPendingOrder(o.status));
+  const closedOrders = orders.filter(o => !isPendingOrder(o.status));
 
   const activeList = tab === 'open' ? openOrders : closedOrders;
   const filtered = activeList.filter(o =>
@@ -144,7 +159,7 @@ export default function OrderPage() {
 
   return (
     <div className="desktop-layout">
-      
+
       <main className="main-viewport">
         <div className="app-container">
           <div className="ord-root">
@@ -258,10 +273,11 @@ export default function OrderPage() {
                 {/* List of My Orders */}
                 {!ordersLoading && filtered.map(order => {
                   const isBuy = order.side === 'BUY';
-                  const isExecuted = order.status === 'EXECUTED';
-                  const isRejected = order.status === 'REJECTED';
-                  const isCancelled = order.status === 'CANCELLED';
-                  const isPending = order.status === 'PENDING';
+                  const statusUpper = (order.status || '').toUpperCase();
+                  const isExecuted = statusUpper === 'EXECUTED';
+                  const isRejected = statusUpper === 'REJECTED';
+                  const isCancelled = statusUpper === 'CANCELLED';
+                  const isPending = isPendingOrder(order.status);
 
                   return (
                     <div
@@ -283,9 +299,9 @@ export default function OrderPage() {
                         </span>
                       </div>
                       <div className="ord-row ord-row-price">
-                        <span className="ord-label">FILL PRICE</span>
+                        <span className="ord-label">{isPending ? (order.order_type === 'LIMIT' ? 'LIMIT PRICE' : 'PRICE') : 'FILL PRICE'}</span>
                         <span className={`ord-price-val ${isBuy ? 'buy-price' : 'sell-price'}`}>
-                          {fmtPrice(order.fill_price)}
+                          {fmtPrice(isPending ? (order.client_price || order.price || order.trigger_price || order.fill_price) : order.fill_price)}
                         </span>
                       </div>
                       <div className="ord-row ord-row-info">
@@ -303,21 +319,21 @@ export default function OrderPage() {
                         <span className="ord-date-val">{fmtDate(order.created_at)}</span>
                       </div>
                       {/* SL, Target, Trigger info */}
-                      {(order.trigger_price || order.stop_loss || order.target) && (
+                      {(order.order_type === 'GTT' || order.order_type === 'SL' || order.order_type === 'SLM' || order.is_exit) && (order.trigger_price || order.stop_loss || order.target) && (
                         <div className="ord-row" style={{ marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {order.trigger_price !== undefined && order.trigger_price !== null && (
+                          {order.trigger_price !== undefined && order.trigger_price !== null && (order.order_type === 'GTT' || order.order_type === 'SL' || order.order_type === 'SLM') && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                               <span className="ord-label" style={{ fontSize: '0.6rem' }}>TRIG:</span>
                               <span className="ord-val" style={{ fontSize: '0.65rem', fontWeight: 700 }}>{fmtPrice(order.trigger_price)}</span>
                             </div>
                           )}
-                          {order.stop_loss !== undefined && order.stop_loss !== null && (
+                          {order.stop_loss !== undefined && order.stop_loss !== null && (order.order_type === 'GTT' || order.is_exit) && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                               <span className="ord-label" style={{ fontSize: '0.6rem', color: '#dc2626' }}>SL:</span>
                               <span className="ord-val" style={{ fontSize: '0.65rem', fontWeight: 700, color: '#dc2626' }}>{fmtPrice(order.stop_loss)}</span>
                             </div>
                           )}
-                          {order.target !== undefined && order.target !== null && (
+                          {order.target !== undefined && order.target !== null && (order.order_type === 'GTT' || order.is_exit) && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                               <span className="ord-label" style={{ fontSize: '0.6rem', color: '#059669' }}>TGT:</span>
                               <span className="ord-val" style={{ fontSize: '0.65rem', fontWeight: 700, color: '#059669' }}>{fmtPrice(order.target)}</span>
@@ -330,7 +346,7 @@ export default function OrderPage() {
                       <div className="ord-row" style={{ marginTop: 4 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span className="ord-type-pill" style={{ fontSize: '0.6rem' }}>{order.product_type}</span>
-                          {order.info && order.info !== 'Exit - USER' && !order.info.includes('-') && (
+                          {isUserVisibleInfo(order.info) && (
                             <span style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>
                               {order.info}
                             </span>
@@ -345,7 +361,7 @@ export default function OrderPage() {
                       </div>
                       <div className="ord-row ord-row-status">
                         <div className={`ord-status-text ${isPending ? 'status-open' : isExecuted ? 'status-filled' : isCancelled ? 'status-cancelled' : 'status-rejected'}`}>
-                          {isPending && <><i className="fas fa-circle" /> PENDING</>}
+                          {isPending && <><i className="fas fa-circle" /> {statusUpper === 'TRIGGER_PENDING' ? 'TRIGGER PENDING' : 'PENDING'}</>}
                           {isExecuted && <><i className="fas fa-check-circle" /> EXECUTED</>}
                           {isCancelled && <><i className="fas fa-ban" /> CANCELLED</>}
                           {isRejected && <><i className="fas fa-times-circle" /> REJECTED</>}
@@ -372,7 +388,7 @@ export default function OrderPage() {
                 })}
               </div>
 
-                          </div>
+            </div>
 
             {/* Sheet for Closed Orders */}
             <div className={`ord-sheet-overlay${isSheetOpen ? ' open' : ''}`} onClick={() => setIsSheetOpen(false)} />
@@ -518,7 +534,7 @@ export default function OrderPage() {
                       </div>
                     </div>
                   </div>
-                  {selectedOrder.info && selectedOrder.info !== 'Exit - USER' && (
+                  {isUserVisibleInfo(selectedOrder.info) && (
                     <div className="ord-rejection" style={{ marginTop: 0, marginBottom: '8px' }}>
                       <i className="fas fa-info-circle" /> {selectedOrder.info}
                     </div>
@@ -543,7 +559,7 @@ export default function OrderPage() {
               )}
             </div>
 
-            <div className={`ord-toast${toast ? ' show' : ''}`}>
+            <div className={`ord-toast${toast ? ' show' : ''}`} onClick={() => setToast(null)} style={{ cursor: 'pointer' }}>
               <i className="fas fa-circle-info" />
               <span>{toast}</span>
             </div>
@@ -559,28 +575,11 @@ export default function OrderPage() {
               initialOrder={tradeSheetInitialOrder}
               isModify={!!modifyingOrderId}
               modifyingOrderId={modifyingOrderId}
-              exitMode={modifyingOrderId ? (modifyingOrderId.startsWith('pos-sl-') || modifyingOrderId.startsWith('pos-target-')) : false}
+              exitMode={false}
+              linkedPosId={tradeSheetInitialOrder?.linked_position_id}
               onSuccess={() => {
                 refresh();
                 if (modifyingOrderId) {
-                  // Only cancel the old order if it is not a virtual position order
-                  if (!modifyingOrderId.startsWith('pos-sl-') && !modifyingOrderId.startsWith('pos-target-') && !modifyingOrderId.startsWith('pos-gtt-')) {
-                    cancelOrder(modifyingOrderId);
-                  } else {
-                    const positionId = modifyingOrderId.replace('pos-sl-', '').replace('pos-target-', '').replace('pos-gtt-', '');
-                    const isSl = modifyingOrderId.startsWith('pos-sl-');
-                    const isTarget = modifyingOrderId.startsWith('pos-target-');
-                    const isGtt = modifyingOrderId.startsWith('pos-gtt-');
-
-                    let clearData: any = {};
-                    if (isSl) clearData = { stop_loss: null };
-                    else if (isTarget) clearData = { target: null };
-                    else if (isGtt) clearData = { stop_loss: null, target: null };
-
-                    api.patch(`/api/positions/${positionId}`, clearData).then(() => {
-                      refresh();
-                    });
-                  }
                   showToast('Order modified successfully');
                   setModifyingOrderId(null);
                 }
@@ -597,6 +596,13 @@ export default function OrderPage() {
             <TradingChart
               symbol={chartItem.kiteSymbol || chartItem.symbol}
               segment={chartItem.segment}
+              onClose={() => {
+                const sheet = document.getElementById('chartSheet');
+                const overlay = document.getElementById('chartSheetOverlay');
+                if (sheet) sheet.classList.remove('open');
+                if (overlay) overlay.classList.remove('active');
+                setChartItem(null);
+              }}
             />
           )}
         </div>

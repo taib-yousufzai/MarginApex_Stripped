@@ -1,5 +1,4 @@
 import { requireAdmin } from '../../../_auth';
-import { isUserInHierarchy } from '@/lib/hierarchy';
 
 export async function POST(
   request: Request,
@@ -22,11 +21,6 @@ export async function POST(
 
     if (fetchError || !position) {
       return Response.json({ error: 'Position not found or is not closed' }, { status: 404 });
-    }
-
-    const isAllowed = await isUserInHierarchy(adminClient, callerUser.id, position.user_id);
-    if (!isAllowed) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { error: txError } = await adminClient

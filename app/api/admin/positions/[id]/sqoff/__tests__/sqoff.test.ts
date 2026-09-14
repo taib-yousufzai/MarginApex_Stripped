@@ -29,7 +29,7 @@ describe('Admin Square-Off POST /api/admin/positions/[id]/sqoff', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     const { requireAdmin } = await import('../../../../_auth');
-    const authResult = await requireAdmin(null as any);
+    const authResult = (await requireAdmin(null as any)) as any;
     mockRpc = authResult.adminClient.rpc;
     mockFrom = authResult.adminClient.from;
 

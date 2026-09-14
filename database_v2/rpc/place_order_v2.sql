@@ -73,7 +73,7 @@ BEGIN
     -- STEP 1: VALIDATE MARGIN (Calculate vs Validate Rule)
     SELECT balance INTO v_profile_balance
     FROM public.profiles
-    WHERE id = p_user_id FOR UPDATE;
+    WHERE id = p_user_id;
 
     IF v_profile_balance < (p_expected_margin + p_expected_brokerage + p_buffer_fee) AND p_is_exit = false THEN
         RAISE EXCEPTION 'Insufficient balance. Available: %, Required: %', v_profile_balance, (p_expected_margin + p_expected_brokerage + p_buffer_fee);
@@ -83,10 +83,10 @@ BEGIN
     BEGIN
         INSERT INTO public.orders (
             user_id, symbol, kite_instrument, segment, side, status, qty, lots, price, fill_price,
-            order_type, product_type, info, is_exit, trigger_price, stop_loss, target, buffer_fee, brokerage, idempotency_key
+            order_type, product_type, info, is_exit, trigger_price, stop_loss, target, buffer_fee, brokerage, idempotency_key, ltp_at_entry
         ) VALUES (
             p_user_id, p_symbol, p_kite_inst, p_segment, p_side, p_status, p_qty, p_lots, p_fill_price, p_fill_price,
-            p_order_type, p_product_type, p_info, p_is_exit, p_trigger_price, p_stop_loss, p_target, p_buffer_fee, p_expected_brokerage, p_idempotency_key
+            p_order_type, p_product_type, COALESCE(p_info, p_linked_position_id::text), p_is_exit, p_trigger_price, p_stop_loss, p_target, p_buffer_fee, p_expected_brokerage, p_idempotency_key, p_ltp
         ) RETURNING id INTO v_order_id;
     EXCEPTION WHEN unique_violation THEN
         SELECT id INTO v_order_id 
@@ -111,39 +111,37 @@ BEGIN
     IF p_status = 'EXECUTED' THEN
         -- Validate exit order constraints
         IF p_is_exit THEN
-            -- Check if linked_position_id is supplied
+            -- Check if linked_position_id is supplied to anchor position side & product_type
             IF p_linked_position_id IS NOT NULL THEN
-                SELECT side, qty_open, product_type
-                INTO v_pos_side, v_pos_qty_open, p_product_type
+                SELECT side, product_type
+                INTO v_pos_side, p_product_type
                 FROM public.positions
                 WHERE id = p_linked_position_id AND LOWER(status) IN ('open', 'active');
             END IF;
 
-            -- If linked position not found or not supplied, query by user, symbol, opposite side
+            -- Always calculate total open position quantity across all lots for this symbol & opposite side
+            SELECT side, COALESCE(SUM(qty_open), 0)
+            INTO v_pos_side, v_pos_qty_open
+            FROM public.positions
+            WHERE user_id = p_user_id 
+              AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
+              AND LOWER(status) IN ('open', 'active')
+              AND product_type = p_product_type
+              AND side <> p_side
+            GROUP BY side
+            LIMIT 1;
+
+            -- Fall back to any open position for this symbol with opposite side if product_type differed
             IF v_pos_qty_open IS NULL OR v_pos_qty_open <= 0 THEN
-                SELECT side, COALESCE(SUM(qty_open), 0)
-                INTO v_pos_side, v_pos_qty_open
+                SELECT side, COALESCE(SUM(qty_open), 0), product_type
+                INTO v_pos_side, v_pos_qty_open, p_product_type
                 FROM public.positions
                 WHERE user_id = p_user_id 
                   AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
                   AND LOWER(status) IN ('open', 'active')
-                  AND product_type = p_product_type
                   AND side <> p_side
-                GROUP BY side
+                GROUP BY side, product_type
                 LIMIT 1;
-
-                -- Fall back to any open position for this symbol with opposite side if product_type differed
-                IF v_pos_qty_open IS NULL OR v_pos_qty_open <= 0 THEN
-                    SELECT side, COALESCE(SUM(qty_open), 0), product_type
-                    INTO v_pos_side, v_pos_qty_open, p_product_type
-                    FROM public.positions
-                    WHERE user_id = p_user_id 
-                      AND (symbol = p_symbol OR symbol ILIKE p_symbol OR symbol ILIKE split_part(p_symbol, ':', 2))
-                      AND LOWER(status) IN ('open', 'active')
-                      AND side <> p_side
-                    GROUP BY side, product_type
-                    LIMIT 1;
-                END IF;
             END IF;
 
             IF v_pos_qty_open IS NULL OR v_pos_qty_open <= 0 THEN
@@ -173,11 +171,12 @@ BEGIN
 
         IF NOT FOUND OR v_pos_side = p_side THEN
             -- Lifecycle: Create Position Lot (Same-side additions create separate lots for FIFO)
-            PERFORM public.create_position_internal(
+            v_position_id := public.create_position_internal(
                 p_user_id, p_symbol, p_side, p_qty, p_fill_price, p_ltp,
                 p_product_type, p_segment, p_stop_loss, p_target,
                 p_expected_margin, p_expected_margin, p_expected_brokerage
             );
+            UPDATE public.orders SET info = v_position_id::text WHERE id = v_order_id;
 
             -- Ledger entries for new position margin
             IF p_expected_margin > 0 THEN
@@ -266,11 +265,12 @@ BEGIN
 
             -- Lifecycle: Reverse Position (Create new opposite side position if remaining quantity exists)
             IF v_remaining_qty > 0 THEN
-                PERFORM public.create_position_internal(
+                v_position_id := public.create_position_internal(
                     p_user_id, p_symbol, p_side, v_remaining_qty, p_fill_price, p_ltp,
                     p_product_type, p_segment, p_stop_loss, p_target,
                     p_expected_margin, p_expected_margin, p_expected_brokerage
                 );
+                UPDATE public.orders SET info = v_position_id::text WHERE id = v_order_id;
 
                 -- Ledger entries for reversed side entry margin debit
                 IF p_expected_margin > 0 THEN

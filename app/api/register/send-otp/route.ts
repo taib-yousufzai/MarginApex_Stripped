@@ -91,19 +91,23 @@ export async function POST(req: NextRequest) {
     // ── 2. Rate-limit by Email (60s cooldown) ──────────────────────────────────
     const { data: existingEmail } = await admin
       .from('otp_verifications')
-      .select('created_at')
+      .select('created_at, expires_at')
       .eq('email', emailLower)
       .maybeSingle();
 
     if (existingEmail) {
-      const secondsSinceLast =
-        (Date.now() - new Date(existingEmail.created_at).getTime()) / 1000;
-      if (secondsSinceLast < RESEND_COOLDOWN_SECONDS) {
-        const waitSeconds = Math.ceil(RESEND_COOLDOWN_SECONDS - secondsSinceLast);
-        return Response.json(
-          { error: `Please wait ${waitSeconds}s before requesting another code.` },
-          { status: 429 },
-        );
+      // If the existing OTP has expired, skip cooldown — treat as fresh registration
+      const isExpired = existingEmail.expires_at && new Date(existingEmail.expires_at).getTime() < Date.now();
+      if (!isExpired) {
+        const secondsSinceLast =
+          (Date.now() - new Date(existingEmail.created_at).getTime()) / 1000;
+        if (secondsSinceLast < RESEND_COOLDOWN_SECONDS) {
+          const waitSeconds = Math.ceil(RESEND_COOLDOWN_SECONDS - secondsSinceLast);
+          return Response.json(
+            { error: `Please wait ${waitSeconds}s before requesting another code.` },
+            { status: 429 },
+          );
+        }
       }
     }
 
@@ -128,23 +132,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Resolve brokerRef ─────────────────────────────────────────────────────
+    // ── Resolve brokerRef (supports admin/broker referral_code, client_id, or UUID) ──
     let resolvedBrokerRef = brokerRef?.trim() || null;
     if (resolvedBrokerRef) {
-      if (resolvedBrokerRef.length === 6) {
-        const { data: brokerProfile } = await admin
+      if (resolvedBrokerRef.length === 36) {
+        const { data: refProfile } = await admin
           .from('profiles')
           .select('id')
-          .eq('client_id', resolvedBrokerRef.toUpperCase())
-          .single();
-        if (brokerProfile) {
-          resolvedBrokerRef = brokerProfile.id;
-        } else {
-          resolvedBrokerRef = null; // Invalid referral code
-        }
-      } else if (resolvedBrokerRef.length !== 36) {
-        // Not a UUID and not a 6-char code
-        resolvedBrokerRef = null;
+          .eq('id', resolvedBrokerRef)
+          .maybeSingle();
+        resolvedBrokerRef = refProfile ? refProfile.id : null;
+      } else {
+        const { data: refProfile } = await admin
+          .from('profiles')
+          .select('id')
+          .or(`client_id.ilike.${resolvedBrokerRef},referral_code.ilike.${resolvedBrokerRef}`)
+          .maybeSingle();
+        resolvedBrokerRef = refProfile ? refProfile.id : null;
       }
     }
 
@@ -208,18 +212,19 @@ export async function POST(req: NextRequest) {
     }
 
     if (!emailResult.success && !smsSent) {
+      const detail = emailResult.error ? ` (${emailResult.error})` : '';
       return Response.json(
-        { error: 'Failed to send OTP to both email and phone. Please try again later.' },
-        { status: 500 },
+        { error: 'Failed to send OTP. Please try again in a moment.', retryable: true },
+        { status: 202 },
       );
     }
 
     console.info(`[send-otp] OTP sent. Email: ${emailResult.success}, SMS: ${smsSent}`);
     return Response.json({ success: true, emailSent: emailResult.success, smsSent });
-  } catch (err) {
-    console.error('[send-otp] Unexpected error:', err);
+  } catch (err: any) {
+    console.error('[send-otp] Unexpected error:', err?.stack || err);
     return Response.json(
-      { error: 'Failed to send verification email. Please try again.' },
+      { error: err?.message ? `Failed to send verification email: ${err.message}` : 'Failed to send verification email. Please try again.' },
       { status: 500 },
     );
   }

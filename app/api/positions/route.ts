@@ -22,12 +22,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get('status');
 
-    // Fetch profile for history_reset_at filter
-    const { data: userProfile } = await admin
-      .from('profiles')
-      .select('history_reset_at')
-      .eq('id', user.id)
-      .maybeSingle();
+    // Fetch profile for history_reset_at — 2s timeout to avoid hanging on Supabase 522s
+    let userProfile: { history_reset_at?: string } | null = null;
+    try {
+      const { data } = await admin
+        .from('profiles')
+        .select('history_reset_at')
+        .eq('id', user.id)
+        .maybeSingle()
+        .abortSignal(AbortSignal.timeout(2000));
+      userProfile = data;
+    } catch {
+      // Timeout or connection error — proceed with no history_reset_at filter
+    }
 
     const historyResetAt = userProfile?.history_reset_at;
 
@@ -47,7 +54,7 @@ export async function GET(request: NextRequest) {
           .order('updated_at', { ascending: false });
 
         if (lowerStatus === 'closed' && historyResetAt) {
-          positionsQuery = positionsQuery.gt('updated_at', historyResetAt);
+          positionsQuery = positionsQuery.gt('updated_at', new Date(historyResetAt).toISOString());
         }
 
         // For closed positions, default to today-only unless 'all' param or 'from' date is passed
@@ -67,10 +74,20 @@ export async function GET(request: NextRequest) {
       positionsQuery = positionsQuery.in('status', ['open', 'OPEN', 'active', 'ACTIVE']).order('created_at', { ascending: false });
     }
 
-    // Fetch positions
-    const posResult = await positionsQuery;
+    // Fetch positions with a fast 2.5s timeout wrapper
+    const timeoutPromise = new Promise<any>((resolve) =>
+      setTimeout(() => resolve({ timeout: true }), 2500)
+    );
 
-    if (posResult.error) throw posResult.error;
+    const posResult = await Promise.race([positionsQuery, timeoutPromise]).catch(err => {
+      console.warn('[Positions API] Query error:', err);
+      return { timeout: true };
+    });
+
+    if (posResult?.timeout || posResult?.error) {
+      console.warn('[Positions API] Query timed out (2.5s) or failed; returning empty array fallback');
+      return NextResponse.json({ positions: [] });
+    }
 
     // For closed positions, locked_margin is 0 after close. Recover the original margin
     // from the MARGIN_CREDIT ledger entry written by close_position_v2 (ref_id = 'MRG_RET_<position_id>').

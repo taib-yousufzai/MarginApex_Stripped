@@ -6,7 +6,7 @@
 
 import { requireAdmin } from '../_auth';
 import { getRole } from '../../../../lib/auth';
-import { getAccessibleUserIds } from '../../../../lib/hierarchy';
+import { getDescendantUserIds } from '../../../../lib/hierarchy';
 
 export type TransactionRecord = { type: 'DEPOSIT' | 'WITHDRAWAL'; amount: number };
 export type PositionRecord = { pnl: number; side: 'BUY' | 'SELL'; brokerage: number };
@@ -15,7 +15,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const authResult = await requireAdmin(request);
     if (authResult instanceof Response) return authResult;
-    const { adminClient } = authResult;
+    const { adminClient, callerUser } = authResult;
 
     const url = new URL(request.url);
     const date_from = url.searchParams.get('date_from') ?? null;
@@ -26,33 +26,10 @@ export async function GET(request: Request): Promise<Response> {
     const demoParam = url.searchParams.get('demo');
     const isDemo = demoParam === 'true';
 
-    const callerRole = getRole(authResult.callerUser);
-    const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
+    const callerRole = getRole(callerUser);
+    const callerId = callerUser.id;
 
-    if (accessibleIds !== null && accessibleIds.length === 0) {
-      return Response.json({
-        ledger_balance: 0,
-        net_balance: 0,
-        mark_to_market: 0,
-        net_pnl: 0,
-        total_brokerage: 0,
-        margin_used: 0,
-        net: 0,
-        total_deposits: 0,
-        total_withdrawals: 0,
-        avg_deposit: 0,
-        avg_withdrawal: 0,
-        avg_profit: 0,
-        avg_loss: 0,
-        profitable_clients: 0,
-        loss_making_clients: 0,
-        buy_position_count: 0,
-        sell_position_count: 0,
-        registered: 0,
-        added_funds: 0,
-        conversion: '0%',
-      }, { status: 200 });
-    }
+    const descendantIds = await getDescendantUserIds(adminClient, callerId, callerRole);
 
     // 1. Fetch profiles to resolve hierarchy if needed
     let targetUserIds: string[] | null = null;
@@ -85,26 +62,32 @@ export async function GET(request: Request): Promise<Response> {
       }
     }
 
-    // If caller is non-super_admin, filter targetUserIds by accessibleIds
-    if (accessibleIds !== null) {
-      if (targetUserIds) {
-        targetUserIds = targetUserIds.filter(id => accessibleIds.includes(id));
-      } else {
-        targetUserIds = accessibleIds;
-      }
-    }
-
     if (!targetUserIds) {
-      // If no specific hierarchy or client is requested, we still need to filter by demo_user globally
-      const { data: allProfiles } = await adminClient.from('profiles').select('id').eq('demo_user', isDemo);
+      // If no specific hierarchy or client is requested, filter by demo_user globally or within descendant tree
+      let query = adminClient.from('profiles').select('id').eq('demo_user', isDemo);
+      if (descendantIds !== null) {
+        if (descendantIds.length === 0) {
+          return Response.json({
+            payin: 0, payout: 0, netDeposit: 0, brokerage: 0,
+            grossPnL: 0, netPnL: 0, totalPnlBkg: 0, settlement: 0, activeClients: 0
+          }, { status: 200 });
+        }
+        query = query.in('id', descendantIds);
+      }
+      const { data: allProfiles } = await query;
       if (allProfiles) {
         targetUserIds = allProfiles.map(p => p.id);
       }
     } else {
-      // If targetUserIds exist, filter them to ensure they match the demo mode
-      const { data: matchingProfiles } = await adminClient.from('profiles').select('id').in('id', targetUserIds).eq('demo_user', isDemo);
+      // If targetUserIds exist, filter them to ensure they match demo mode AND caller's hierarchy
+      let query = adminClient.from('profiles').select('id').in('id', targetUserIds).eq('demo_user', isDemo);
+      if (descendantIds !== null) {
+        query = query.in('id', descendantIds);
+      }
+      const { data: matchingProfiles } = await query;
       targetUserIds = matchingProfiles ? matchingProfiles.map(p => p.id) : [];
     }
+
 
     // 2. Fetch transactions
     let txnQuery = adminClient.from('transactions').select('type, amount');

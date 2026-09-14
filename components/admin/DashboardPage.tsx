@@ -68,13 +68,24 @@ export default function DashboardPage({ selectedUser, onOpenUserPanel, isDemoMod
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
-  const [adminProfile, setAdminProfile] = useState<{ id: string; client_id?: string; role?: string } | null>(null);
+  const [adminProfile, setAdminProfile] = useState<{ client_id?: string; referral_code?: string; id?: string } | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   useEffect(() => {
-    apiCall('/api/admin/me', { method: 'GET' }).then(({ ok, data }) => {
-      if (ok) setAdminProfile(data as any);
+    apiCall('/api/user/profile', { method: 'GET' }).then(({ ok, data }) => {
+      if (ok && data) setAdminProfile(data as any);
     });
   }, []);
+
+  const refCode = adminProfile?.referral_code || adminProfile?.client_id || adminProfile?.id || '';
+  const referralLink = refCode ? `${typeof window !== 'undefined' ? window.location.origin : ''}/register?ref=${refCode}` : '';
+
+  const handleCopyLink = () => {
+    if (!referralLink) return;
+    navigator.clipboard.writeText(referralLink);
+    setCopyFeedback(true);
+    setTimeout(() => setCopyFeedback(false), 2000);
+  };
 
   useEffect(() => {
     apiCall(`/api/admin/users?demo=${isDemoMode}`, { method: 'GET' }).then(({ ok, data }) => {
@@ -145,44 +156,10 @@ export default function DashboardPage({ selectedUser, onOpenUserPanel, isDemoMod
   const ledger = metrics?.ledger_balance ?? 0;
   const netDepWith = metrics?.net ?? 0;
 
-  const referralCode = adminProfile?.client_id || adminProfile?.id || '';
-  const referralLink = referralCode && typeof window !== 'undefined' ? `${window.location.origin}/register?ref=${referralCode}` : '';
-
   return (
     <div className="adm-db-root">
       <Toast toast={toast} onDismiss={() => setToast(null)} />
       
-      {referralLink && (
-        <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ fontWeight: 600, color: '#e6edf3', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <i className="fas fa-link" style={{ color: '#2ea043' }} />
-              Admin Referral Link
-            </div>
-            <div style={{ fontSize: '0.8rem', color: '#8b949e', marginTop: 2 }}>
-              Share this link to onboard brokers or users directly assigned under your account hierarchy.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 280, maxWidth: 460 }}>
-            <input
-              readOnly
-              value={referralLink}
-              style={{ flex: 1, background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: '6px 12px', color: '#58a6ff', fontSize: '0.85rem', fontFamily: 'monospace' }}
-            />
-            <button
-              className="adm-btn-primary"
-              style={{ padding: '6px 14px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-              onClick={() => {
-                navigator.clipboard.writeText(referralLink);
-                setToast({ message: 'Referral link copied to clipboard!', type: 'success' });
-              }}
-            >
-              <i className="fas fa-copy" style={{ marginRight: 6 }} /> Copy
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Top Filter Bar */}
       <div className="adm-db-top-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
@@ -221,6 +198,36 @@ export default function DashboardPage({ selectedUser, onOpenUserPanel, isDemoMod
           </button>
         </div>
       </div>
+
+      {referralLink && (
+        <div style={{ marginTop: 16, padding: '16px', background: '#161b22', borderRadius: '10px', border: '1px solid #30363d' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#8b949e', letterSpacing: '0.5px' }}>
+              <i className="fas fa-link" style={{ marginRight: 6, color: '#1f6feb' }} />
+              ADMIN REFERRAL LINK
+            </span>
+            <span style={{ fontSize: '0.75rem', color: '#2ea043', background: 'rgba(46, 160, 67, 0.15)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+              Code: {refCode}
+            </span>
+          </div>
+          <p style={{ color: '#8b949e', fontSize: '0.8rem', marginBottom: '12px' }}>
+            Share this link to onboard your brokers and direct clients. Users signing up via this link will be mapped directly under your administrative hierarchy.
+          </p>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="text"
+              readOnly
+              value={referralLink}
+              className="adm-input"
+              style={{ flex: 1, minWidth: 0, backgroundColor: '#0d1117', color: '#c9d1d9', cursor: 'text', borderRadius: 6, border: '1px solid #30363d', padding: '8px 12px', fontSize: '0.85rem' }}
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+            <button className="adm-btn-primary" onClick={handleCopyLink} style={{ whiteSpace: 'nowrap', minWidth: '90px', borderRadius: 6 }}>
+              {copyFeedback ? <><i className="fas fa-check" style={{ marginRight: 6 }} />Copied</> : <><i className="fas fa-copy" style={{ marginRight: 6 }} />Copy</>}
+            </button>
+          </div>
+        </div>
+      )}
 
       {loading && !metrics ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>

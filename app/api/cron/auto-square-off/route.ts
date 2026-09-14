@@ -99,7 +99,11 @@ export async function GET(request: Request) {
       if (!th.end_time || !th.is_active) continue;
       // parse end_time "HH:mm"
       const [h, m] = th.end_time.split(':').map(Number);
-      const endTotalMinutes = (h * 60) + m;
+      let endTotalMinutes = (h * 60) + m;
+      // 00:00 midnight represents end of trading day (24:00 = 1440 mins)
+      if (endTotalMinutes === 0) {
+        endTotalMinutes = 1440;
+      }
       
       // Auto-square-off happens 5 minutes before market close for Indian markets.
       const isIndianMarket = ['nse', 'bse', 'nfo', 'cds', 'mcx'].includes(th.id.toLowerCase());
@@ -131,6 +135,7 @@ export async function GET(request: Request) {
 
     const results = {
       intradayClosed: 0,
+      intradayErrors: 0,
       errors: [] as string[]
     };
 
@@ -166,14 +171,15 @@ export async function GET(request: Request) {
 
         // --- AUTO SQUARE OFF INTRADAY POSITIONS ---
         const liveQuote = await fetchQuote(pos.symbol, pos.settlement);
-        if (!liveQuote) {
-          console.error(`[Auto Sq-Off] No live bid/ask for ${pos.symbol}. Cannot square off position ${pos.id} without correct price. Skipping.`);
+        const basePrice = liveQuote
+          ? (pos.side === 'BUY' ? liveQuote.bid : liveQuote.ask)
+          : Number(pos.ltp || pos.entry_price || 0);
+
+        if (!basePrice || basePrice <= 0) {
+          console.error(`[Auto Sq-Off] No valid price for ${pos.symbol} (pos ${pos.id}). Skipping.`);
           results.intradayErrors = (results.intradayErrors || 0) + 1;
           continue;
         }
-
-        // BUY position exits via SELL → use BID; SELL position exits via BUY → use ASK.
-        const basePrice = pos.side === 'BUY' ? liveQuote.bid : liveQuote.ask;
 
         let exitPrice = basePrice;
         if (segSetting) {

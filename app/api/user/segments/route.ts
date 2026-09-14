@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
 
 const ALL_SEGMENTS = [
-  'INDEX-FUT', 'STOCK-OPT', 'NSE-EQ', 'COMEX', 'INDEX-OPT',
+  'INDEX-FUT', 'STOCK-OPT', 'STOCKS', 'COMEX', 'INDEX-OPT',
   'MCX-FUT', 'CRYPTO', 'STOCK-FUT', 'MCX-OPT', 'FOREX', 'US-EQ'
 ];
 
@@ -34,9 +34,10 @@ export async function GET(request: NextRequest) {
   const settingsTable = targetMode === 'scalper' ? 'scalper_segment_settings' : 'segment_settings';
 
   // If segments is null or empty, it means the user is unrestricted and allowed to trade ALL segments!
-  const allowedSegments: string[] = profile.segments && profile.segments.length > 0
+  const rawSegments: string[] = profile.segments && profile.segments.length > 0
     ? profile.segments
     : ALL_SEGMENTS;
+  const allowedSegments = rawSegments.map(s => s === 'NSE-EQ' || s === 'NSE - EQUITY' || s === 'Equity' ? 'STOCKS' : s);
 
   // 2. Fetch current segment settings from DB
   const { data: currentSettings, error: queryErr } = await admin
@@ -53,8 +54,8 @@ export async function GET(request: NextRequest) {
 
   let finalSettings = (currentSettings ?? []).map(s => ({
     ...s,
-    entry_buffer: (s.entry_buffer != null && Number(s.entry_buffer) !== 0) ? Number(s.entry_buffer) : 0.3,
-    bid_buffer: (s.bid_buffer != null && Number(s.bid_buffer) !== 0) ? Number(s.bid_buffer) : (s.entry_buffer != null && Number(s.entry_buffer) !== 0 ? Number(s.entry_buffer) : 0.3),
+    entry_buffer: (s.entry_buffer != null && String(s.entry_buffer).trim() !== '') ? Number(s.entry_buffer) : 0.3,
+    bid_buffer: (s.bid_buffer != null && String(s.bid_buffer).trim() !== '') ? Number(s.bid_buffer) : ((s.entry_buffer != null && String(s.entry_buffer).trim() !== '') ? Number(s.entry_buffer) : 0.3),
     exit_buffer: s.exit_buffer != null ? Number(s.exit_buffer) : 0.17,
   }));
 
@@ -123,8 +124,8 @@ export async function GET(request: NextRequest) {
     if (!insertErr && insertedData) {
       const mappedInserted = insertedData.map(s => ({
         ...s,
-        entry_buffer: (s.entry_buffer != null && Number(s.entry_buffer) !== 0) ? Number(s.entry_buffer) : 0.3,
-        bid_buffer: (s.bid_buffer != null && Number(s.bid_buffer) !== 0) ? Number(s.bid_buffer) : 0.3,
+        entry_buffer: (s.entry_buffer != null && String(s.entry_buffer).trim() !== '') ? Number(s.entry_buffer) : 0.3,
+        bid_buffer: (s.bid_buffer != null && String(s.bid_buffer).trim() !== '') ? Number(s.bid_buffer) : 0.3,
         exit_buffer: s.exit_buffer != null ? Number(s.exit_buffer) : 0.17,
       }));
       finalSettings = [...finalSettings, ...mappedInserted];

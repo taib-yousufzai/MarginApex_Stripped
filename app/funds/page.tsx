@@ -75,6 +75,9 @@ export default function FundsPage() {
     setTimeout(() => setToast(null), 2000);
   };
 
+  const handleWhatsAppSupport = () => {
+    window.open('https://wa.me/918796119115', '_blank');
+  };
 
   const downloadQRCode = () => {
     const svg = document.querySelector(".qr-container svg") as SVGGraphicsElement;
@@ -151,13 +154,18 @@ export default function FundsPage() {
       setActiveAccountLoading(false);
       setDepositStep(2);
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof ApiError && err.status === 404) {
+        setActiveAccount(null);
+        setActiveAccountLoading(false);
+        setDepositStep(2);
+      } else if (err instanceof ApiError) {
         const details = err.details as Record<string, unknown> | undefined;
         setActiveAccountError((details?.error as string) ?? 'Failed to fetch payment account.');
+        setActiveAccountLoading(false);
       } else {
         setActiveAccountError('Network error. Please try again.');
+        setActiveAccountLoading(false);
       }
-      setActiveAccountLoading(false);
     }
   };
 
@@ -371,7 +379,7 @@ export default function FundsPage() {
                             </div>
                           )}
 
-                          {depositStep === 2 && !submitted && activeAccount && (
+                          {depositStep === 2 && !submitted && (
                             <div className="step-2-area fadeInUp">
                               <div className="section-title" style={{ fontSize: '0.8rem', fontWeight: 800, marginBottom: '20px', color: 'var(--text-primary)' }}>
                                 PAYMENT DETAILS ({paymentMethod === 'UPI' ? 'UPI' : 'BANK'})
@@ -392,27 +400,45 @@ export default function FundsPage() {
 
                                 {paymentMethod === 'UPI' ? (
                                   <div className="upi-payment-info" style={{ textAlign: 'center' }}>
-                                    <div className="qr-box-wrapper" style={{ marginBottom: '24px' }}>
-                                      <div className="qr-container" style={{ background: 'white', padding: '20px', borderRadius: '24px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', border: '1px solid #eee' }}>
-                                        <QRCode value={activeAccount?.upi_id ? `upi://pay?pa=${activeAccount.upi_id}&pn=${encodeURIComponent(activeAccount.account_holder)}&am=${amount}&cu=INR` : 'upi://pay'} size={200} />
+                                    {activeAccount?.qr_image_url ? (
+                                      <div className="qr-box-wrapper" style={{ marginBottom: '24px' }}>
+                                        <div className="qr-container" style={{ background: 'white', padding: '20px', borderRadius: '24px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', border: '1px solid #eee' }}>
+                                          <img src={activeAccount.qr_image_url} alt="Payment QR" style={{ width: 200, height: 200, objectFit: 'contain' }} />
+                                        </div>
+                                        <button
+                                          onClick={downloadQRCode}
+                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '16px auto 0', background: 'var(--icon-bg)', border: '1px solid var(--border-card)', padding: '10px 20px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }}
+                                        >
+                                          <i className="fas fa-download"></i> Download QR
+                                        </button>
                                       </div>
-                                      <button
-                                        onClick={downloadQRCode}
-                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '16px auto 0', background: 'var(--icon-bg)', border: '1px solid var(--border-card)', padding: '10px 20px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }}
-                                      >
-                                        <i className="fas fa-download"></i> Download QR
-                                      </button>
-                                    </div>
+                                    ) : activeAccount?.upi_id ? (
+                                      <div className="qr-box-wrapper" style={{ marginBottom: '24px' }}>
+                                        <div className="qr-container" style={{ background: 'white', padding: '20px', borderRadius: '24px', display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', border: '1px solid #eee' }}>
+                                          <QRCode value={`upi://pay?pa=${activeAccount.upi_id}&pn=${encodeURIComponent(activeAccount.account_holder || '')}&am=${amount}&cu=INR`} size={200} />
+                                        </div>
+                                        <button
+                                          onClick={downloadQRCode}
+                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '16px auto 0', background: 'var(--icon-bg)', border: '1px solid var(--border-card)', padding: '10px 20px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', cursor: 'pointer' }}
+                                        >
+                                          <i className="fas fa-download"></i> Download QR
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div style={{ padding: '20px', marginBottom: '20px', background: 'var(--icon-bg)', borderRadius: '12px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        -
+                                      </div>
+                                    )}
 
                                     <div className="section-divider" style={{ height: '1px', background: 'var(--border-card)', margin: '20px 0', borderBottom: '1px dashed var(--border-card)' }}></div>
 
-                                    <div className="copyable-row" onClick={() => copyToClipboard(activeAccount?.upi_id || '—', 'UPI ID')}>
-                                      <div><strong>UPI ID / VPA</strong><span>{activeAccount?.upi_id || '—'}</span></div>
-                                      <i className="fas fa-copy copy-icon"></i>
+                                    <div className="copyable-row" onClick={() => (activeAccount?.upi_id ? copyToClipboard(activeAccount.upi_id, 'UPI ID') : null)}>
+                                      <div><strong>UPI ID / VPA</strong><span>{activeAccount?.upi_id || '-'}</span></div>
+                                      {activeAccount?.upi_id ? <i className="fas fa-copy copy-icon"></i> : null}
                                     </div>
-                                    <div className="copyable-row" onClick={() => copyToClipboard(activeAccount?.account_holder || '—', 'Beneficiary')}>
-                                      <div><strong>Beneficiary Name</strong><span>{activeAccount?.account_holder || '—'}</span></div>
-                                      <i className="fas fa-copy copy-icon"></i>
+                                    <div className="copyable-row" onClick={() => (activeAccount?.account_holder ? copyToClipboard(activeAccount.account_holder, 'Beneficiary') : null)}>
+                                      <div><strong>Beneficiary Name</strong><span>{activeAccount?.account_holder || '-'}</span></div>
+                                      {activeAccount?.account_holder ? <i className="fas fa-copy copy-icon"></i> : null}
                                     </div>
 
                                     <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '16px', lineHeight: '1.5' }}>
@@ -422,14 +448,14 @@ export default function FundsPage() {
                                 ) : (
                                   <div className="bank-payment-info">
                                     {[
-                                      { label: 'Beneficiary', value: activeAccount?.account_holder || '—' },
-                                      { label: 'Account No', value: activeAccount?.account_no || '—' },
-                                      { label: 'IFSC Code', value: activeAccount?.ifsc || '—' },
-                                      { label: 'Bank Name', value: activeAccount?.bank_name || '—' }
+                                      { label: 'Beneficiary', value: activeAccount?.account_holder || '-' },
+                                      { label: 'Account No', value: activeAccount?.account_no || '-' },
+                                      { label: 'IFSC Code', value: activeAccount?.ifsc || '-' },
+                                      { label: 'Bank Name', value: activeAccount?.bank_name || '-' }
                                     ].map((item, idx) => (
-                                      <div key={idx} className="copyable-row" onClick={() => copyToClipboard(item.value, item.label)}>
+                                      <div key={idx} className="copyable-row" onClick={() => item.value !== '-' && copyToClipboard(item.value, item.label)}>
                                         <div><strong>{item.label}</strong><span>{item.value}</span></div>
-                                        <i className="fas fa-copy copy-icon"></i>
+                                        {item.value !== '-' && <i className="fas fa-copy copy-icon"></i>}
                                       </div>
                                     ))}
                                   </div>
@@ -532,8 +558,7 @@ export default function FundsPage() {
                   </>
                 )}
 
-                {/* WhatsApp Support */}
-                <div className="whatsapp-community" onClick={() => window.open('#', '_blank')} style={{ marginTop: '24px' }}>
+                <div className="whatsapp-community" onClick={handleWhatsAppSupport} style={{ marginTop: '24px' }}>
                   <div className="whatsapp-inner">
                     <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
                     <div className="whatsapp-content">
@@ -543,7 +568,6 @@ export default function FundsPage() {
                     <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
                   </div>
                 </div>
-
               </div>
             </div>
           </div>

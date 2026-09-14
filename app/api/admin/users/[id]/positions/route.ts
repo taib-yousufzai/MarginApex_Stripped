@@ -9,7 +9,6 @@
 
 import { requireAdmin } from '../../../_auth';
 import { getRole } from '../../../../../../lib/auth';
-import { isUserInHierarchy, getAccessibleUserIds } from '../../../../../../lib/hierarchy';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +35,8 @@ export type PositionItem = {
   entry_time: string;
   exit_time: string | null;
   settlement: string | null;
+  closed_by?: string | null;
+  settlement_amount?: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -76,33 +77,88 @@ export async function GET(
     let query = adminClient
       .from('positions')
       .select(
-        'id, user_id, symbol, side, status, pnl, qty_open, qty_total, avg_price, entry_price, ltp, exit_price, duration_seconds, brokerage, sl, tp, entry_time, exit_time, settlement, profiles(email, client_id, full_name)',
+        'id, user_id, symbol, side, status, pnl, qty_open, qty_total, avg_price, entry_price, ltp, exit_price, duration_seconds, brokerage, sl, tp, entry_time, exit_time, settlement, closed_by, profiles(email, client_id, full_name, settlement_amount)',
       );
 
+    const callerRole = getRole(authResult.callerUser);
+    const callerId = authResult.callerUser.id;
+
     if (id !== 'all') {
-      const callerRole = getRole(authResult.callerUser);
-      const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, id);
-      if (!isAllowed) {
-        return Response.json({ error: 'Forbidden' }, { status: 403 });
+      // Role hierarchy check for specific target user id:
+      if (callerRole === 'broker') {
+        // Broker can only access their own user or themselves
+        if (id !== callerId) {
+          const { data: targetProfile } = await adminClient
+            .from('profiles')
+            .select('parent_id')
+            .eq('id', id)
+            .maybeSingle();
+
+          if (!targetProfile || targetProfile.parent_id !== callerId) {
+            return Response.json({ error: 'Forbidden: User does not belong to this broker' }, { status: 403 });
+          }
+        }
+      } else if (callerRole === 'admin') {
+        // Admin can access themselves, users directly assigned to admin (parent_id = admin.id),
+        // or users assigned to brokers under this admin (broker.parent_id = admin.id).
+        if (id !== callerId) {
+          const { data: targetProfile } = await adminClient
+            .from('profiles')
+            .select('parent_id')
+            .eq('id', id)
+            .maybeSingle();
+
+          if (!targetProfile) {
+            return Response.json({ error: 'User not found' }, { status: 404 });
+          }
+
+          if (targetProfile.parent_id !== callerId) {
+            // Check if target's parent is a broker under this admin
+            let isAllowed = false;
+            if (targetProfile.parent_id) {
+              const { data: parentProfile } = await adminClient
+                .from('profiles')
+                .select('parent_id')
+                .eq('id', targetProfile.parent_id)
+                .maybeSingle();
+
+              if (parentProfile && parentProfile.parent_id === callerId) {
+                isAllowed = true;
+              }
+            }
+
+            if (!isAllowed) {
+              return Response.json({ error: 'Forbidden: User does not belong to this admin or their brokers' }, { status: 403 });
+            }
+          }
+        }
       }
+      // super_admin has global access
+
       query = query.eq('user_id', id);
     } else {
-      const callerRole = getRole(authResult.callerUser);
-      const accessibleIds = await getAccessibleUserIds(adminClient, authResult.callerUser.id, callerRole);
-
       let pQuery = adminClient.from('profiles').select('id').eq('demo_user', isDemo);
 
-      if (accessibleIds !== null) {
-        if (accessibleIds.length === 0) {
-          return Response.json([], { status: 200 });
-        }
-        pQuery = pQuery.in('id', accessibleIds);
+      if (callerRole === 'broker') {
+        pQuery = pQuery.eq('parent_id', callerId);
+      } else if (callerRole === 'admin') {
+        // Find brokers under this admin
+        const { data: brokerProfiles } = await adminClient
+          .from('profiles')
+          .select('id')
+          .eq('parent_id', callerId)
+          .eq('role', 'broker');
+
+        const brokerIds = brokerProfiles?.map(b => b.id) || [];
+        const allowedParentIds = [callerId, ...brokerIds];
+
+        pQuery = pQuery.in('parent_id', allowedParentIds);
       }
 
       const { data: matchedUsers } = await pQuery;
       const matchedIds = matchedUsers?.map((u: { id: string }) => u.id) || [];
       if (matchedIds.length === 0) {
-         return Response.json([], { status: 200 });
+        return Response.json([], { status: 200 });
       }
       query = query.in('user_id', matchedIds);
     }
@@ -182,6 +238,8 @@ export async function GET(
         entry_time: row.entry_time,
         exit_time: row.exit_time,
         settlement: row.settlement,
+        closed_by: row.closed_by ?? null,
+        settlement_amount: row.profiles?.settlement_amount ?? null,
       }),
     );
 

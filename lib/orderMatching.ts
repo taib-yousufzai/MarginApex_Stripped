@@ -1,12 +1,142 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { getAdminClient } from './adminClient.ts';
 import { resolveEffectivePrices } from './trading/marketPriceResolver.ts';
+import { checkAndExecuteAccountLiquidation, PositionForLiquidation } from './liquidationEngine.ts';
+import { calculateFloatingPnl } from './floatingPnl.ts';
 
 export interface Quote {
   id: string; // e.g. "NSE:INFY"
   last_price: number;
   bid?: number;
   ask?: number;
+}
+
+export interface OrderTriggerResult {
+  shouldTrigger: boolean;
+  fillPrice: number;
+}
+
+/**
+ * Evaluates whether a pending order (LIMIT, SL, SLM, GTT) should trigger given market LTP, bid, and ask.
+ */
+export function evaluateOrderTriggerCondition(
+  order: {
+    order_type: string;
+    side: 'BUY' | 'SELL';
+    price?: number | null;
+    client_price?: number | null;
+    fill_price?: number | null;
+    trigger_price?: number | null;
+    stop_loss?: number | null;
+    target?: number | null;
+    ltp_at_entry?: number | null;
+    is_exit?: boolean | null;
+    info?: any;
+  },
+  ltp: number,
+  bid?: number,
+  ask?: number
+): OrderTriggerResult {
+  let shouldTrigger = false;
+  let fillPrice = Number(order.price ?? ltp);
+
+  const orderType = order.order_type;
+  const side = order.side;
+  const triggerPrice = order.trigger_price ? Number(order.trigger_price) : null;
+  const limitPrice = (order.client_price ?? order.fill_price ?? order.price) ? Number(order.client_price ?? order.fill_price ?? order.price) : null;
+
+  const effective = resolveEffectivePrices({
+    ltp,
+    rawBid: bid,
+    rawAsk: ask,
+    hasRealBidAsk: Boolean(bid && ask),
+  });
+
+  if (orderType === 'LIMIT' && limitPrice !== null) {
+    if (side === 'BUY' && ltp <= limitPrice) {
+      shouldTrigger = true;
+      fillPrice = limitPrice;
+    } else if (side === 'SELL' && ltp >= limitPrice) {
+      shouldTrigger = true;
+      fillPrice = limitPrice;
+    }
+  } else if ((orderType === 'SL' || orderType === 'SLM') && triggerPrice !== null) {
+    const refEntry = (order.ltp_at_entry !== undefined && order.ltp_at_entry !== null && Number(order.ltp_at_entry) > 0) 
+      ? Number(order.ltp_at_entry) 
+      : (order.info?.entry_price ? Number(order.info.entry_price) : ltp);
+    if (side === 'SELL') {
+      if (triggerPrice > refEntry) {
+        if (ltp >= triggerPrice) shouldTrigger = true;
+      } else {
+        if (ltp <= triggerPrice) shouldTrigger = true;
+      }
+      if (shouldTrigger) fillPrice = effective.effectiveBid;
+    } else if (side === 'BUY') {
+      if (triggerPrice >= refEntry) {
+        if (ltp >= triggerPrice) shouldTrigger = true;
+      } else {
+        if (ltp <= triggerPrice) shouldTrigger = true;
+      }
+      if (shouldTrigger) fillPrice = effective.effectiveAsk;
+    }
+  } else if (orderType === 'GTT') {
+    const stopLoss = order.stop_loss ? Number(order.stop_loss) : null;
+    const target = order.target ? Number(order.target) : null;
+    // INVARIANT: stop_loss/target sub-order evaluation is ONLY reached when isExit === true.
+    // For pre-entry GTT orders (is_exit = false), this block is skipped entirely, so the
+    // stop_loss and target fields stored on the order row never cause a premature trigger.
+    // Only the triggerPrice/limitPrice path below evaluates for pre-entry GTT orders.
+    const isExit = order.is_exit === true;
+
+    // ONLY evaluate stopLoss and target as trigger conditions if this is an EXIT order for an existing open position
+    if (isExit) {
+      if (stopLoss !== null) {
+        if (side === 'SELL' && ltp <= stopLoss) shouldTrigger = true;      // Sell exit for BUY position (price dropped to SL)
+        else if (side === 'BUY' && ltp >= stopLoss) shouldTrigger = true;  // Buy exit for SELL position (price rose to SL)
+      }
+      if (!shouldTrigger && target !== null) {
+        if (side === 'SELL' && ltp >= target) shouldTrigger = true;       // Sell exit for BUY position (price rose to Target)
+        else if (side === 'BUY' && ltp <= target) shouldTrigger = true;   // Buy exit for SELL position (price dropped to Target)
+      }
+    }
+
+    // For ENTRY GTT orders, evaluate trigger price / limit price conditions strictly when !isExit
+    if (!shouldTrigger && !isExit && triggerPrice !== null) {
+      const refEntry = (order.ltp_at_entry !== undefined && order.ltp_at_entry !== null && Number(order.ltp_at_entry) > 0) 
+        ? Number(order.ltp_at_entry) 
+        : (order.info?.entry_price ? Number(order.info.entry_price) : ltp);
+      if (side === 'SELL') {
+        if (triggerPrice <= refEntry) {
+          if (ltp <= triggerPrice) shouldTrigger = true;
+        } else {
+          if (ltp >= triggerPrice) shouldTrigger = true;
+        }
+      } else if (side === 'BUY') {
+        if (triggerPrice >= refEntry) {
+          if (ltp >= triggerPrice) shouldTrigger = true;
+        } else {
+          if (ltp <= triggerPrice) shouldTrigger = true;
+        }
+      }
+    }
+
+    if (!shouldTrigger && !isExit && triggerPrice === null && limitPrice !== null) {
+      if (side === 'BUY' && ltp <= limitPrice) {
+        shouldTrigger = true;
+      } else if (side === 'SELL' && ltp >= limitPrice) {
+        shouldTrigger = true;
+      }
+    }
+
+    if (shouldTrigger && (fillPrice === 0 || fillPrice === Number(order.price ?? 0))) {
+      fillPrice = limitPrice ?? (side === 'BUY' ? effective.effectiveAsk : effective.effectiveBid);
+    }
+  } else if (orderType === 'MARKET') {
+    shouldTrigger = true;
+    fillPrice = side === 'BUY' ? effective.effectiveAsk : effective.effectiveBid;
+  }
+
+  return { shouldTrigger, fillPrice };
 }
 
 /**
@@ -81,174 +211,198 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
     console.log(`[Order Matching] Found ${pendingOrders.length} pending orders to evaluate.`);
 
     for (const order of pendingOrders) {
-      const symbolKey = order.kite_instrument || order.symbol;
-      const priceObj = pricesMap.get(symbolKey);
+      const rawSymbol = order.kite_instrument || order.symbol || '';
+
+      // Try multiple key variants to handle crypto (BTCUSDT, BTC, BTC/USDT)
+      // and Indian equities (NSE:INFY, NFO:NIFTY25JUNFUT, etc.)
+      const symbolVariants = [
+        rawSymbol,
+        rawSymbol.toUpperCase(),
+        rawSymbol.replace('/', ''),                          // BTC/USDT → BTCUSDT
+        rawSymbol.replace('/USDT', 'USDT'),                  // BTC/USDT → BTCUSDT
+        rawSymbol + 'USDT',                                  // BTC → BTCUSDT
+        rawSymbol.replace('USDT', ''),                       // BTCUSDT → BTC
+        (rawSymbol.includes(':') ? rawSymbol.split(':')[1] : rawSymbol), // NSE:INFY → INFY
+      ];
+
+      let priceObj: { ltp: number; bid: number; ask: number } | undefined;
+      let symbolKey = rawSymbol;
+      for (const variant of symbolVariants) {
+        const found = pricesMap.get(variant);
+        if (found) {
+          priceObj = found;
+          symbolKey = variant;
+          break;
+        }
+      }
+
       const ltp = priceObj?.ltp;
 
       if (ltp === undefined || ltp <= 0) {
-        continue; // No price update for this symbol in the current batch
+        console.log(`[DEBUG] No price for order ${order.id} symbol "${rawSymbol}" (tried: ${symbolVariants.join(', ')})`);
+        continue;
       }
 
-      let shouldTrigger = false;
-      let fillPrice = Number(order.price ?? ltp);
-
-      const orderType = order.order_type;
-      const side = order.side;
-      const triggerPrice = order.trigger_price ? Number(order.trigger_price) : null;
-      const limitPrice = order.price ? Number(order.price) : null;
-
-      const effective = resolveEffectivePrices({
+      const { shouldTrigger, fillPrice } = evaluateOrderTriggerCondition(
+        order,
         ltp,
-        rawBid: priceObj?.bid,
-        rawAsk: priceObj?.ask,
-        hasRealBidAsk: Boolean(priceObj?.bid && priceObj?.ask),
-      });
+        priceObj?.bid,
+        priceObj?.ask
+      );
 
-      if (orderType === 'LIMIT' && limitPrice !== null) {
-        if (side === 'BUY' && ltp <= limitPrice) {
-          shouldTrigger = true;
-          fillPrice = limitPrice;
-        } else if (side === 'SELL' && ltp >= limitPrice) {
-          shouldTrigger = true;
-          fillPrice = limitPrice;
-        }
-      } else if ((orderType === 'SL' || orderType === 'SLM') && triggerPrice !== null) {
-        if (side === 'BUY' && ltp >= triggerPrice) {
-          shouldTrigger = true;
-          fillPrice = effective.effectiveAsk;
-        } else if (side === 'SELL' && ltp <= triggerPrice) {
-          shouldTrigger = true;
-          fillPrice = effective.effectiveBid;
-        }
-      } else if (orderType === 'GTT') {
-        if (triggerPrice !== null) {
-          // GTT trigger logic based on entry direction
-          const ltpAtEntry = order.ltp_at_entry ? Number(order.ltp_at_entry) : null;
-          if (side === 'BUY') {
-            if (ltpAtEntry !== null && ltpAtEntry < triggerPrice) {
-              // Entered below trigger (breakout buy), trigger when we rise above it
-              if (ltp >= triggerPrice) shouldTrigger = true;
-            } else {
-              // Entered above trigger (buy the dip), trigger when we drop below it
-              if (ltp <= triggerPrice) shouldTrigger = true;
-            }
-          } else if (side === 'SELL') {
-            if (ltpAtEntry !== null && ltpAtEntry > triggerPrice) {
-              // Entered above trigger (stop loss), trigger when we drop below it
-              if (ltp <= triggerPrice) shouldTrigger = true;
-            } else {
-              // Entered below trigger (target / breakout sell), trigger when we rise above it
-              if (ltp >= triggerPrice) shouldTrigger = true;
-            }
-          }
-        }
-
-        // Support GTT exit orders which have stop_loss or target or both
-        // Only check SL and Target triggers for pure exit GTT orders (when triggerPrice is null)
-        const stopLoss = order.stop_loss ? Number(order.stop_loss) : null;
-        const target = order.target ? Number(order.target) : null;
-        if (triggerPrice === null) {
-          if (!shouldTrigger && stopLoss !== null) {
-            if (side === 'BUY') {
-              if (ltp >= stopLoss) shouldTrigger = true;
-            } else if (side === 'SELL') {
-              if (ltp <= stopLoss) shouldTrigger = true;
-            }
-          }
-          if (!shouldTrigger && target !== null) {
-            if (side === 'BUY') {
-              if (ltp <= target) shouldTrigger = true;
-            } else if (side === 'SELL') {
-              if (ltp >= target) shouldTrigger = true;
-            }
-          }
-        }
-
-        if (shouldTrigger) {
-          fillPrice = side === 'BUY' ? effective.effectiveAsk : effective.effectiveBid;
-        }
-      }
+      console.log(`[EXEC_TRACE ${new Date().toISOString()}] EVALUATING | Order ID: ${order.id} | Type: ${order.order_type} | Side: ${order.side} | Status: ${order.status} | LTP: ${ltp} | TriggerPrice: ${order.trigger_price} | SL: ${order.stop_loss} | Target: ${order.target} | is_exit: ${order.is_exit} | info: ${order.info} | Result: ${shouldTrigger}`);
 
       if (shouldTrigger) {
-        console.log(`[Order Matching] Triggering order ${order.id} (${side} ${orderType} ${order.symbol}) at LTP: ${ltp}, Fill: ${fillPrice}`);
+        try {
+          console.log(`[EXEC_TRACE ${new Date().toISOString()}] TRIGGERED_TRUE | Function: processPendingOrdersAndPositions | Order ID: ${order.id} | Type: ${order.order_type} | Side: ${order.side} | Status: ${order.status} | LTP: ${ltp} | FillPrice: ${fillPrice} | TriggerPrice: ${order.trigger_price} | SL: ${order.stop_loss} | Target: ${order.target} | is_exit: ${order.is_exit}`);
 
-        const { data: existingPos, error: posErrorCheck } = await admin
-          .from('positions')
-          .select('id, side')
-          .eq('symbol', symbolKey)
-          .eq('status', 'open');
+          const { data: existingPos, error: posErrorCheck } = await admin
+            .from('positions')
+            .select('id, side')
+            .eq('symbol', symbolKey)
+            .eq('status', 'open');
 
-        if (posErrorCheck) {
-          console.error('[Order Matching] Error checking existing positions for', symbolKey, ':', posErrorCheck);
-          // Skip processing this order due to error
-          continue;
-        }
+          if (posErrorCheck) {
+            console.error('[Order Matching] Error checking existing positions for', symbolKey, ':', posErrorCheck);
+            // Skip processing this order due to error
+            continue;
+          }
 
-        // Determine if order should proceed based on existing positions
-        if (order.is_exit) {
-          if (order.side === 'BUY') {
-            // BUY exit order requires an existing open SELL position
-            if (!existingPos || !existingPos.some((p: any) => p.side === 'SELL')) {
-              console.log(`[Order Matching] Skipping BUY exit order ${order.id} as no open SELL position exists`);
+          if (order.is_exit || order.linked_position_id || (order.info && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(order.info)))) {
+            if (!existingPos || existingPos.length === 0) {
+              console.log(`[EXEC_TRACE ${new Date().toISOString()}] CANCEL_ORPHAN | Order ID: ${order.id} | Symbol: ${symbolKey} | Reason: Position is closed`);
+              await admin
+                .from('orders')
+                .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
+                .eq('id', order.id);
               continue;
             }
-          } else if (order.side === 'SELL') {
-            // SELL exit order requires an existing open BUY position
-            if (!existingPos || !existingPos.some((p: any) => p.side === 'BUY')) {
-              console.log(`[Order Matching] Skipping SELL exit order ${order.id} as no open BUY position exists`);
-              continue;
+          } else {
+            // Entry orders (is_exit is false)
+            // BUT: if an opposite position exists, treat this as an exit order to close it.
+            // e.g. User places BUY LIMIT while holding a SELL position → close the short.
+            if (order.side === 'BUY') {
+              const oppSellPos = existingPos && existingPos.find((p: any) => p.side === 'SELL');
+              if (oppSellPos) {
+                console.log(`[EXEC_TRACE ${new Date().toISOString()}] OPPOSITE_POS_CONVERT | BUY entry order ${order.id} has opposite SELL position ${oppSellPos.id}`);
+                (order as any)._runtimeIsExit = true;
+                (order as any)._runtimeLinkedPosId = oppSellPos.id;
+              }
+            } else if (order.side === 'SELL') {
+              const oppBuyPos = existingPos && existingPos.find((p: any) => p.side === 'BUY');
+              if (oppBuyPos) {
+                console.log(`[EXEC_TRACE ${new Date().toISOString()}] OPPOSITE_POS_CONVERT | SELL entry order ${order.id} has opposite BUY position ${oppBuyPos.id}`);
+                (order as any)._runtimeIsExit = true;
+                (order as any)._runtimeLinkedPosId = oppBuyPos.id;
+              }
             }
           }
-        } else {
-          // Entry orders (is_exit is false)
-          if (order.side === 'BUY') {
-            // BUY entry order cannot proceed if there is an open opposite SELL position
-            if (existingPos && existingPos.some((p: any) => p.side === 'SELL')) {
-              console.log(`[Order Matching] Skipping BUY entry order ${order.id} due to existing opposite SELL position`);
-              continue;
-            }
-          } else if (order.side === 'SELL') {
-            // SELL entry order cannot proceed if there is an open opposite BUY position
-            if (existingPos && existingPos.some((p: any) => p.side === 'BUY')) {
-              console.log(`[Order Matching] Skipping SELL entry order ${order.id} due to existing opposite BUY position`);
-              continue;
+
+          // 1b. Resolve the linked position ID. For virtual SL/Target orders, extract it from the ID.
+          let virtualPosId = null;
+          if (typeof order.id === 'string' && (order.id.startsWith('pos-sl-') || order.id.startsWith('pos-target-'))) {
+            virtualPosId = order.id.replace('pos-sl-', '').replace('pos-target-', '');
+          }
+
+          const infoAsUuid = order.info && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(order.info))
+            ? String(order.info) : null;
+          const finalLinkedPosId = (order as any)._runtimeLinkedPosId
+            || virtualPosId
+            || (order.linked_position_id || null)
+            || infoAsUuid;
+          const finalIsExit = (order as any)._runtimeIsExit || order.is_exit;
+
+          if (finalIsExit && finalLinkedPosId) {
+            const patchPayload: any = {};
+            if ((order as any)._runtimeIsExit) patchPayload.is_exit = true;
+            if ((order as any)._runtimeLinkedPosId) patchPayload.linked_position_id = finalLinkedPosId;
+            // ALWAYS patch info for the RPC to consume
+            patchPayload.info = finalLinkedPosId;
+
+            const { error: patchErr } = await admin
+              .from('orders')
+              .update(patchPayload)
+              .eq('id', order.id);
+
+            if (patchErr) {
+              console.error(`[Order Matching] Failed to patch exit info for order ${order.id}:`, patchErr);
+            } else {
+              console.log(`[Order Matching] Patched order ${order.id} exit info (linked to ${finalLinkedPosId})`);
             }
           }
-        }
 
-        const { error: updateOrderErr } = await admin
-          .from('orders')
-          .update({
-            status: 'EXECUTED',
-            fill_price: fillPrice,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', order.id);
+          console.log(`[EXEC_TRACE ${new Date().toISOString()}] BEFORE_EXEC_UPDATE | Function: processPendingOrdersAndPositions | Order ID: ${order.id} | Type: ${order.order_type} | Side: ${order.side} | Status BEFORE: ${order.status} -> Status AFTER: EXECUTED | FillPrice: ${fillPrice}`);
 
-        if (updateOrderErr) {
-          console.error(`[Order Matching] Failed to update order ${order.id} to EXECUTED:`, updateOrderErr);
+          const { data: updatedDbRecord, error: updateOrderErr } = await admin
+            .from('orders')
+            .update({
+              status: 'EXECUTED',
+              fill_price: fillPrice,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', order.id)
+            .eq('status', 'PENDING')
+            .select();
+
+          if (updateOrderErr) {
+            console.error(`[EXEC_TRACE ${new Date().toISOString()}] EXEC_UPDATE_ERROR | Order ID: ${order.id} | Error:`, updateOrderErr);
+            continue;
+          }
+
+          console.log(`[EXEC_TRACE ${new Date().toISOString()}] AFTER_EXEC_UPDATE | Order ID: ${order.id} | DB Status: ${updatedDbRecord?.[0]?.status}`);
+
+          // Explicitly call the RPC to process the position.
+          const linkedInfo = finalLinkedPosId || null;
+          console.log(`[EXEC_TRACE ${new Date().toISOString()}] CALLING_RPC_PROCESS_EXECUTED | Order ID: ${order.id} | Info: ${linkedInfo}`);
+          const { error: rpcErr } = await admin.rpc('process_executed_position', {
+            p_order_id: order.id,
+            p_info: linkedInfo,
+          });
+          if (rpcErr) {
+            console.error(`[EXEC_TRACE ${new Date().toISOString()}] RPC_ERROR | Order ID: ${order.id} | Error:`, rpcErr);
+          } else {
+            console.log(`[EXEC_TRACE ${new Date().toISOString()}] RPC_SUCCESS | Order ID: ${order.id}`);
+
+            // GTT LIMIT gate activation: copy SL/TARGET from the order to the linked position.
+            // At placement time, GTT positions are created with NULL SL/TARGET to prevent
+            // phantom triggers before the LIMIT gate is reached. Now that the order has
+            // executed (LIMIT gate met), activate the protective SL/TARGET on the position.
+            if (order.order_type === 'GTT' && !finalIsExit) {
+              const posIdForSLTarget = linkedInfo || order.info;
+              if (posIdForSLTarget && (order.stop_loss || order.target)) {
+                const slTargetPatch: any = {};
+                if (order.stop_loss) slTargetPatch.stop_loss = Number(order.stop_loss);
+                if (order.target) slTargetPatch.target = Number(order.target);
+                slTargetPatch.updated_at = new Date().toISOString();
+
+                const { error: slPatchErr } = await admin
+                  .from('positions')
+                  .update(slTargetPatch)
+                  .eq('id', posIdForSLTarget);
+
+                if (slPatchErr) {
+                  console.error(`[EXEC_TRACE ${new Date().toISOString()}] GTT_SL_TARGET_PATCH_ERROR | Order ID: ${order.id} | Position: ${posIdForSLTarget} | Error:`, slPatchErr);
+                } else {
+                  console.log(`[EXEC_TRACE ${new Date().toISOString()}] GTT_SL_TARGET_ACTIVATED | Order ID: ${order.id} | Position: ${posIdForSLTarget} | SL: ${order.stop_loss} | Target: ${order.target}`);
+                }
+              }
+            }
+          }
+
+          // 3. Write audit log
+          await admin.from('act_logs').insert({
+            type: 'ORDER_EXECUTION',
+            user_id: order.user_id,
+            target_user_id: order.user_id,
+            symbol: order.symbol,
+            qty: order.qty,
+            price: fillPrice,
+            reason: `${order.order_type ?? 'LIMIT'} Order Triggered @ ${ltp}`,
+          });
+        } catch (orderErr: any) {
+          console.error(`[Order Matching] Error processing order ${order.id}:`, orderErr?.message ?? orderErr);
           continue;
         }
-
-        // 2. Call the unified Postgres RPC to process positions atomically
-        const { error: rpcErr } = await admin.rpc('process_executed_position', {
-          p_order_id: order.id,
-        });
-
-        if (rpcErr) {
-          console.error(`[Order Matching] Failed to process executed position for order ${order.id}:`, rpcErr);
-        }
-
-        // 3. Write audit log
-        await admin.from('act_logs').insert({
-          type: 'ORDER_EXECUTION',
-          user_id: order.user_id,
-          target_user_id: order.user_id,
-          symbol: order.symbol,
-          qty: order.qty,
-          price: fillPrice,
-          reason: `${orderType} Order Triggered @ ${ltp}`,
-        });
       }
     }
   }
@@ -317,7 +471,6 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
           const s = pos.settlement.toUpperCase();
           if (s.includes('MCX')) exchange = 'MCX';
           else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
-          else if (s.includes('US')) exchange = 'US';
           else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
           else if (s.includes('BSE')) exchange = 'BSE';
           priceObj = pricesMap.get(`${exchange}:${pos.symbol}`);
@@ -331,13 +484,15 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         const ltp = priceObj.ltp;
         const entryPrice = Number(pos.entry_price ?? pos.avg_price);
         const qty = Number(pos.qty_open ?? 0);
-        const buyExitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0;
-        const sellExitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0;
-        const pnl = pos.side === 'BUY'
-          // Closing BUY (selling) → BID - exitBuffer
-          ? ((priceObj.bid * (1 - buyExitBuffer)) - entryPrice) * qty
-          // Closing SELL (buying back) → ASK + exitBuffer
-          : (entryPrice - (priceObj.ask * (1 + sellExitBuffer))) * qty;
+        const rawExitBuffer = exitBufferMap.get(`${pos.settlement}|${pos.side}`) ?? 0.17;
+        const exitBufferPct = rawExitBuffer > 0.005 ? rawExitBuffer / 100 : rawExitBuffer;
+        const pnl = calculateFloatingPnl({
+          side: pos.side,
+          ltp,
+          entryPrice,
+          qty,
+          exitBufferPct,
+        });
 
         totalUnrealised += pnl;
 
@@ -351,39 +506,35 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
 
       // 4. Check if user hit drawdown limit
       if (totalUnrealised <= drawdownLimit && userPositions.length > 0) {
-        console.log(`[Order Matching] DRAWDOWN TRIGGERED for user ${userId}. Total Unrealised: ${totalUnrealised}, Limit: ${drawdownLimit} (${autoSqoffPercent}% of ${balance}). Closing all positions.`);
+        console.log(`[Order Matching] DRAWDOWN TRIGGERED for user ${userId}. Total Unrealised: ${totalUnrealised}, Limit: ${drawdownLimit} (${autoSqoffPercent}% of ${balance}). Delegating to sequential liquidation engine.`);
 
-        for (const item of resolvedPositions) {
-          const pos = item.pos;
-          const ltp = item.ltp;
-          const priceObj = item.priceObj;
+        // Convert user positions for checkAndExecuteAccountLiquidation
+        const positionsForLiquidation: PositionForLiquidation[] = resolvedPositions.map(item => ({
+          ...item.pos,
+          ltp: item.ltp,
+          entry_price: Number(item.pos.entry_price ?? item.pos.avg_price),
+          qty_open: Number(item.pos.qty_open ?? 0),
+        }));
 
-          // Calculate exit price
-          let exitPrice = ltp;
-          if (pos.side === 'BUY') {
-            // Closing BUY (selling) → BID - exitBuffer
-            const exitBuffer = exitBufferMap.get(`${pos.settlement}|BUY`) ?? 0;
-            exitPrice = priceObj.bid * (1 - exitBuffer);
-          } else {
-            // Closing SELL (buying back) → ASK + exitBuffer
-            const exitBuffer = exitBufferMap.get(`${pos.settlement}|SELL`) ?? 0;
-            exitPrice = priceObj.ask * (1 + exitBuffer);
-          }
-          exitPrice = Math.round(exitPrice * 10000) / 10000;
+        // Convert exitBufferMap for liquidationEngine
+        const exitBuffers = new Map<string, { exit_buffer: number; bid_buffer: number }>();
+        for (const [key, val] of exitBufferMap.entries()) {
+          const fullKey = `${userId}|${key}`;
+          exitBuffers.set(fullKey, { exit_buffer: val, bid_buffer: val });
+        }
 
-          console.log(`[Order Matching] Liquidation Close for position ${pos.id} (${pos.symbol}). LTP: ${ltp}, Exit Price: ${exitPrice}`);
+        const result = await checkAndExecuteAccountLiquidation(
+          userId,
+          balance,
+          autoSqoffPercent,
+          positionsForLiquidation,
+          totalUnrealised,
+          exitBuffers,
+          admin,
+        );
 
-          const { error: closeRpcErr } = await admin.rpc('close_position', {
-            p_position_id: pos.id,
-            p_user_id: pos.user_id,
-            p_ltp: ltp,
-            p_exit_price: exitPrice,
-            p_closed_by: 'AUTO_SQOFF',
-          });
-
-          if (closeRpcErr) {
-            console.error(`[Order Matching] Failed to close position ${pos.id} via close_position RPC during drawdown:`, closeRpcErr);
-          } else {
+        if (result.liquidated) {
+          for (const pos of userPositions) {
             closedPositionIds.add(pos.id);
           }
         }
@@ -403,7 +554,6 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
         const s = pos.settlement.toUpperCase();
         if (s.includes('MCX')) exchange = 'MCX';
         else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
-        else if (s.includes('US')) exchange = 'US';
         else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
         else if (s.includes('BSE')) exchange = 'BSE';
         priceObj = pricesMap.get(`${exchange}:${pos.symbol}`);
@@ -470,6 +620,13 @@ export async function processPendingOrdersAndPositions(quotes: Quote[]): Promise
 
         if (closeRpcErr) {
           console.error(`[Order Matching] Failed to close position ${pos.id} via close_position RPC:`, closeRpcErr);
+        } else {
+          // Cancel open pending exit/linked orders for this position or symbol
+          await admin.from('orders')
+            .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
+            .eq('user_id', pos.user_id)
+            .eq('status', 'PENDING')
+            .or(`info.eq.${pos.id},linked_position_id.eq.${pos.id},symbol.eq.${pos.symbol}`);
         }
       }
     }

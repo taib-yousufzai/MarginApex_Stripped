@@ -17,7 +17,6 @@
  */
 
 import { requireAdmin } from '../../../_auth';
-import { isUserInHierarchy } from '@/lib/hierarchy';
 import { calculateCarryBrokerage } from '@/lib/trading/BrokerageCalculator';
 
 export async function POST(
@@ -44,11 +43,6 @@ export async function POST(
 
     if (fetchError || position === null) {
       return Response.json({ error: 'Position not found or already closed' }, { status: 404 });
-    }
-
-    const isAllowed = await isUserInHierarchy(adminClient, authResult.callerUser.id, position.user_id);
-    if (!isAllowed) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Step 4: Fetch live bid/ask from Ticker Daemon.

@@ -3,6 +3,7 @@
 import { getSharedSession, getSharedSessionSync, clearSharedSession } from '@/lib/sharedSession';
 import { clearAuthCache } from '@/lib/auth';
 
+
 // ─── Public Types ────────────────────────────────────────────────────────────
 
 export interface RequestOptions {
@@ -71,7 +72,7 @@ async function apiCall<T>(
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const { token } = await getSharedSession();
+  const { token } = getSharedSessionSync();
 
   // Build headers
   const headers: Record<string, string> = {
@@ -89,11 +90,12 @@ async function apiCall<T>(
   let timeoutController: AbortController | undefined;
   let timerId: ReturnType<typeof setTimeout> | undefined;
 
-  const { signal: callerSignal, timeout } = options ?? {};
+  const { signal: callerSignal } = options ?? {};
+  const effectiveTimeout = options?.timeout ?? 15000;
 
-  if (timeout !== undefined) {
+  if (effectiveTimeout > 0) {
     timeoutController = new AbortController();
-    timerId = setTimeout(() => timeoutController!.abort(), timeout);
+    timerId = setTimeout(() => timeoutController!.abort(), effectiveTimeout);
   }
 
   if (callerSignal && timeoutController) {
@@ -176,6 +178,7 @@ async function apiCall<T>(
         }
       }
     }
+
 
     // Error path: parse body for structured error info
     let details: unknown;

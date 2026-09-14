@@ -7,37 +7,52 @@ import { supabase } from '@/lib/supabaseClient';
 import { getSession, getRole } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
 import { useMarketQuotes } from '@/hooks/useMarketQuotes';
-import { isContractExpired } from '@/lib/contractExpiry';
+import { isContractExpired, getCurrentFuturesSymbol } from '@/lib/contractExpiry';
 import { useTradeConfig } from '@/contexts/TradeConfigContext';
 
 import AnimatedLoader from '@/components/AnimatedLoader';
 import TickFlash from '@/components/TickFlash';
+import { getSavedTheme, applyTheme, cycleTheme, Theme } from '@/lib/theme';
 import './page.css';
 
 // --- Kite instrument keys for the market overview ---
-const KITE_INSTRUMENTS_ROW1 = [
+const getInitialMarketRow1 = () => [
   'NSE:NIFTY 50',
   'BSE:SENSEX',
   'NSE:NIFTY BANK',
-  'CDS:USDINR26JULFUT',
-];
-const KITE_INSTRUMENTS_ROW2 = [
-  'MCX:CRUDEOIL26AUGFUT',
-  'MCX:GOLD26OCTFUT',
-  'MCX:SILVER26SEPFUT',
-  'MCX:NATURALGAS26AUGFUT',
+  getCurrentFuturesSymbol('CDS', 'USDINR'),
 ];
 
-const KITE_DISPLAY_MAP: Record<string, { name: string; icon: string }> = {
-  'NSE:NIFTY 50': { name: 'NIFTY 50', icon: 'fas fa-chart-line' },
-  'BSE:SENSEX': { name: 'SENSEX', icon: 'fas fa-chart-area' },
-  'NSE:NIFTY BANK': { name: 'BANK NIFTY', icon: 'fas fa-building' },
-  'CDS:USDINR26JULFUT': { name: 'USD/INR', icon: 'fas fa-dollar-sign' },
-  'MCX:CRUDEOIL26AUGFUT': { name: 'CRUDE OIL', icon: 'fas fa-oil-can' },
-  'MCX:GOLD26OCTFUT': { name: 'GOLD', icon: 'fas fa-coins' },
-  'MCX:SILVER26SEPFUT': { name: 'SILVER', icon: 'fas fa-gem' },
-  'MCX:NATURALGAS26AUGFUT': { name: 'NAT GAS', icon: 'fas fa-fire' },
+const getInitialMarketRow2 = () => [
+  getCurrentFuturesSymbol('MCX', 'CRUDEOIL'),
+  getCurrentFuturesSymbol('MCX', 'GOLD'),
+  getCurrentFuturesSymbol('MCX', 'SILVER'),
+  getCurrentFuturesSymbol('MCX', 'NATURALGAS'),
+];
+
+const BASE_DISPLAY_MAP: Record<string, { name: string; icon: string }> = {
+  'NIFTY 50': { name: 'NIFTY 50', icon: 'fas fa-chart-line' },
+  'SENSEX': { name: 'SENSEX', icon: 'fas fa-chart-area' },
+  'NIFTY BANK': { name: 'BANK NIFTY', icon: 'fas fa-building' },
+  'USDINR': { name: 'USD/INR', icon: 'fas fa-dollar-sign' },
+  'CRUDEOIL': { name: 'CRUDE OIL', icon: 'fas fa-oil-can' },
+  'GOLD': { name: 'GOLD', icon: 'fas fa-coins' },
+  'SILVER': { name: 'SILVER', icon: 'fas fa-gem' },
+  'NATURALGAS': { name: 'NAT GAS', icon: 'fas fa-fire' },
 };
+
+function getDisplayInfo(key: string): { name: string; icon: string } {
+  const upper = key.toUpperCase();
+  if (upper.includes('NIFTY 50')) return BASE_DISPLAY_MAP['NIFTY 50'];
+  if (upper.includes('SENSEX')) return BASE_DISPLAY_MAP['SENSEX'];
+  if (upper.includes('NIFTY BANK')) return BASE_DISPLAY_MAP['NIFTY BANK'];
+  if (upper.includes('USDINR')) return BASE_DISPLAY_MAP['USDINR'];
+  if (upper.includes('CRUDEOIL')) return BASE_DISPLAY_MAP['CRUDEOIL'];
+  if (upper.includes('GOLD')) return BASE_DISPLAY_MAP['GOLD'];
+  if (upper.includes('SILVER')) return BASE_DISPLAY_MAP['SILVER'];
+  if (upper.includes('NATURALGAS')) return BASE_DISPLAY_MAP['NATURALGAS'];
+  return { name: key, icon: 'fas fa-chart-line' };
+}
 
 type MarketItem = { name: string; price: number; change: number; changeAmt?: number; type: string; icon: string };
 
@@ -299,9 +314,11 @@ export default function Page() {
           const list = result.notifications ?? [];
           setNotifications(list);
         }
-      } catch (err) {
+      } catch (err: any) {
         if (err instanceof ApiError) {
-          console.error('Failed to fetch notifications', err.status, err.details);
+          if (err.status !== 401) {
+            console.error('Failed to fetch notifications', err.status, err.details);
+          }
         } else {
           console.error('Failed to fetch notifications', err);
         }
@@ -329,74 +346,86 @@ export default function Page() {
     }
   }, [isNotifDrawerOpen, notifications]);
 
-  const [marketRow1Keys, setMarketRow1Keys] = useState<string[]>(KITE_INSTRUMENTS_ROW1);
-  const [marketRow2Keys, setMarketRow2Keys] = useState<string[]>(KITE_INSTRUMENTS_ROW2);
-  const [displayMap, setDisplayMap] = useState<Record<string, { name: string; icon: string }>>(KITE_DISPLAY_MAP);
+  const [marketRow1Keys, setMarketRow1Keys] = useState<string[]>(getInitialMarketRow1);
+  const [marketRow2Keys, setMarketRow2Keys] = useState<string[]>(getInitialMarketRow2);
+  const [isResolvingContracts, setIsResolvingContracts] = useState<boolean>(false);
 
   useEffect(() => {
     async function resolveExpiredContracts() {
-      const bases = [
-        { name: 'USDINR', prefix: 'CDS', type: ['FUT'] },
-        { name: 'CRUDEOIL', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
-        { name: 'GOLD', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
-        { name: 'SILVER', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
-        { name: 'NATURALGAS', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] }
-      ];
+      const initialR1 = getInitialMarketRow1();
+      const initialR2 = getInitialMarketRow2();
+      const allKeys = [...initialR1, ...initialR2];
+      
+      // Fast path: If all initial contracts are already active and valid, skip DB queries entirely
+      const hasExpired = allKeys.some(k => isContractExpired(k));
+      if (!hasExpired) {
+        return;
+      }
 
-      const newMap = { ...KITE_DISPLAY_MAP };
-      const newRow1 = [...KITE_INSTRUMENTS_ROW1];
-      const newRow2 = [...KITE_INSTRUMENTS_ROW2];
-      let changed = false;
+      setIsResolvingContracts(true);
+      try {
+        const bases = [
+          { name: 'USDINR', prefix: 'CDS', type: ['FUT'] },
+          { name: 'CRUDEOIL', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
+          { name: 'GOLD', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
+          { name: 'SILVER', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] },
+          { name: 'NATURALGAS', prefix: 'MCX', type: ['FUTCOM', 'FUT', 'MAPPED_FUT'] }
+        ];
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      await Promise.all(bases.map(async (base) => {
-        const row1Idx = newRow1.findIndex(k => k.includes(base.name));
-        const row2Idx = newRow2.findIndex(k => k.includes(base.name));
-        
-        if (row1Idx !== -1 || row2Idx !== -1) {
-          const queryPromise = supabase
-            .from('instruments')
-            .select('tradingsymbol')
-            .eq('name', base.name)
-            .in('instrument_type', base.type)
-            .gte('expiry', todayStr)
-            .order('expiry', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+        const newRow1 = [...initialR1];
+        const newRow2 = [...initialR2];
+        let changed = false;
 
-          const timeoutPromise = new Promise<{ data: any }>((resolve) =>
-            setTimeout(() => resolve({ data: null }), 1500)
-          );
+        // Query in parallel with 1500ms timeout instead of 5 sequential blocking queries
+        const todayStr = new Date().toISOString().split('T')[0];
+        await Promise.all(bases.map(async (base) => {
+          const row1Idx = newRow1.findIndex(k => k.includes(base.name));
+          const row2Idx = newRow2.findIndex(k => k.includes(base.name));
+          
+          if (row1Idx !== -1 || row2Idx !== -1) {
+            const queryPromise = supabase
+              .from('instruments')
+              .select('tradingsymbol')
+              .eq('name', base.name)
+              .in('instrument_type', base.type)
+              .gte('expiry', todayStr)
+              .order('expiry', { ascending: true })
+              .limit(1)
+              .maybeSingle();
 
-          const { data } = await Promise.race([queryPromise, timeoutPromise]);
+            const timeoutPromise = new Promise<{ data: any }>((resolve) =>
+              setTimeout(() => resolve({ data: null }), 1500)
+            );
 
-          if (data?.tradingsymbol) {
-            const resolvedKey = `${base.prefix}:${data.tradingsymbol}`;
-            if (row1Idx !== -1 && newRow1[row1Idx] !== resolvedKey) {
-              const oldKey = newRow1[row1Idx];
-              newRow1[row1Idx] = resolvedKey;
-              newMap[resolvedKey] = newMap[oldKey];
-              changed = true;
-            }
-            if (row2Idx !== -1 && newRow2[row2Idx] !== resolvedKey) {
-              const oldKey = newRow2[row2Idx];
-              newRow2[row2Idx] = resolvedKey;
-              newMap[resolvedKey] = newMap[oldKey];
-              changed = true;
+            const { data } = await Promise.race([queryPromise, timeoutPromise]);
+
+            if (data?.tradingsymbol) {
+              const resolvedKey = `${base.prefix}:${data.tradingsymbol}`;
+              if (row1Idx !== -1 && newRow1[row1Idx] !== resolvedKey) {
+                newRow1[row1Idx] = resolvedKey;
+                changed = true;
+              }
+              if (row2Idx !== -1 && newRow2[row2Idx] !== resolvedKey) {
+                newRow2[row2Idx] = resolvedKey;
+                changed = true;
+              }
             }
           }
-        }
-      }));
+        }));
 
-      if (changed) {
-        setDisplayMap(newMap);
-        setMarketRow1Keys(newRow1);
-        setMarketRow2Keys(newRow2);
+        if (changed) {
+          setMarketRow1Keys(newRow1);
+          setMarketRow2Keys(newRow2);
+        }
+      } catch (err) {
+        console.error('Error resolving expired contracts:', err);
+      } finally {
+        setIsResolvingContracts(false);
       }
     }
+
     resolveExpiredContracts();
   }, []);
-
 
   const allKiteInstruments = [...marketRow1Keys, ...marketRow2Keys];
   const {
@@ -413,8 +442,8 @@ export default function Page() {
   const buildRow = (instruments: string[]): (MarketItem & { expired?: boolean })[] => {
     return instruments.map((key) => {
       const q = quotes[key];
-      const display = displayMap[key] ?? { name: key, icon: 'fas fa-chart-line' };
-      const expired = isContractExpired(key);
+      const display = getDisplayInfo(key);
+      const expired = !isResolvingContracts && isContractExpired(key);
       if (expired) {
         // Don't show stale 0/0 values — surface expiry to the user instead
         return { name: display.name, price: 0, change: 0, changeAmt: 0, type: 'positive', icon: display.icon, expired: true };
@@ -435,32 +464,18 @@ export default function Page() {
   const marketRow2 = buildRow(marketRow2Keys);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('marginApexTheme') as 'light' | 'dark' | 'black' | 'blue' | null;
-    if (savedTheme) {
-      setTimeout(() => {
-        setTheme(savedTheme);
-        document.documentElement.classList.remove('dark', 'black', 'blue');
-        document.body.classList.remove('dark', 'black', 'blue');
-        if (savedTheme !== 'light') {
-          document.documentElement.classList.add(savedTheme);
-          document.body.classList.add(savedTheme);
-        }
-      }, 0);
-    }
+    const syncThemeState = () => {
+      setTheme(getSavedTheme());
+    };
+    syncThemeState();
+    window.addEventListener('themeChanged', syncThemeState);
+    return () => window.removeEventListener('themeChanged', syncThemeState);
   }, []);
 
   const toggleTheme = () => {
-    // If currently in black/blue, toggling goes to light; if light go to dark
-    const newTheme = (theme === 'light') ? 'dark' : 'light';
-    setTheme(newTheme);
-    document.documentElement.classList.remove('dark', 'black', 'blue');
-    document.body.classList.remove('dark', 'black', 'blue');
-    if (newTheme !== 'light') {
-      document.documentElement.classList.add(newTheme);
-      document.body.classList.add(newTheme);
-    }
-    localStorage.setItem('marginApexTheme', newTheme);
-    window.dispatchEvent(new Event('themeChanged'));
+    const nextTheme = cycleTheme(theme as Theme);
+    setTheme(nextTheme);
+    applyTheme(nextTheme);
   };
 
   const mapOptionChainSymbolToDbSegment = (sym: string): string => {
@@ -520,9 +535,8 @@ export default function Page() {
             <div className="main-content">
               <div className="screen">
                 <div className="content-padded">
-
                   {/* WhatsApp Community */}
-                  <div className="whatsapp-community" onClick={() => window.open('#', '_blank')}>
+                  <div className="whatsapp-community" onClick={() => window.open(process.env.NEXT_PUBLIC_WHATSAPP_COMMUNITY_LINK || 'https://chat.whatsapp.com/BqxIlyVnRQNIJ2JB2swEVh', '_blank')}>
                     <div className="whatsapp-inner">
                       <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
                       <div className="whatsapp-content">
@@ -672,7 +686,7 @@ export default function Page() {
                   </div>
 
                   {/* WhatsApp Support */}
-                  <div className="whatsapp-support" onClick={() => window.open('#', '_blank')}>
+                  <div className="whatsapp-support" onClick={() => window.open('https://wa.me/918796119115', '_blank')}>
                     <div className="whatsapp-inner">
                       <div className="whatsapp-icon"><i className="fab fa-whatsapp"></i></div>
                       <div className="whatsapp-content">
@@ -682,7 +696,6 @@ export default function Page() {
                       <div className="whatsapp-arrow"><i className="fas fa-chevron-right"></i></div>
                     </div>
                   </div>
-
                 </div>
               </div>
             </div>

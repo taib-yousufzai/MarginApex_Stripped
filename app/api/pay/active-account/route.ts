@@ -36,36 +36,21 @@ function createAdminClient() {
 // Route handler
 // ---------------------------------------------------------------------------
 
+import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
+
 export async function GET(request: Request): Promise<Response> {
   try {
-    // Step 1: Extract Bearer token and authenticate the user
-    // Validates: Requirements 28.1
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const token = authHeader.slice('Bearer '.length).trim();
-    if (!token) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    let adminClient;
-    try {
-      adminClient = createAdminClient();
-    } catch (e) {
-      console.error('[GET /api/pay/active-account] createAdminClient failed:', e);
-      return Response.json({ error: 'Internal server error' }, { status: 500 });
-    }
-
-    const { data: userData, error: userError } = await adminClient.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const adminClient = getAdminClient();
 
     const { data: userProfile } = await adminClient
       .from('profiles')
       .select('parent_id')
-      .eq('id', userData.user.id)
+      .eq('id', user.id)
       .single();
     
     const parentId = userProfile?.parent_id;
@@ -90,18 +75,32 @@ export async function GET(request: Request): Promise<Response> {
 
     // Fallback to global admin accounts if no broker accounts found
     if (accounts.length === 0) {
-      const { data: globalAccounts, error: accountsError } = await adminClient
+      const { data: adminProfiles } = await adminClient
+        .from('profiles')
+        .select('id')
+        .in('role', ['admin', 'super_admin']);
+
+      const adminIds = (adminProfiles || []).map((p: any) => p.id);
+
+      let query = adminClient
         .from('payment_accounts')
         .select('*')
         .eq('is_active', true)
-        .is('created_by', null)
         .order('sort_order', { ascending: true });
+
+      if (adminIds.length > 0) {
+        query = query.or(`created_by.is.null,created_by.in.(${adminIds.join(',')})`);
+      } else {
+        query = query.is('created_by', null);
+      }
+
+      const { data: adminAccounts, error: accountsError } = await query;
         
       if (accountsError) {
-        console.error('[GET /api/pay/active-account] global payment_accounts error:', accountsError.message);
+        console.error('[GET /api/pay/active-account] admin payment_accounts error:', accountsError.message);
         return Response.json({ error: 'Internal server error' }, { status: 500 });
       }
-      accounts = globalAccounts || [];
+      accounts = adminAccounts || [];
     }
 
     // Step 3: Return 404 if no active accounts
@@ -159,16 +158,17 @@ export async function GET(request: Request): Promise<Response> {
     // Validates: Requirements 28.5
     const selected = selectActiveAccount(accountsWithStats);
 
-    // Step 8: Return sanitized blank placeholders to keep banking details blank
+    // Step 8: Return only the fields needed by the client
+    // Validates: Requirements 28.6, 28.7
     return Response.json(
       {
         id: selected.id,
-        account_holder: '',
-        bank_name: '',
-        account_no: '',
-        ifsc: '',
-        upi_id: '',
-        qr_image_url: '',
+        account_holder: selected.account_holder,
+        bank_name: selected.bank_name,
+        account_no: selected.account_no,
+        ifsc: selected.ifsc,
+        upi_id: selected.upi_id,
+        qr_image_url: selected.qr_image_url,
       },
       { status: 200 },
     );

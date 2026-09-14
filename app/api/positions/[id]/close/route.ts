@@ -34,11 +34,15 @@ async function fetchKiteLtp(instrument: string): Promise<number | null> {
     try {
       const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || 'http://localhost:8080';
       const params = new URLSearchParams({ symbols: instrument });
-      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(1000) });
       if (resTicker.ok) {
         const json = await resTicker.json();
         if (json.success && json.data && json.data[instrument]) {
-          return Number(json.data[instrument].last_price);
+          const q = json.data[instrument];
+          const ltp = Number(q.last_price || 0);
+          const bid = Number(q.bid ?? q.buy_price ?? q.depth?.buy?.[0]?.price ?? 0);
+          const ask = Number(q.ask ?? q.sell_price ?? q.depth?.sell?.[0]?.price ?? 0);
+          return { ltp, bid: bid > 0 ? bid : null, ask: ask > 0 ? ask : null } as any;
         }
       }
     } catch (tickerErr) {
@@ -58,13 +62,18 @@ async function fetchKiteLtp(instrument: string): Promise<number | null> {
         Authorization: `token ${apiKey}:${session.accessToken}`,
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(1500),
     });
 
     if (!res.ok) return null;
 
-    const data = await res.json() as { data?: Record<string, { last_price: number; instrument_token?: number; ohlc?: { close?: number } }> };
+    const data = await res.json() as { data?: Record<string, { last_price: number; buy_price?: number; sell_price?: number; depth?: any; instrument_token?: number; ohlc?: { close?: number } }> };
     const quote = data.data?.[instrument];
     if (!quote) return null;
+
+    const ltp = Number(quote.last_price || 0);
+    const bid = Number(quote.depth?.buy?.[0]?.price ?? quote.buy_price ?? 0);
+    const ask = Number(quote.depth?.sell?.[0]?.price ?? quote.sell_price ?? 0);
 
     // Cache the instrument asynchronously in background (excluding raw ticks)
     (async () => {
@@ -87,7 +96,7 @@ async function fetchKiteLtp(instrument: string): Promise<number | null> {
       }
     })();
 
-    return quote.last_price;
+    return { ltp, bid: bid > 0 ? bid : null, ask: ask > 0 ? ask : null } as any;
   } catch (err) {
     console.error('[fetchKiteLtp] Unexpected error:', err);
     return null;
@@ -101,7 +110,8 @@ async function fetchBinanceQuote(symbol: string): Promise<number | null> {
       cleanSym = cleanSym + 'USDT';
     }
     const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, {
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: AbortSignal.timeout(1500),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -147,46 +157,8 @@ export async function POST(
     return NextResponse.json({ error: 'Position not found or already closed' }, { status: 404 });
   }
 
-  // Check market hours
-  try {
-    const symbol = pos.symbol || '';
-    const dbSegment = pos.settlement || '';
-    const exchangeName = symbol.includes(':') ? symbol.split(':')[0] : 'NSE';
-    const ex = exchangeName.toUpperCase();
-    const segUpper = dbSegment.toUpperCase();
+  // Note: Position exits (closing an open position) are allowed off-hours so users/system are never trapped in open positions.
 
-    if (!segUpper.includes('CRYPTO')) {
-      const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
-
-
-      const { data: segmentHour, error: hrError } = await admin
-        .from('trading_hours')
-        .select('name, start_time, end_time, is_active')
-        .eq('id', segmentId)
-        .maybeSingle();
-
-      if (!hrError && segmentHour) {
-        if (!segmentHour.is_active) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
-
-        const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const dayOfWeek = nowIST.getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-        if (isWeekend) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
-
-        const currentHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
-        if (currentHHMM < segmentHour.start_time || currentHHMM >= segmentHour.end_time) {
-          return NextResponse.json({ error: 'market is closed' }, { status: 400 });
-        }
-      }
-    }
-  } catch (err) {
-    console.error('[POST /api/positions/[id]/close] Market hours check error:', err);
-  }
 
   // 2. Parallel fetch segment settings and LTP
   const isScalper = profileResult.data?.trading_mode === 'scalper';
@@ -194,30 +166,36 @@ export async function POST(
   const lookupId = profileResult.data?.parent_id ?? user.id;
   const [segSettingResult, kiteLtp] = await Promise.all([
     admin.from(targetTable)
-      .select('exit_buffer, profit_hold_sec, loss_hold_sec')
+      .select('exit_buffer, profit_hold_sec, loss_hold_sec, bid_buffer, exit_price_mode')
       .eq('user_id', lookupId)
       .eq('segment', pos.settlement ?? '')
       .eq('side', pos.side)
       .maybeSingle(),
     (() => {
-      if (!pos.symbol) return Promise.resolve(null);
-      const isCrypto = (pos.settlement || '').toUpperCase().includes('CRYPTO');
-      if (isCrypto) {
-        return fetchBinanceQuote(pos.symbol);
-      }
-      let fullSymbol = pos.symbol;
-      if (!pos.symbol.includes(':')) {
-        let exchange = 'NSE';
-        if (pos.settlement) {
-          const s = pos.settlement.toUpperCase();
-          if (s.includes('MCX')) exchange = 'MCX';
-          else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
-          else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
-          else if (s.includes('BSE')) exchange = 'BSE';
+      const fetchPromise = (async () => {
+        if (!pos.symbol) return null;
+        const isCrypto = (pos.settlement || '').toUpperCase().includes('CRYPTO');
+        if (isCrypto) {
+          return fetchBinanceQuote(pos.symbol);
         }
-        fullSymbol = `${exchange}:${pos.symbol}`;
-      }
-      return fetchKiteLtp(fullSymbol);
+        let fullSymbol = pos.symbol;
+        if (!pos.symbol.includes(':')) {
+          let exchange = 'NSE';
+          if (pos.settlement) {
+            const s = pos.settlement.toUpperCase();
+            if (s.includes('MCX')) exchange = 'MCX';
+            else if (s.includes('CDS') || s.includes('FOREX')) exchange = 'CDS';
+            else if (s.includes('OPT') || s.includes('FUT') || s.includes('NFO')) exchange = 'NFO';
+            else if (s.includes('BSE')) exchange = 'BSE';
+          }
+          fullSymbol = `${exchange}:${pos.symbol}`;
+        }
+        return fetchKiteLtp(fullSymbol);
+      })();
+      return Promise.race([
+        fetchPromise,
+        new Promise<any>((resolve) => setTimeout(() => resolve(null), 1500))
+      ]);
     })(),
   ]);
 
@@ -233,30 +211,41 @@ export async function POST(
   const baseLtp = quoteDetails?.ltp ?? Number(pos.ltp ?? pos.entry_price);
   const rawBid = quoteDetails?.bid ?? null;
   const rawAsk = quoteDetails?.ask ?? null;
-  const hasRealBidAsk = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
+  const isCommodity = (pos.settlement || '').toUpperCase().includes('MCX') ||
+    ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c => (pos.symbol || '').toUpperCase().includes(c));
+  const hasRealBidAsk = isCommodity ? false : Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
 
   const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
-  const exitPriceMode = platformExitMode || segSetting?.exit_price_mode || 'BID_ASK';
+  const execMode = platformExitMode || segSetting?.exit_price_mode || 'BID_ASK';
 
-  // Exit price calculation using resolveEffectivePrices
-  const effective = resolveEffectivePrices({
-    ltp: baseLtp,
-    rawBid,
-    rawAsk,
-    hasRealBidAsk,
-    askBuffer: Number(segSetting?.bid_buffer ?? 0),
-    bidBuffer: Number(segSetting?.bid_buffer ?? 0),
-  });
+  // Layer 1: displayed Bid/Ask using bid_buffer (same formula as TradeSheet/DetailSheet)
+  const bidBufRaw = Number(segSetting?.bid_buffer ?? 0);
+  const bidBufDecimal = Math.abs(bidBufRaw) > 0.005 ? bidBufRaw / 100 : bidBufRaw;
+  const bidBufAmount = baseLtp * bidBufDecimal; // always LTP-based
 
+  const hasRealBidAskClose = Boolean(rawBid && rawAsk && rawBid > 0 && rawAsk > 0 && rawBid < rawAsk);
+  const useLtpModeClose = execMode === 'LTP' || isCommodity || !hasRealBidAskClose;
+
+  let displayedAsk: number;
+  let displayedBid: number;
+  if (useLtpModeClose) {
+    displayedAsk = baseLtp + bidBufAmount;
+    displayedBid = baseLtp - bidBufAmount;
+  } else {
+    displayedAsk = (rawAsk ?? baseLtp) + bidBufAmount;
+    displayedBid = (rawBid ?? baseLtp) - bidBufAmount;
+  }
+  if (displayedAsk <= 0) displayedAsk = baseLtp;
+  if (displayedBid <= 0) displayedBid = baseLtp;
+
+  // Layer 2: apply exit_buffer on top using LTP as the base amount (hidden from user)
+  //   Closing BUY  = SELLING  → Displayed Bid  - LTP * exit_buffer%
+  //   Closing SELL = BUYING   → Displayed Ask  + LTP * exit_buffer%
   let exitPrice: number;
   if (pos.side === 'BUY') {
-    // Closing BUY position = SELLING -> Base is Effective Bid minus exitBuffer
-    const base = exitPriceMode === 'LTP' ? baseLtp : effective.effectiveBid;
-    exitPrice = base * (1 - exitBuffer);
+    exitPrice = displayedBid - baseLtp * exitBuffer;
   } else {
-    // Closing SELL position = BUYING BACK -> Base is Effective Ask plus exitBuffer
-    const base = exitPriceMode === 'LTP' ? baseLtp : effective.effectiveAsk;
-    exitPrice = base * (1 + exitBuffer);
+    exitPrice = displayedAsk + baseLtp * exitBuffer;
   }
   exitPrice = Math.round(exitPrice * 100) / 100;
 
@@ -287,6 +276,16 @@ export async function POST(
     console.error('[POST /api/positions/[id]/close] RPC error:', rpcErr);
     return NextResponse.json({ error: rpcErr.message || 'Failed to close position. Please try again.' }, { status: 400 });
   }
+
+  // Cancel any open/pending exit or linked orders for this position/symbol asynchronously
+  (async () => {
+    try {
+      const { PositionService } = await import('@/lib/trading/PositionService');
+      await PositionService.cancelPendingOrdersForClosedPosition(admin, user.id, positionId, pos.symbol);
+    } catch (cancelErr) {
+      console.warn('[POST /api/positions/[id]/close] Non-fatal error cleaning up pending orders:', cancelErr);
+    }
+  })();
 
   const response: ClosePositionResponse = {
     pnl:        Number(pnl),

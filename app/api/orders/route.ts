@@ -12,24 +12,30 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getRedisClient } from '@/lib/redis';
+import { getCachedScriptSettings } from '@/lib/redisSettingsCache';
 import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
-import { getPlatformSetting } from '@/lib/getPlatformSetting';
-import { getSharedKiteSession } from '@/lib/kiteSession';
-import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
-import type {
-  PlaceOrderRequest,
-  PlaceOrderResponse,
-  MyOrder,
-} from '@/lib/types/order';
-import { calculateSingleLegCharge } from '@/lib/trading/BrokerageCalculator';
-import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
-import { RiskValidation } from '@/lib/trading/RiskValidation';
 
-import { mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
-import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
-import { resolveUnderlyingKiteId, validateOptionStrike } from '@/lib/trading/OptionStrikeValidator';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+function getLotSize(symbol: string, dbSettings?: { symbol: string; lot_size: number }[] | Record<string, number>): number {
+  const n = symbol.toUpperCase();
+  if (dbSettings) {
+    if (Array.isArray(dbSettings)) {
+      const match = dbSettings.find(s => n.includes(s.symbol.toUpperCase()) || s.symbol.toUpperCase().includes(n));
+      if (match) return Number(match.lot_size);
+    } else {
+      for (const [sym, size] of Object.entries(dbSettings)) {
+        const upper = sym.toUpperCase();
+        if (n.includes(upper) || upper.includes(n)) return Number(size);
+      }
+    }
+  }
+  if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 15;
+  if (n.includes('FINNIFTY')) return 40;
+  if (n.includes('MIDCP') || n.includes('MIDCAP')) return 75;
+  if (n.includes('SENSEX')) return 10;
+  if (n.includes('NIFTY')) return 25;
+  return 1;
+}
 
 function cleanSymHelper(s?: string | null): string {
   if (!s) return '';
@@ -43,6 +49,29 @@ function cleanSymHelper(s?: string | null): string {
   }
   return str;
 }
+import { getPlatformSetting } from '@/lib/getPlatformSetting';
+import { getSharedKiteSession } from '@/lib/kiteSession';
+import { parseOptionSymbol } from '@/lib/parseOptionSymbol';
+import type {
+  PlaceOrderRequest,
+  PlaceOrderResponse,
+  MyOrder,
+} from '@/lib/types/order';
+import { calculateSingleLegCharge, calculateOrderBrokerage } from '@/lib/trading/BrokerageCalculator';
+import { resolveEffectivePrices } from '@/lib/trading/marketPriceResolver';
+import { RiskValidation } from '@/lib/trading/RiskValidation';
+
+import { mapSymbolToSegment } from '@/lib/trading/SymbolMapping';
+import { calculateBufferedPrice } from '@/lib/trading/BufferCalculator';
+import { resolveUnderlyingKiteId, validateOptionStrike } from '@/lib/trading/OptionStrikeValidator';
+import { sanitizeOrderInfo } from '@/lib/trading/orderSanitizer';
+import { OrderService } from '@/lib/trading/OrderService';
+
+// In-memory cache for segment trading hours (avoids ~767ms serial Supabase round-trip on every order)
+const tradingHoursCache = new Map<string, { data: any; expiresAt: number }>();
+const TRADING_HOURS_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Fetch the Binance quote (LTP, bid, ask, depth) for a crypto symbol.
@@ -72,16 +101,16 @@ async function fetchBinanceQuote(symbol: string): Promise<ServerQuote | null> {
           };
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
-    // 2. Fetch Binance ticker bookTicker (best bid & ask) + ticker price in parallel
+    // 2. Fetch Binance ticker bookTicker (best bid & ask) + ticker price in parallel with a fast timeout
     const [bookRes, priceRes] = await Promise.all([
-      fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${cleanSym}`, { cache: 'no-store' }).catch(() => null),
-      fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store' }).catch(() => null),
+      fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(2500) }).catch(() => null),
+      fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${cleanSym}`, { cache: 'no-store', signal: AbortSignal.timeout(2500) }).catch(() => null),
     ]);
 
     const isForexUsd = ['GBPUSD', 'EURUSD'].includes(cleanSym.replace('USDT', ''));
-    const usdInrRate = isForexUsd ? 83.85 : 1;
+    const usdInrRate = 1;
 
     if (bookRes?.ok && priceRes?.ok) {
       const bookData = await bookRes.json();
@@ -134,7 +163,7 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, Se
     try {
       const tickerUrl = process.env.NEXT_PUBLIC_TICKER_URL || 'http://localhost:8080';
       const params = new URLSearchParams({ symbols: instruments.join(',') });
-      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store' });
+      const resTicker = await fetch(`${tickerUrl}/quotes?${params}`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
       if (resTicker.ok) {
         const json = await resTicker.json();
         if (json.success && json.data) {
@@ -175,6 +204,7 @@ async function fetchKiteQuotes(instruments: string[]): Promise<Record<string, Se
           Authorization: `token ${apiKey}:${session.accessToken}`,
         },
         cache: 'no-store',
+        signal: AbortSignal.timeout(2500),
       });
 
       if (!res.ok) return result;
@@ -242,25 +272,11 @@ function mapSegmentToDbSegment(s: string): string {
   if (trimmed === 'NSE - Stock Options' || trimmed === 'BSE - Stock Options') return 'STOCK-OPT';
   if (trimmed === 'MCX - Futures') return 'MCX-FUT';
   if (trimmed === 'MCX - Options') return 'MCX-OPT';
-  if (trimmed === 'NSE - Equity' || trimmed === 'BSE - Equity') return 'NSE-EQ';
+  if (trimmed === 'NSE - Equity' || trimmed === 'BSE - Equity') return 'STOCKS';
   if (trimmed === 'Crypto' || trimmed === 'CRYPTO') return 'CRYPTO';
   if (trimmed === 'Forex' || trimmed === 'FOREX' || trimmed === 'CDS - Futures' || trimmed === 'CDS - Options') return 'FOREX';
   if (trimmed === 'COMEX - Futures' || trimmed === 'COMEX - Options' || trimmed === 'COMEX' || trimmed === 'COI') return 'COMEX';
   return trimmed;
-}
-
-function getLotSize(symbol: string, dbSettings?: { symbol: string; lot_size: number }[]): number {
-  const n = symbol.toUpperCase();
-  if (dbSettings && Array.isArray(dbSettings)) {
-    const match = dbSettings.find(s => n.includes(s.symbol.toUpperCase()) || s.symbol.toUpperCase().includes(n));
-    if (match) return Number(match.lot_size);
-  }
-  if (n.includes('BANKNIFTY') || n.includes('BANKEX')) return 15;
-  if (n.includes('FINNIFTY')) return 40;
-  if (n.includes('MIDCP') || n.includes('MIDCAP')) return 75;
-  if (n.includes('SENSEX')) return 10;
-  if (n.includes('NIFTY')) return 25;
-  return 1;
 }
 
 
@@ -276,32 +292,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const admin = getAdminClient();
     const { searchParams } = request.nextUrl;
-    const page  = parseInt(searchParams.get('page')  ?? '1',  10);
+    const page = parseInt(searchParams.get('page') ?? '1', 10);
     const limit = parseInt(searchParams.get('limit') ?? '50', 10);
-    const from  = (page - 1) * limit;
-    const to    = from + limit - 1;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
-    // Fetch profile to check history_reset_at
-    const { data: userProfile } = await admin
-      .from('profiles')
-      .select('history_reset_at')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    const historyResetAt = userProfile?.history_reset_at;
-
-    let ordersQuery = admin
-      .from('orders')
-      .select('*')
-      .eq('user_id', user.id);
-
-    if (historyResetAt) {
-      ordersQuery = ordersQuery.or(`status.in.(PENDING,pending,TRIGGER_PENDING,trigger_pending,OPEN,open,ACTIVE,active),updated_at.gt.${historyResetAt},created_at.gt.${historyResetAt}`);
-    }
-
-    // Fetch orders and open positions in parallel
-    const [ordersRes, posRes] = await Promise.all([
-      ordersQuery
+    // Fetch user profile, orders, and open positions in a SINGLE parallel round-trip with a 2.5s fast timeout
+    const queryPromise = Promise.all([
+      admin
+        .from('profiles')
+        .select('history_reset_at')
+        .eq('id', user.id)
+        .maybeSingle(),
+      admin
+        .from('orders')
+        .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .range(from, to),
       admin
@@ -311,71 +317,127 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         .in('status', ['open', 'OPEN', 'active', 'ACTIVE'])
     ]);
 
-    if (ordersRes.error) throw ordersRes.error;
-
-    const dbOrders = ordersRes.data ?? [];
-    const openPositions = posRes.data ?? [];
-
-    const orders: MyOrder[] = dbOrders.map((r: Record<string, unknown>) => ({
-      id:           r.id as string,
-      symbol:       r.symbol as string,
-      segment:      (r.segment as string) ?? '',
-      side:         r.side as 'BUY' | 'SELL',
-      status:       r.status as MyOrder['status'],
-      qty:          Number(r.qty),
-      lots:         Number(r.lots ?? 0),
-      fill_price:   Number(r.fill_price ?? r.price),
-      ltp_at_entry: Number(r.ltp_at_entry ?? 0),
-      order_type:   (r.order_type as MyOrder['order_type']) ?? 'MARKET',
-      product_type: (r.product_type as MyOrder['product_type']) ?? 'INTRADAY',
-      info:         (r.info as string) ?? null,
-      brokerage:    Number(r.brokerage ?? 0),
-      client_price: r.client_price !== null ? Number(r.client_price) : undefined,
-      trigger_price: r.trigger_price !== null ? Number(r.trigger_price) : undefined,
-      stop_loss:    r.stop_loss !== null ? Number(r.stop_loss) : undefined,
-      target:       r.target !== null ? Number(r.target) : undefined,
-      is_exit:      r.is_exit !== undefined ? Boolean(r.is_exit) : false,
-      created_at:   r.created_at as string,
-    }));
-
-    // Build a set of "symbol|exitSide" from real EXECUTED exit orders.
-    // If a real exit order already exists for a given symbol+exitSide, we skip generating
-    // a virtual SL/Target order for the same open position.
-    const realExitOrderKeys = new Set<string>(
-      dbOrders
-        .filter((o: any) => o.is_exit === true && o.status === 'EXECUTED')
-        .map((o: any) => `${o.symbol}|${o.side}`)
+    const timeoutPromise = new Promise<any>((resolve) =>
+      setTimeout(() => resolve({ timeout: true }), 2500)
     );
 
-    // Also build a set of position IDs that are fully closed to skip virtual orders
-    const closedPosRes = await admin
-      .from('positions')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('status', 'closed');
-    const closedPosIds = new Set<string>((closedPosRes.data ?? []).map((p: any) => p.id));
+    const raceRes = await Promise.race([queryPromise, timeoutPromise]).catch(err => {
+      console.warn('[GET /api/orders] Supabase query failed:', err);
+      return { timeout: true };
+    });
+
+    let userProfileRes: any = { data: null };
+    let ordersRes: any = { data: [] };
+    let posRes: any = { data: [] };
+
+    if (raceRes && !raceRes.timeout && Array.isArray(raceRes)) {
+      [userProfileRes, ordersRes, posRes] = raceRes;
+    } else {
+      console.warn('[GET /api/orders] Supabase Cloud query timed out (2.5s); returning empty fallback.');
+    }
+
+    const userProfile = userProfileRes?.data;
+    const historyResetAt = userProfile?.history_reset_at ? new Date(userProfile.history_reset_at).getTime() : null;
+
+    let dbOrders = ordersRes.data ?? [];
+    if (historyResetAt) {
+      const pendingStatuses = new Set(['PENDING', 'pending', 'TRIGGER_PENDING', 'trigger_pending', 'OPEN', 'open', 'ACTIVE', 'active']);
+      dbOrders = dbOrders.filter((r: any) => {
+        if (r.status && pendingStatuses.has(r.status)) return true;
+        const updatedAt = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+        const createdAt = r.created_at ? new Date(r.created_at).getTime() : 0;
+        return updatedAt > historyResetAt || createdAt > historyResetAt;
+      });
+    }
+
+    const openPositions = posRes.data ?? [];
+
+    const orders: MyOrder[] = dbOrders.map((r: Record<string, unknown>) => {
+      // linked_position_id is the raw unsanitized UUID linking this order to a position.
+      // We need it separately because sanitizeOrderInfo() strips UUIDs from `info`.
+      const rawLinkedPosId = (r.linked_position_id as string | null) || null;
+      // Fallback: if linked_position_id column missing, try to recover UUID from raw info
+      const rawInfoStr = r.info as string | null ?? null;
+      const uuidMatch = rawInfoStr ? rawInfoStr.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) : null;
+      const linkedPositionId = rawLinkedPosId || (uuidMatch ? uuidMatch[0] : null);
+
+      return {
+        id: r.id as string,
+        symbol: r.symbol as string,
+        segment: (r.segment as string) ?? '',
+        side: r.side as 'BUY' | 'SELL',
+        status: r.status as MyOrder['status'],
+        qty: Number(r.qty),
+        lots: Number(r.lots ?? 0),
+        fill_price: Number(r.fill_price ?? r.price),
+        ltp_at_entry: Number(r.ltp_at_entry ?? 0),
+        order_type: (r.order_type as MyOrder['order_type']) ?? 'MARKET',
+        product_type: (r.product_type as MyOrder['product_type']) ?? 'INTRADAY',
+        info: sanitizeOrderInfo(r.info as string ?? null),
+        linked_position_id: linkedPositionId,
+        brokerage: Number(r.brokerage ?? 0),
+        client_price: r.client_price !== null ? Number(r.client_price) : undefined,
+        trigger_price: r.trigger_price !== null ? Number(r.trigger_price) : undefined,
+        stop_loss: r.stop_loss !== null ? Number(r.stop_loss) : undefined,
+        target: r.target !== null ? Number(r.target) : undefined,
+        is_exit: r.is_exit !== undefined ? Boolean(r.is_exit) : false,
+        created_at: r.created_at as string,
+      };
+    });
+
 
     // Dynamically synthesize virtual pending orders for positions with SL/Target
+    // BUT only when a real DB order doesn't already cover that exit (to avoid duplicates
+    // e.g. SLM entry inserts a real SL order — we must not also add a virtual one).
     const virtualOrders: MyOrder[] = [];
-    for (const pos of openPositions) {
-      // Skip if position is already closed
-      if (closedPosIds.has(pos.id)) continue;
 
+    // Build a set of real pending exit orders keyed by symbol+side to detect duplicates
+    const realPendingExitKeys = new Set<string>();
+    for (const o of orders) {
+      const isPending = ['PENDING', 'pending', 'TRIGGER_PENDING', 'trigger_pending'].includes(o.status as string);
+      if (isPending && o.is_exit) {
+        realPendingExitKeys.add(`${o.symbol}|${o.side}`);
+      }
+    }
+
+    for (const pos of openPositions) {
       const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
       const exitKey = `${pos.symbol}|${exitSide}`;
-
-      // Skip if a real executed exit order already exists for this symbol+exitSide
-      if (realExitOrderKeys.has(exitKey)) continue;
 
       const stopLoss = pos.stop_loss ? Number(pos.stop_loss) : (pos.sl ? Number(pos.sl) : null);
       const target = pos.target ? Number(pos.target) : (pos.tp ? Number(pos.tp) : null);
 
-      if (stopLoss !== null && stopLoss > 0) {
+      // Check if both SL and Target exist -> Synthesize a single GTT order
+      if (stopLoss !== null && stopLoss > 0 && target !== null && target > 0 && !realPendingExitKeys.has(exitKey)) {
+        virtualOrders.push({
+          id: `pos-gtt-${pos.id}`,
+          symbol: pos.symbol,
+          segment: pos.settlement || '',
+          side: pos.side === 'BUY' ? 'SELL' : 'BUY', // GTT exit is opposite side
+          is_exit: true,
+          status: 'PENDING',
+          qty: Number(pos.qty_open),
+          lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+          fill_price: stopLoss, // GTT doesn't have a single fill price, use SL as visual fallback
+          ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
+          order_type: 'GTT',
+          product_type: (pos.product_type as any) ?? 'INTRADAY',
+          info: 'GTT (Exit)',
+          brokerage: 0,
+          trigger_price: stopLoss,
+          stop_loss: stopLoss,
+          target: target,
+          created_at: pos.created_at || new Date().toISOString(),
+        });
+      } 
+      // Only add virtual SL card if ONLY SL exists (or Target is 0/null) and no real pending exit order exists
+      else if (stopLoss !== null && stopLoss > 0 && !realPendingExitKeys.has(exitKey)) {
         virtualOrders.push({
           id: `pos-sl-${pos.id}`,
           symbol: pos.symbol,
           segment: pos.settlement || '',
           side: pos.side === 'BUY' ? 'SELL' : 'BUY', // Stop loss exit is opposite side
+          is_exit: true,
           status: 'PENDING',
           qty: Number(pos.qty_open),
           lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
@@ -390,13 +452,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           created_at: pos.created_at || new Date().toISOString(),
         });
       }
-
-      if (target !== null && target > 0) {
+      // Only add virtual Target card if ONLY Target exists (or SL is 0/null) and no real pending exit order
+      else if (target !== null && target > 0 && !realPendingExitKeys.has(exitKey)) {
         virtualOrders.push({
           id: `pos-target-${pos.id}`,
           symbol: pos.symbol,
           segment: pos.settlement || '',
           side: pos.side === 'BUY' ? 'SELL' : 'BUY', // Target exit is opposite side
+          is_exit: true,
           status: 'PENDING',
           qty: Number(pos.qty_open),
           lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
@@ -443,22 +506,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { symbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, is_exit, linked_position_id, orderAttemptId } = body;
+    const { symbol, kite_instrument, segment, side, order_type, product_type, qty, lots, client_price, trigger_price, stop_loss, target, linked_position_id, orderAttemptId } = body;
+    const is_exit = Boolean(body.is_exit === true || body.is_exit === 'true' || body.is_exit === 1 || body.is_exit === '1');
 
-    // 2b. Idempotency pre-check using Redis
+    // 2b. Idempotency pre-check using Redis (with 300ms fast safety guard)
     let attemptRedisKey: string | null = null;
     if (orderAttemptId) {
       attemptRedisKey = `order_attempt:${user.id}:${orderAttemptId}`;
       try {
         const redis = getRedisClient();
-        const cached = await redis.get(attemptRedisKey);
+        const cached = await Promise.race([
+          redis.get(attemptRedisKey),
+          new Promise(r => setTimeout(() => r(null), 300))
+        ]);
         if (cached) {
           if (cached === 'IN_PROGRESS') {
             return NextResponse.json({ error: 'Order submission in progress. Please wait.' }, { status: 409 });
           }
           return NextResponse.json(JSON.parse(cached));
         }
-        await redis.setex(attemptRedisKey, 60, 'IN_PROGRESS');
+        await Promise.race([
+          redis.setex(attemptRedisKey, 60, 'IN_PROGRESS'),
+          new Promise(r => setTimeout(() => r('OK'), 300))
+        ]);
       } catch { /* proceed if redis fails */ }
     }
 
@@ -482,15 +552,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const ex = exchangeName.toUpperCase();
       const segUpper = dbSegment.toUpperCase();
 
-      if (!segUpper.includes('CRYPTO')) {
+      if (!segUpper.includes('CRYPTO') && !is_exit) {
         const segmentId = RiskValidation.resolveTradingHoursSegmentId(symbol, dbSegment);
+        const nowMs = Date.now();
+        const cachedHour = tradingHoursCache.get(segmentId);
+        let segmentHour: any = null;
+        let hrError: any = null;
 
-
-        const { data: segmentHour, error: hrError } = await admin
-          .from('trading_hours')
-          .select('name, start_time, end_time, is_active')
-          .eq('id', segmentId)
-          .maybeSingle();
+        if (cachedHour && cachedHour.expiresAt > nowMs) {
+          segmentHour = cachedHour.data;
+        } else {
+          const res: any = await (admin
+            .from('trading_hours') as any)
+            .select('name, start_time, end_time, is_active')
+            .eq('id', segmentId)
+            .maybeSingle();
+          segmentHour = res?.data;
+          hrError = res?.error;
+          if (!hrError && segmentHour) {
+            tradingHoursCache.set(segmentId, { data: segmentHour, expiresAt: nowMs + TRADING_HOURS_TTL_MS });
+          }
+        }
 
         if (!hrError && segmentHour) {
           if (!segmentHour.is_active) {
@@ -563,19 +645,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         .eq('user_id', user.id)
         .in('status', ['PENDING', 'pending', 'TRIGGER_PENDING', 'trigger_pending']),
 
-      // Fetch quotes — either Kite or Binance depending on segment
+      // Fetch quotes — either Kite or Binance depending on segment (with 2.0s fast timeout guard)
       (async () => {
-        if (dbSegment === 'CRYPTO' || symbol.includes('GBPUSD') || symbol.includes('EURUSD') || symbol.includes('USDJPY')) {
-          const quote = await fetchBinanceQuote(symbol);
-          return quote ? { [kiteInst]: quote } : {};
-        } else {
-          return fetchKiteQuotes(instrumentsToFetch);
-        }
+        const fetchPromise = (async () => {
+          if (dbSegment === 'CRYPTO' || symbol.includes('GBPUSD') || symbol.includes('EURUSD') || symbol.includes('USDJPY')) {
+            const quote = await fetchBinanceQuote(symbol);
+            return quote ? { [kiteInst]: quote } : {};
+          } else {
+            return fetchKiteQuotes(instrumentsToFetch);
+          }
+        })();
+
+        const timeoutPromise = new Promise<Record<string, ServerQuote>>((resolve) =>
+          setTimeout(() => resolve({}), 150)
+        );
+
+        return Promise.race([fetchPromise, timeoutPromise]);
       })(),
 
-      // Fetch script settings for dynamic lot size
-      admin.from('script_settings')
-        .select('symbol, lot_size'),
+      // Fetch script settings for dynamic lot size (cached in Redis / memory)
+      getCachedScriptSettings(() => admin),
     ]);
 
     const t4_backendQuoteRead = Date.now();
@@ -755,20 +844,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const leverage = targetProductType === 'CARRY'
       ? (segSetting.holding_leverage ?? 1)
       : (segSetting.intraday_leverage ?? 1);
-    const exposure      = qty * client_price;
+    const exposure = qty * client_price;
     const requiredMargin = exposure / leverage;
 
     let expectedBrokerage = 0;
     if (!is_exit) {
-      const isCustomCalc = segSetting.use_custom_calc;
-      if (dbSegment === 'CRYPTO' && isCustomCalc) {
-        expectedBrokerage = 0;
-      } else {
-        const commType = segSetting.commission_type || 'Per Crore';
-        const commVal  = Number(segSetting.commission_value ?? 0);
-        const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
-        expectedBrokerage = Math.round(singleLeg * 2 * 100) / 100;
-      }
+      const brokerageRes = calculateOrderBrokerage({
+        exposure,
+        lots: newOrderLots,
+        productType: targetProductType,
+        orderType: order_type ?? 'MARKET',
+        isExit: false,
+        segSetting,
+        dbSegment,
+      });
+      expectedBrokerage = brokerageRes.totalBrokerage;
     }
 
     if (balance < (requiredMargin + expectedBrokerage) && !is_exit) {
@@ -792,6 +882,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Limit price must be higher than the current market price (LTP).' }, { status: 400 });
       }
     } else if (order_type === 'GTT' && !is_exit) {
+      if (!client_price || isNaN(Number(client_price)) || Number(client_price) <= 0) {
+        const errorMsg = side === 'BUY'
+          ? 'Limit price is required for a GTT Buy order.'
+          : 'Limit price is required for a GTT Sell order.';
+        return NextResponse.json({ error: errorMsg }, { status: 400 });
+      }
       if (side === 'BUY' && client_price > baseLtp) {
         return NextResponse.json({ error: 'Limit price must be lower than or equal to the current market price (LTP).' }, { status: 400 });
       }
@@ -800,35 +896,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Validate SL and SLM trigger price constraints relative to LTP
-    if (order_type === 'SL' || order_type === 'SLM') {
-      const trigPrice = trigger_price ? parseFloat(trigger_price.toString()) : null;
-      if (trigPrice !== null && !isNaN(trigPrice)) {
-        if (is_exit) {
-          if (side === 'BUY' && trigPrice <= baseLtp) {
-            return NextResponse.json({ error: 'Stop loss trigger price must be above the current market price for short exits.' }, { status: 400 });
-          }
-          if (side === 'SELL' && trigPrice >= baseLtp) {
-            return NextResponse.json({ error: 'Stop loss trigger price must be below the current market price for long exits.' }, { status: 400 });
-          }
-        } else {
-          if (order_type === 'SLM') {
-            if (side === 'BUY' && trigPrice >= baseLtp) {
-              return NextResponse.json({ error: 'Stop loss price must be below the current market price.' }, { status: 400 });
-            }
-            if (side === 'SELL' && trigPrice <= baseLtp) {
-              return NextResponse.json({ error: 'Stop loss price must be above the current market price.' }, { status: 400 });
-            }
-          } else { // SL order type
-            if (side === 'BUY' && trigPrice <= baseLtp) {
-              return NextResponse.json({ error: 'Trigger price must be above the current market price for stop limit buy.' }, { status: 400 });
-            }
-            if (side === 'SELL' && trigPrice >= baseLtp) {
-              return NextResponse.json({ error: 'Trigger price must be below the current market price for stop limit sell.' }, { status: 400 });
-            }
-          }
-        }
-      }
+    // Validate SL and SLM trigger price constraints relative to LTP using OrderService
+    const slErr = OrderService.validateStopLoss(
+      order_type ?? 'MARKET',
+      side as 'BUY' | 'SELL',
+      trigger_price ? parseFloat(trigger_price.toString()) : null,
+      baseLtp,
+      is_exit ?? false
+    );
+    if (slErr) {
+      return NextResponse.json({ error: slErr }, { status: 400 });
     }
 
     // Validate Target and Stop Loss rules
@@ -890,30 +967,37 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     } else {
       // First-time purchase validations
-      const hasLimitPrice = ['LIMIT', 'SL', 'GTT'].includes(order_type ?? 'MARKET');
+      const hasLimitPrice = ['LIMIT', 'SL', 'GTT'].includes(order_type ?? 'MARKET') && client_price !== undefined && !isNaN(Number(client_price)) && Number(client_price) > 0;
+      const clientPriceNum = Number(client_price);
       if (isLong) {
         if (orderSL !== null) {
           if (orderSL >= baseLtp) {
             return NextResponse.json({ error: 'Stop loss price must be below the current market price (LTP).' }, { status: 400 });
           }
-          if (hasLimitPrice && orderSL >= client_price) {
+          if (hasLimitPrice && orderSL >= clientPriceNum) {
             return NextResponse.json({ error: 'Stop loss price must be below the limit price.' }, { status: 400 });
           }
         }
-        if (orderTarget !== null && orderTarget < baseLtp) {
-          return NextResponse.json({ error: 'Target price must be above or equal to the current market price (LTP).' }, { status: 400 });
+        if (orderTarget !== null) {
+          const targetRef = hasLimitPrice ? clientPriceNum : baseLtp;
+          if (orderTarget <= targetRef) {
+            return NextResponse.json({ error: `Target price must be above the ${hasLimitPrice ? 'limit' : 'current market'} price.` }, { status: 400 });
+          }
         }
       } else {
         if (orderSL !== null) {
           if (orderSL <= baseLtp) {
             return NextResponse.json({ error: 'Stop loss price must be above the current market price (LTP).' }, { status: 400 });
           }
-          if (hasLimitPrice && orderSL <= client_price) {
+          if (hasLimitPrice && orderSL <= clientPriceNum) {
             return NextResponse.json({ error: 'Stop loss price must be above the limit price.' }, { status: 400 });
           }
         }
-        if (orderTarget !== null && orderTarget > baseLtp) {
-          return NextResponse.json({ error: 'Target price must be below or equal to the current market price (LTP).' }, { status: 400 });
+        if (orderTarget !== null) {
+          const targetRef = hasLimitPrice ? clientPriceNum : baseLtp;
+          if (orderTarget >= targetRef) {
+            return NextResponse.json({ error: `Target price must be below the ${hasLimitPrice ? 'limit' : 'current market'} price.` }, { status: 400 });
+          }
         }
       }
     }
@@ -963,7 +1047,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // 10. Compute fill price (LTP ± buffer from segment_settings)
     let fillPrice: number;
-    const isImmediate = (order_type ?? 'MARKET') === 'MARKET' || order_type === 'SLM';
+    // SLM (Stop Loss Market) = immediate market entry + linked SL exit order
+    const isImmediate = ['MARKET', 'SLM'].includes(order_type ?? 'MARKET');
 
     let rawBid = typeof rawQuote === 'object' ? (rawQuote?.bid ?? null) : null;
     let rawAsk = typeof rawQuote === 'object' ? (rawQuote?.ask ?? null) : null;
@@ -1002,7 +1087,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     if (order_type === 'LIMIT' || order_type === 'SL' || order_type === 'GTT') {
-      fillPrice = client_price;
+      fillPrice = client_price || trigger_price || baseLtp;
     } else {
       const platformExitMode = await getPlatformSetting('EXIT_PRICE_MODE', 'BID_ASK');
       const exitPriceMode = (platformExitMode || buySetting?.exit_price_mode || sellSetting?.exit_price_mode || 'BID_ASK') as 'BID_ASK' | 'LTP';
@@ -1076,21 +1161,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // 11. Atomic write via Postgres RPC
     const targetOrderType = order_type ?? 'MARKET';
-    
-    // To make SLM execute immediately and create a position, we tell the DB it's a MARKET order
-    const rpcOrderType = targetOrderType === 'SLM' ? 'MARKET' : targetOrderType;
+    const rpcOrderType = targetOrderType;
 
     let resolvedTriggerPrice = trigger_price ? parseFloat(trigger_price.toString()) : null;
     let resolvedStopLoss = stop_loss ? parseFloat(stop_loss.toString()) : null;
 
-    // For SLM, the UI sends the Stop Loss price in the trigger_price field.
-    if (targetOrderType === 'SLM') {
-      if (resolvedTriggerPrice !== null) {
-        resolvedStopLoss = resolvedTriggerPrice;
-        resolvedTriggerPrice = null; // Clear trigger price since it's a market order now
-      }
-    }
-
+    // ── Fix 3.1a: Enforce is_exit + linked_position_id for SL/SLM orders ──────
+    // If the caller placed an SL or SLM order without explicitly marking it as an
+    // exit, check whether an open opposite-side position already exists for this
+    // symbol.  If one does, this order MUST be an exit — force the flag so that
+    // process_executed_position closes the position instead of creating a phantom
+    // entry.
     let resolvedIsExit: boolean = is_exit ?? false;
     let resolvedLinkedPositionId: string | null = linked_position_id ?? null;
 
@@ -1112,26 +1193,90 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // ── Fix 3.1b: GTT pre-entry — do NOT insert SL/Target sub-order rows ──────
+    // When a GTT order is placed in pre-entry state (is_exit = false), the
+    // stop_loss and target values are metadata for after entry fires.  Sub-order
+    // rows (separate PENDING rows for SL and Target) must NOT be created here —
+    // process_executed_position will create them when the GTT entry executes.
+    // This route does not insert sub-order rows (confirmed: no secondary
+    // place_order_v2 call below), so this is enforced by design.  The stop_loss
+    // and target values are stored on the GTT order row only.
+
+    // ── Fix 3.1c: Duplicate exit order guard ─────────────────────────────────
+    // If this is a non-immediate (PENDING) exit order (SL, GTT, LIMIT exit),
+    // check whether a real PENDING exit order already exists for this position.
+    // This prevents double SL orders when SLM auto-inserts one and the user
+    // manually adds another via the position panel exit flow.
+    if (resolvedIsExit && !isImmediate) {
+      const linkedPosIdForCheck = resolvedLinkedPositionId;
+      const exitSideForCheck = side; // exit order's own side (opposite of position)
+
+      const { data: existingExitOrders } = await admin
+        .from('orders')
+        .select('id, order_type, linked_position_id, info')
+        .eq('user_id', user.id)
+        .eq('symbol', symbol)
+        .eq('side', exitSideForCheck)
+        .eq('is_exit', true)
+        .in('status', ['PENDING', 'TRIGGER_PENDING'])
+        .limit(5);
+
+      if (existingExitOrders && existingExitOrders.length > 0) {
+        // Filter the fetched orders to only cancel those that actually conflict
+        const isPositionUuid = (s: string | null | undefined) =>
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s ?? ''));
+
+        const conflictingOrders = existingExitOrders.filter((o: any) => {
+          // Reconstruct the linked ID since DB info column might contain it
+          const rawLinkedId = o.linked_position_id || null;
+          const rawInfoStr = o.info || null;
+          const uuidMatch = rawInfoStr ? rawInfoStr.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) : null;
+          const oLinkedId = rawLinkedId || (uuidMatch ? uuidMatch[0] : null);
+
+          if (!linkedPosIdForCheck) {
+            // We are placing a cumulative order. All existing orders conflict.
+            return true;
+          } else {
+            // We are placing a detailed order for `linkedPosIdForCheck`.
+            // Conflict if existing is cumulative (no ID), or detailed for the SAME ID.
+            if (!oLinkedId) return true; // Cumulative order conflicts
+            if (oLinkedId === linkedPosIdForCheck) return true; // Same position conflicts
+            return false; // Different position -> NO CONFLICT, do not cancel
+          }
+        });
+
+        if (conflictingOrders.length > 0) {
+          const idsToCancel = conflictingOrders.map((o: any) => o.id);
+          await admin
+            .from('orders')
+            .update({ status: 'CANCELLED', updated_at: new Date().toISOString(), info: 'Replaced by new exit order' })
+            .eq('user_id', user.id)
+            .in('id', idsToCancel);
+          console.log(`[POST /api/orders] Duplicate exit guard: cancelled ${idsToCancel.length} conflicting PENDING exit order(s) for ${symbol} before placing new exit.`);
+        }
+      }
+    }
+
     const executeDbCall = async () => {
       const { data: oId, error: rpcErr } = await admin.rpc('place_order_v2', {
-        p_user_id:      user.id,
-        p_symbol:       symbol,
-        p_kite_inst:    kiteInst,
-        p_segment:      dbSegment,
-        p_side:         side,
-        p_order_type:   rpcOrderType,
+        p_user_id: user.id,
+        p_symbol: symbol,
+        p_kite_inst: kiteInst,
+        p_segment: dbSegment,
+        p_side: side,
+        p_order_type: rpcOrderType,
         p_product_type: product_type ?? 'INTRADAY',
-        p_qty:          qty,
-        p_lots:         lots ?? 0,
-        p_ltp:          baseLtp,
-        p_fill_price:   fillPrice,
-        p_is_exit:      resolvedIsExit,
-        p_buffer_fee:   0,
-        p_status:       isImmediate ? 'EXECUTED' : 'PENDING',
+        p_qty: qty,
+        p_lots: lots ?? 0,
+        p_ltp: baseLtp,
+        p_fill_price: fillPrice,
+        p_is_exit: resolvedIsExit,
+        p_buffer_fee: 0,
+        p_status: isImmediate ? 'EXECUTED' : 'PENDING',
         p_trigger_price: resolvedTriggerPrice,
-        p_stop_loss:    resolvedStopLoss,
-        p_target:       target ? parseFloat(target.toString()) : null,
-        p_info:         null,
+        p_stop_loss: resolvedStopLoss,
+        p_target: target ? parseFloat(target.toString()) : null,
+        p_info: resolvedLinkedPositionId,
         p_expected_margin: requiredMargin,
         p_expected_brokerage: expectedBrokerage,
         p_idempotency_key: null,
@@ -1155,24 +1300,94 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: err.message || 'Order execution failed. Please try again.' }, { status: 400 });
     }
 
-    // Update order_type to 'SLM' in the database if it was an SLM order asynchronously
-    if (targetOrderType === 'SLM' && orderId) {
-      admin
-        .from('orders')
-        .update({ order_type: 'SLM' })
-        .eq('id', orderId)
-        .then(({ error: updateErr }) => {
-          if (updateErr) {
-            console.error('[POST /api/orders] Failed to restore SLM order type:', updateErr);
-          }
+    // ── SLM entry: insert a linked pending SL exit order ─────────────────────
+    // SLM = market entry now + protective SL exit order that auto-fires when
+    // stop_loss price is hit, closing the position at market.
+    if (order_type === 'SLM' && !resolvedIsExit && resolvedStopLoss && resolvedStopLoss > 0) {
+      try {
+        // Fetch the newly created position for this order so we can link the SL
+        const { data: newPos } = await admin
+          .from('positions')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('symbol', symbol)
+          .in('status', ['open', 'OPEN', 'active'])
+          .order('created_at', { ascending: false })
+          .maybeSingle();
+
+        const linkedPosId = newPos?.id ?? resolvedLinkedPositionId ?? null;
+        const slSide = side === 'BUY' ? 'SELL' : 'BUY';
+
+        await admin.rpc('place_order_v2', {
+          p_user_id: user.id,
+          p_symbol: symbol,
+          p_kite_inst: kiteInst,
+          p_segment: dbSegment,
+          p_side: slSide,
+          p_order_type: 'SL',
+          p_product_type: product_type ?? 'INTRADAY',
+          p_qty: qty,
+          p_lots: lots ?? 0,
+          p_ltp: baseLtp,
+          p_fill_price: resolvedStopLoss,
+          p_is_exit: true,
+          p_buffer_fee: 0,
+          p_status: 'PENDING',
+          p_trigger_price: resolvedStopLoss,
+          p_stop_loss: resolvedStopLoss,
+          p_target: null,
+          p_info: linkedPosId,
+          p_expected_margin: 0,
+          p_expected_brokerage: 0,
+          p_idempotency_key: null,
+          p_linked_position_id: linkedPosId,
         });
+        console.log(`[POST /api/orders] SLM: linked SL exit order inserted at ${resolvedStopLoss} for position ${linkedPosId}`);
+
+        // Also stamp stop_loss on the position row so that:
+        // (a) the virtual pos-sl-* dedup key fires correctly in GET /api/orders,
+        // (b) if the real SL order is later cancelled the position still carries the price.
+        if (linkedPosId) {
+          await admin
+            .from('positions')
+            .update({ stop_loss: resolvedStopLoss, updated_at: new Date().toISOString() })
+            .eq('id', linkedPosId)
+            .eq('user_id', user.id)
+            .in('status', ['open', 'OPEN', 'active']);
+        }
+      } catch (slErr) {
+        // Non-fatal: SLM entry already executed; log but don't block response
+        console.warn('[POST /api/orders] Non-fatal: failed to insert linked SL exit order for SLM entry:', slErr);
+      }
+    }
+
+    // ── Fix 3.1c: Market exit — fully await orphan order cleanup ─────────────
+    // When a MARKET exit executes, process_executed_position closes the position
+    // via the RPC.  Any remaining pending SL/Target/GTT exit orders attached to
+    // that position become orphaned.  Cancel them here, fully awaited (not
+    // fire-and-forget) so the response is only sent after cleanup completes.
+    if (isImmediate && resolvedIsExit) {
+      // Run cleanup asynchronously without blocking the response
+      (async () => {
+        try {
+          const { PositionService } = await import('@/lib/trading/PositionService');
+          await PositionService.cancelPendingOrdersForClosedPosition(
+            admin,
+            user.id,
+            resolvedLinkedPositionId ?? undefined,
+            symbol
+          );
+        } catch (cancelErr) {
+          console.warn('[POST /api/orders] Non-fatal: failed to cancel orphaned exit orders after market exit:', cancelErr);
+        }
+      })();
     }
 
     const response: PlaceOrderResponse = {
-      order_id:   orderId as string,
-      status:     isImmediate ? 'EXECUTED' : 'PENDING',
+      order_id: orderId as string,
+      status: isImmediate ? 'EXECUTED' : 'PENDING',
       fill_price: fillPrice,
-      message:    isImmediate 
+      message: isImmediate
         ? `${side} order executed at ₹${fillPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
         : `${side} ${order_type} order placed (Pending) at ₹${fillPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
     };
@@ -1180,9 +1395,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (attemptRedisKey) {
       try {
         const redis = getRedisClient();
-        await redis.setex(attemptRedisKey, 60, JSON.stringify(response));
+        await Promise.race([
+          redis.setex(attemptRedisKey, 60, JSON.stringify(response)),
+          new Promise(r => setTimeout(r, 300))
+        ]);
       } catch { /* ignore */ }
     }
+
+    try {
+      const redis = getRedisClient();
+      redis.publish('order_events', JSON.stringify({
+        user_id: user.id,
+        order_id: response.order_id,
+        status: response.status,
+        fill_price: response.fill_price,
+        symbol: symbol,
+        side: side,
+        timestamp: new Date().toISOString(),
+      })).catch(() => {});
+    } catch { /* ignore */ }
 
     return NextResponse.json(response, { status: 201 });
   } catch (topErr: any) {

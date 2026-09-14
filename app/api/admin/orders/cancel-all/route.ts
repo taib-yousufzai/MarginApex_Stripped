@@ -3,8 +3,6 @@
  * Cancels ALL pending LIMIT orders platform-wide (emergency risk control).
  */
 import { requireAdmin } from '../../_auth';
-import { getRole } from '@/lib/auth';
-import { getAccessibleUserIds } from '@/lib/hierarchy';
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -12,23 +10,13 @@ export async function POST(request: Request): Promise<Response> {
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
 
-    const callerRole = getRole(callerUser);
-    const accessibleIds = await getAccessibleUserIds(adminClient, callerUser.id, callerRole);
-
-    let query = adminClient
+    // Cancel all PENDING LIMIT orders
+    const { data, error } = await adminClient
       .from('orders')
       .update({ status: 'CANCELLED', info: 'Admin Cancel All', updated_at: new Date().toISOString() })
       .eq('status', 'PENDING')
-      .eq('order_type', 'LIMIT');
-
-    if (accessibleIds !== null) {
-      if (accessibleIds.length === 0) {
-        return Response.json({ cancelled: 0 }, { status: 200 });
-      }
-      query = query.in('user_id', accessibleIds);
-    }
-
-    const { data, error } = await query.select('id');
+      .eq('order_type', 'LIMIT')
+      .select('id');
 
     if (error) {
       console.error('[cancel-all]', error.message);

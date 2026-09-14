@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { api, ApiError } from '@/lib/api';
+import { getSavedTheme, applyTheme } from '@/lib/theme';
 import './page.css';
 
 interface HistoryItem {
@@ -65,10 +66,9 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
-    // Apply dark mode class from localStorage on mount
-    const saved = localStorage.getItem('marginApexTheme');
-    document.body.classList.remove('dark', 'black', 'blue');
-    if (saved === 'dark' || saved === 'black' || saved === 'blue') document.body.classList.add(saved);
+    const syncTheme = () => applyTheme(getSavedTheme());
+    syncTheme();
+    window.addEventListener('themeChanged', syncTheme);
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       const role = session?.user?.user_metadata?.role;
@@ -76,12 +76,17 @@ export default function HistoryPage() {
         setIsAdmin(true);
       }
     });
+
+    return () => window.removeEventListener('themeChanged', syncTheme);
   }, []);
 
   useEffect(() => {
+    // Serve stale cache immediately for perceived performance, but ALWAYS
+    // replace it once the fresh fetch completes (even if fresh result is empty,
+    // e.g. after admin clears history via history_reset_at).
     if (typeof window !== 'undefined' && window.__historyCache && window.__historyCache.length > 0) {
       setHistoryData(window.__historyCache);
-      setLoading(false);
+      // Do NOT set loading=false here — let the fresh fetch run and overwrite
     }
 
     async function fetchHistory() {
@@ -151,12 +156,11 @@ export default function HistoryPage() {
         });
 
         const merged = [...formattedOrders, ...formattedPos];
-        if (merged.length > 0) {
-          if (typeof window !== 'undefined') window.__historyCache = merged;
-          setHistoryData(merged);
-        } else if (!window.__historyCache || window.__historyCache.length === 0) {
-          setHistoryData([]);
-        }
+        // Always apply the fresh result — even if empty (e.g. after admin clears
+        // history via history_reset_at). Preserving stale cache here was the
+        // root cause of pre-reset records remaining visible after Clear History.
+        if (typeof window !== 'undefined') window.__historyCache = merged;
+        setHistoryData(merged);
       } catch (err) {
         console.warn('Failed to fetch history:', err);
       } finally {

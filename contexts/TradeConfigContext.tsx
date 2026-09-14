@@ -29,6 +29,7 @@ import React, {
   useRef,
 } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { getSharedSessionSync } from '@/lib/sharedSession';
 import { api } from '@/lib/api';
 import type { SegmentSetting, ScriptSetting } from '@/lib/types/tradeConfig';
 
@@ -108,8 +109,8 @@ function buildCache(
 ): ConfigCache {
   const frozenSegments = Object.freeze(segments.map(s => Object.freeze({
     ...s,
-    entry_buffer: (s.entry_buffer != null && Number(s.entry_buffer) !== 0) ? Number(s.entry_buffer) : 0.3,
-    bid_buffer: (s.bid_buffer != null && Number(s.bid_buffer) !== 0) ? Number(s.bid_buffer) : (s.entry_buffer != null && Number(s.entry_buffer) !== 0 ? Number(s.entry_buffer) : 0.3),
+    entry_buffer: (s.entry_buffer != null && String(s.entry_buffer).trim() !== '') ? Number(s.entry_buffer) : 0.3,
+    bid_buffer: (s.bid_buffer != null && String(s.bid_buffer).trim() !== '') ? Number(s.bid_buffer) : ((s.entry_buffer != null && String(s.entry_buffer).trim() !== '') ? Number(s.entry_buffer) : 0.3),
   })));
   const frozenScripts = Object.freeze(scripts.map(s => Object.freeze({ ...s })));
 
@@ -175,16 +176,10 @@ export const TradeConfigProvider = ({
     setLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+      const { token } = getSharedSessionSync();
+      if (!token) return;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('trading_mode')
-        .eq('id', session.user.id)
-        .single();
-
-      const mode: string = profile?.trading_mode || 'normal';
+      const mode = 'normal';
 
       const [segData, ssData] = await Promise.all([
         api.get<SegmentSetting[]>(`/api/user/segments?mode=${mode}`),

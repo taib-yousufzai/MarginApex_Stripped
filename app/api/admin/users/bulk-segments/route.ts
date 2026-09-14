@@ -42,7 +42,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // 2. Build list of rows to upsert to ensure 100% of target users get settings applied
-    const upsertRows = [];
+    const upsertRows: any[] = [];
     for (const userId of targetUserIds) {
       for (const seg of segments) {
         for (const side of ['BUY', 'SELL'] as const) {
@@ -82,7 +82,7 @@ export async function POST(request: Request): Promise<Response> {
     if (uError) throw uError;
 
     // 3. Sync profiles segments to ensure these segments are actually allowed/active
-    const profileUpdatePromises = [];
+    const profileUpdatePromises: any[] = [];
     for (const p of profiles) {
       if (targetUserIds.includes(p.id)) {
         const existingSegments: string[] = p.segments ?? [];

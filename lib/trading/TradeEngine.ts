@@ -3,7 +3,7 @@ import { getPlatformSetting } from '@/lib/getPlatformSetting';
 import { fetchBinanceQuote, fetchKiteQuotes, fetchSpeedQuotes } from '../datafeed/MarketDataService';
 import { calculateBufferedPrice } from './BufferCalculator';
 import { resolveEffectivePrices } from './marketPriceResolver';
-import { calculateSingleLegCharge } from './BrokerageCalculator';
+import { calculateSingleLegCharge, calculateOrderBrokerage } from './BrokerageCalculator';
 import { RiskValidation } from './RiskValidation';
 import { OrderService } from './OrderService';
 import { ExecutionService, ExecutionParams } from './ExecutionService';
@@ -360,21 +360,39 @@ export class TradeEngine {
 
     const maxQty = Number(segSetting.max_order_lot || 50) * symbolLotSize;
     if (!is_exit && !RiskValidation.validateFreezeQuantity(qty, maxQty)) {
-      throw new Error(`The maximum you can exit in a single order is ${segSetting.max_order_lot} lots or ${maxQty} qty. Please execute your position in multiple orders, or use the Exit All button available on the top right.`);
+      throw new Error(`The maximum allowed per order is ${segSetting.max_order_lot} lots or ${maxQty} qty. Please place your trade in multiple orders.`);
+    }
+
+    const activePosition = openPositions.find((p: any) => p.symbol === symbol && p.product_type === (product_type || 'INTRADAY'));
+    // DB RPC place_order_v2 natively handles opposite-side netting and splitting.
+    if (activePosition && activePosition.side !== side) {
+      is_exit = true;
     }
 
     // Cumulative Position limit check (Per Segment across open positions and pending orders)
-    let totalOpenLots = 0;
+    let openPositionsLots = 0;
+    let pendingOrdersLots = 0;
     const ctxScriptSettings = ctx.script_settings || [];
+
+    const resolveLotSizeForSymbol = (sym: string): number => {
+      if (sym === symbol || sym === kiteInst) return symbolLotSize;
+      const inst = ctx.instruments?.find((i: any) => i.tradingsymbol === sym || i.name === sym);
+      const instLot = Number(inst?.lot_size || 0);
+      if (instLot > 1) return instLot;
+      const scriptLot = Number(ctxScriptSettings.find((s: any) => s.symbol === sym)?.lot_size || 0);
+      if (scriptLot > 0) return scriptLot;
+      return getLotSizeFallback(sym, ctxScriptSettings);
+    };
 
     for (const pos of openPositions) {
       const posSegment = mapSymbolToSegment(pos.symbol);
       if (posSegment === dbSegment) {
-        const pLot = Number(
-          ctxScriptSettings.find((s: any) => s.symbol === pos.symbol)?.lot_size
-          || getLotSizeFallback(pos.symbol, ctxScriptSettings)
-        );
-        if (pLot > 0) totalOpenLots += Number(pos.qty_open) / pLot;
+        const pLot = resolveLotSizeForSymbol(pos.symbol);
+        if (pLot > 0) {
+          openPositionsLots += (Number(pos.lots) > 0 && Number(pos.qty_open) === Number(pos.qty_total))
+            ? Number(pos.lots)
+            : (Number(pos.qty_open) / pLot);
+        }
       }
     }
 
@@ -382,27 +400,22 @@ export class TradeEngine {
       if (!po.is_exit) {
         const poSegment = mapSymbolToSegment(po.symbol);
         if (poSegment === dbSegment) {
-          const poLot = Number(
-            ctxScriptSettings.find((s: any) => s.symbol === po.symbol)?.lot_size
-            || getLotSizeFallback(po.symbol, ctxScriptSettings)
-          );
+          const poLot = resolveLotSizeForSymbol(po.symbol);
           if (poLot > 0) {
-            totalOpenLots += Number(po.lots) > 0
+            pendingOrdersLots += (Number(po.lots) > 0 && Number(po.qty) > 0)
               ? Number(po.lots)
               : (Number(po.qty) / poLot);
           }
         }
       }
     }
+    const totalOpenLots = openPositionsLots + pendingOrdersLots;
     const newOrderLots = qty / symbolLotSize;
     if (!is_exit && !RiskValidation.validateMaxLotLimit(totalOpenLots + newOrderLots, Number(segSetting.max_lot || 50))) {
-      throw new Error(`Order exceeds maximum segment limit of ${segSetting.max_lot} lots. Current open positions: ${totalOpenLots.toFixed(2)} lots.`);
-    }
-
-    const activePosition = openPositions.find((p: any) => p.symbol === symbol && p.product_type === (product_type || 'INTRADAY'));
-    // DB RPC place_order_v2 natively handles opposite-side netting and splitting.
-    if (activePosition && activePosition.side !== side) {
-      is_exit = true;
+      const breakdownMsg = pendingOrdersLots > 0
+        ? `(${openPositionsLots.toFixed(2)} open positions + ${pendingOrdersLots.toFixed(2)} pending orders)`
+        : `(${totalOpenLots.toFixed(2)} in open positions)`;
+      throw new Error(`Order exceeds maximum segment limit of ${segSetting.max_lot} lots. Current segment exposure: ${totalOpenLots.toFixed(2)} lots ${breakdownMsg}.`);
     }
 
     let kiteLtp = quotesMap[kiteInst] ?? null;
@@ -498,12 +511,17 @@ export class TradeEngine {
         : Number(segSetting.intraday_leverage ?? 1);
       marginPortion = exposure / leverage;
 
-      // Brokerage: charge both entry + exit legs up front (× 2), same as old route
-      const commType = segSetting.commission_type || 'Per Crore';
-      const commVal  = Number(segSetting.commission_value ?? 0);
-      console.log(`[TradeEngine] Brokerage calc: segment=${dbSegment} side=${side} commType=${commType} commVal=${commVal} exposure=${exposure} lots=${newOrderLots}`);
-      const singleLeg = calculateSingleLegCharge({ exposure, lots: newOrderLots, commissionType: commType, commissionValue: commVal });
-      brokerage = Math.round(singleLeg * 2 * 100) / 100;
+      // Brokerage: calculate using aggregated model (intraday + carry + gtt)
+      const brokerageRes = calculateOrderBrokerage({
+        exposure,
+        lots: newOrderLots,
+        productType: product_type ?? 'INTRADAY',
+        orderType: order_type,
+        isExit: false,
+        segSetting,
+        dbSegment,
+      });
+      brokerage = brokerageRes.totalBrokerage;
     } else {
       // Exit order: brokerage already collected at entry — charge nothing
       brokerage = 0;
@@ -525,13 +543,27 @@ export class TradeEngine {
     if (isLimitType) {
       executionBasePrice = clientPriceNum > 0 ? clientPriceNum : kiteLtp;
     } else {
-      // MARKET or SLM orders - Resolve Effective Ask (for BUY) or Effective Bid (for SELL)
       const hasRealBidAsk = Boolean(quotesMap[`${kiteInst}_bid`] && quotesMap[`${kiteInst}_ask`]);
+
+      const symbolExchange = (symbol.includes(':') ? symbol.split(':')[0] : '').toUpperCase();
+      const isCommodity = symbolExchange === 'MCX' || symbolExchange === 'NCO' ||
+        symbol.startsWith('MCX:') || symbol.startsWith('MCX-') ||
+        dbSegment.includes('MCX') ||
+        ['GOLD', 'SILVER', 'CRUDEOIL', 'NATURALGAS', 'GOLDM', 'SILVERM', 'CRUDEOILM', 'NATGASMINI', 'COPPER', 'ZINC', 'LEAD', 'ALUMINIUM', 'NICKEL'].some(c => symbol.toUpperCase().includes(c));
+
+      const isIndianNonCommodity = (['NSE', 'NFO', 'BSE', 'BFO'].includes(symbolExchange) ||
+        symbol.startsWith('NSE:') || symbol.startsWith('NFO:') || symbol.startsWith('BSE:') || symbol.startsWith('BFO:')) && !isCommodity;
+
+      const askBuf = isIndianNonCommodity ? 0 : ((buySetting as any)?.entry_buffer ?? (buySetting as any)?.bid_buffer ?? 0.003);
+      const bidBuf = isIndianNonCommodity ? 0 : ((sellSetting as any)?.entry_buffer ?? (sellSetting as any)?.bid_buffer ?? 0.003);
+
       const effectivePrices = resolveEffectivePrices({
         ltp: kiteLtp,
         rawBid: kiteBid,
         rawAsk: kiteAsk,
-        hasRealBidAsk,
+        hasRealBidAsk: isCommodity ? false : hasRealBidAsk,
+        askBuffer: askBuf,
+        bidBuffer: bidBuf,
       });
 
       const isExecutingBuy = side === 'BUY';
@@ -585,7 +617,7 @@ export class TradeEngine {
 
     fillPrice = Math.max(0.01, Math.round(fillPrice * 100) / 100);
 
-    const isImmediate = order_type === 'MARKET' || order_type === 'SLM';
+    const isImmediate = order_type === 'MARKET';
 
     // 5. Execute Order (ExecutionService)
     const executionParams: ExecutionParams = {

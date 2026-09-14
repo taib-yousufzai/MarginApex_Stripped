@@ -76,10 +76,10 @@ export async function PATCH(
       return Response.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const isAllowed = await isUserInHierarchy(adminClient, callerUser.id, existingPosition.user_id);
-    if (!isAllowed) {
+    if (!await isUserInHierarchy(adminClient, callerUser.id, existingPosition.user_id)) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
+
 
     // Step 5: Extract only editable fields from body
     const updateFields: Record<string, unknown> = {};

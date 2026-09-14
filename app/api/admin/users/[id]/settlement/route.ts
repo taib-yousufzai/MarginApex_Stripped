@@ -21,7 +21,6 @@
  */
 
 import { requireAdmin } from '../../../_auth';
-import { isUserInHierarchy } from '../../../../../../lib/hierarchy';
 
 export async function POST(
   request: Request,
@@ -36,11 +35,6 @@ export async function POST(
     // Step 2: Params
     const resolvedParams = await Promise.resolve(params);
     const userId = resolvedParams.id;
-
-    const isAllowed = await isUserInHierarchy(adminClient, callerUser.id, userId);
-    if (!isAllowed) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
-    }
 
     // Step 3: Parse body
     let body: { reason?: string } = {};

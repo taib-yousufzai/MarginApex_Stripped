@@ -35,41 +35,34 @@ function createAdminClient() {
 // Route handler
 // ---------------------------------------------------------------------------
 
+import { getAdminClient, getUserFromRequest } from '@/lib/adminClient';
+
 export async function GET(request: Request): Promise<Response> {
   try {
-    // Step 1: Extract Bearer token and authenticate the user
-    // Validates: Requirements 4.1, 19.2
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const token = authHeader.slice('Bearer '.length).trim();
-    if (!token) {
+    const user = await getUserFromRequest(request);
+    if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    let adminClient;
-    try {
-      adminClient = createAdminClient();
-    } catch (e) {
-      console.error('[GET /api/pay/balance] createAdminClient failed:', e);
-      return Response.json({ error: 'Internal server error' }, { status: 500 });
-    }
+    const adminClient = getAdminClient();
 
-    const { data: userData, error: userError } = await adminClient.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const user = userData.user;
-
-    // Fetch balance and settlement_amount directly from profiles table
-    const { data: profile, error: profileError } = await adminClient
+    // Fetch balance from profiles with a hard 3s timeout.
+    // Without this, a Supabase 522 hangs the route for 15s+.
+    const profilePromise = adminClient
       .from('profiles')
       .select('balance, settlement_amount')
       .eq('id', user.id)
-      .single();
+      .single()
+      .abortSignal(AbortSignal.timeout(3000));
+
+    const { data: profile, error: profileError } = await profilePromise;
 
     if (profileError) {
+      const isTimeout = profileError.message?.includes('abort') || profileError.message?.includes('timeout') || profileError.code === '20';
+      if (isTimeout) {
+        // Return a safe default — client retries on the next poll cycle
+        return Response.json({ balance: 0, settlementAmount: 0 }, { status: 200 });
+      }
       console.error('[GET /api/pay/balance] profile fetch error:', profileError.message);
       return Response.json({ error: 'Internal server error' }, { status: 500 });
     }
@@ -80,6 +73,7 @@ export async function GET(request: Request): Promise<Response> {
     // Step 4: Return 200 with the computed balance and settlement amount
     // Validates: Requirements 4.4, 4.5
     return Response.json({ balance, settlementAmount }, { status: 200 });
+
   } catch {
     // Validates: Requirements 4.6
     return Response.json({ error: 'Internal server error' }, { status: 500 });

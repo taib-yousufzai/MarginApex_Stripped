@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signIn, getSession, getRole } from '@/lib/auth';
 import RiskRulesPopup from '@/components/RiskRulesPopup';
 import AnimatedLoader from '@/components/AnimatedLoader';
+import { getSavedTheme, applyTheme } from '@/lib/theme';
 import './page.css';
 
 export default function LoginPage() {
@@ -12,15 +13,10 @@ export default function LoginPage() {
 
   // Apply active theme on mount — same pattern as all other pages
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('marginApexTheme');
-      document.body.classList.remove('dark', 'black', 'blue');
-      if (saved === 'dark' || saved === 'black' || saved === 'blue') {
-        document.body.classList.add(saved);
-      }
-    } catch {
-      // localStorage unavailable — proceed without theme
-    }
+    const sync = () => applyTheme(getSavedTheme());
+    sync();
+    window.addEventListener('themeChanged', sync);
+    return () => window.removeEventListener('themeChanged', sync);
   }, []);
 
   // Form state
@@ -39,6 +35,9 @@ export default function LoginPage() {
 
   // Redirect based on role if already authenticated
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('expired=1')) {
+      return;
+    }
     getSession().then((session) => {
       if (session && !isLoggingInRef.current) {
         const role = getRole(session.user);
@@ -86,7 +85,7 @@ export default function LoginPage() {
         }
         setIsLoading(false);
       } else {
-        setFormError('Demo account unavailable. Please try again later.');
+        setFormError(result.error || 'Demo account unavailable. Please try again later.');
         setIsLoading(false);
       }
     } catch (err: any) {
@@ -134,7 +133,7 @@ export default function LoginPage() {
         }
         setIsLoading(false);
       } else {
-        setFormError('Invalid credentials. Please try again.');
+        setFormError(result.error);
         setIsLoading(false);
       }
     } catch (err: any) {

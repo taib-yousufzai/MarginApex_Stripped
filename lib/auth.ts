@@ -3,8 +3,11 @@ import { supabase } from './supabaseClient';
 import { clearSharedSession } from './sharedSession';
 
 export function clearAuthCache(): void {
+  _cachedSession = null;
+  _cacheTimestamp = 0;
   clearSharedSession();
 }
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,13 +62,87 @@ export function getRole(user: User | null): AppRole {
  * Validates: Requirements 2.1, 2.3, 5.3
  */
 export async function signIn(email: string, password: string): Promise<SignInResult> {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  let targetEmail = email.trim();
 
-  if (error || !data.session || !data.user) {
-    return { error: 'Invalid credentials. Please try again.' };
+  // Try standard Supabase Auth with an 8s timeout.
+  // On localhost → Supabase Cloud round-trips can take 2-6s; 8s gives enough headroom
+  // without blocking forever when the network is degraded.
+  try {
+    const authPromise = supabase.auth.signInWithPassword({ email: targetEmail, password });
+    const timeoutAuth = new Promise<any>((resolve) =>
+      setTimeout(() => resolve({ timeout: true }), 8000)
+    );
+
+    const res = await Promise.race([authPromise, timeoutAuth]);
+
+    if (!res.timeout && res.data?.session && res.data?.user && !res.error) {
+      _cachedSession = res.data.session;
+      _cacheTimestamp = Date.now();
+      return { session: res.data.session, user: res.data.user };
+    }
+
+    if (!res.timeout && res.error && !res.error.message.includes('FetchError') && !res.error.message.includes('timeout')) {
+      // Return invalid credentials error immediately if password was wrong
+      return { error: res.error.message };
+    }
+  } catch (e) {
+    console.warn('Supabase Auth SDK call failed/timed out, attempting server auth fallback:', e);
   }
 
-  return { session: data.session, user: data.user };
+  // Fallback: Direct server auth via /api/auth/login
+  // Only useful for: (a) non-email identifiers (client_id/phone) needing email resolution,
+  //                  (b) demo credentials that work offline without Supabase.
+  // For all other email logins, hitting the route would just call Supabase again — same latency, no benefit.
+  const isEmailLogin = targetEmail.includes('@');
+  const isDemoCredentials = (
+    targetEmail.toLowerCase() === 'demo@gmail.com' && password === 'demo123'
+  );
+  if (isEmailLogin && !isDemoCredentials) {
+    return { error: 'Authentication failed. Please check credentials or network connection.' };
+  }
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: targetEmail, password }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      return { error: data.error || 'Invalid credentials. Please try again.' };
+    }
+
+    if (data.session && data.user) {
+      _cachedSession = data.session;
+      _cacheTimestamp = Date.now();
+
+      if (typeof window !== 'undefined') {
+        try {
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+          let projectRef = '';
+          if (supabaseUrl) {
+            try { projectRef = new URL(supabaseUrl).hostname.split('.')[0]; } catch {}
+          }
+          if (projectRef) {
+            localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify(data.session));
+          }
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token || '',
+          }).catch(() => {});
+        } catch (e) {
+          console.warn('[signIn] Failed to persist fallback session to localStorage:', e);
+        }
+      }
+
+      return { session: data.session, user: data.user };
+    }
+  } catch (err: any) {
+    console.error('Direct auth fallback error:', err);
+  }
+
+  return { error: 'Authentication failed. Please check credentials or network connection.' };
 }
 
 /**
@@ -76,21 +153,30 @@ export async function signIn(email: string, password: string): Promise<SignInRes
  * Validates: Requirements 4.1, 4.2, 4.3
  */
 export async function signOut(): Promise<void> {
+  clearAuthCache();
+  if (typeof window !== 'undefined') {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+  }
   try {
-    // Keep the watchlist intact even after logging out
-    // if (_cachedSession && (_cachedSession.user?.email === 'demo@gmail.com' || _cachedSession.user?.user_metadata?.demo_user)) {
-    //   localStorage.setItem('marginApex_watchlist', '[]');
-    // }
-  } catch (e) {
-    console.error('Failed to clear demo watchlist on signout:', e);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('signOut error:', error);
+    }
+  } catch (err) {
+    console.error('signOut catch error:', err);
   }
-  _cachedSession = null;
-  _cacheTimestamp = 0;
-  const { error } = await supabase.auth.signOut();
-  if (error) {
-    console.error('signOut error:', error);
+  if (typeof window !== 'undefined') {
+    window.location.href = '/login';
   }
-  window.location.href = '/login';
 }
 
 /**
@@ -187,24 +273,40 @@ export async function getSession(): Promise<Session | null> {
         return _cachedSession;
       }
 
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      // getSession() reads from localStorage — normally instant.
+      // But with a stale/invalid token it may make a network refresh call; cap at 6s.
+      const getSessionPromise = supabase.auth.getSession();
+      const getSessionTimeout = new Promise<{ data: { session: null }; error: Error }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null }, error: new Error('getSession timeout') }), 6000)
+      );
+      const { data: sessionData, error: sessionError } = await Promise.race([getSessionPromise, getSessionTimeout]);
       
       if (sessionError || !sessionData?.session) {
+        if (_cachedSession) {
+          return _cachedSession;
+        }
         _cachedSession = null;
         return null;
       }
 
-      // Refresh user data from server to get latest user_metadata (e.g. role)
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      
-      if (userError) {
-        console.warn('getUser() failed, treating session as invalid:', userError.message);
-        _cachedSession = null;
-        _cacheTimestamp = 0;
-        return null;
+      let user = sessionData.session.user;
+
+      // getUser() makes a live network call to Supabase Auth API.
+      // Guard it with a 5s timeout so a slow connection doesn't hang the page.
+      try {
+        const getUserPromise = supabase.auth.getUser();
+        const getUserTimeout = new Promise<{ data: null; error: Error }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('getUser timeout') }), 5000)
+        );
+        const { data: userData, error: userError } = await Promise.race([getUserPromise, getUserTimeout]);
+        if (!userError && userData?.user) {
+          user = userData.user;
+        }
+      } catch (e) {
+        console.warn('getUser() network call warning:', e);
       }
 
-      const freshSession = { ...sessionData.session, user: userData.user };
+      const freshSession = { ...sessionData.session, user };
 
       _cachedSession = freshSession;
       _cacheTimestamp = Date.now();

@@ -7,8 +7,9 @@
  */
 
 import { requireAdmin, requireSuperAdmin } from '../../_auth';
-import { getRole } from '../../../../../lib/auth';
-import { isUserInHierarchy } from '../../../../../lib/hierarchy';
+import { getRole } from '@/lib/auth';
+import { isUserInHierarchy } from '@/lib/hierarchy';
+
 
 // Profile fields that can be updated via PATCH (password is handled separately)
 const PROFILE_FIELDS = [
@@ -36,7 +37,7 @@ export async function GET(
 ): Promise<Response> {
   try {
     // Step 1: Authenticate and authorize the caller
-    // Validates: Requirements 12.1–12.6
+    // Validates: Requirements 2.1–2.7
     const authResult = await requireAdmin(request);
     if (authResult instanceof Response) return authResult;
     const { adminClient, callerUser } = authResult;
@@ -44,6 +45,11 @@ export async function GET(
     // Resolve params (may be a Promise in newer Next.js versions)
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
+
+    // Check hierarchy permission
+    if (!await isUserInHierarchy(adminClient, callerUser.id, id)) {
+      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     // Step 2: Query the profile row
     // Validates: Requirements 8.5, 13.7
@@ -57,11 +63,6 @@ export async function GET(
 
     if (error || data === null) {
       return Response.json({ error: 'Not found' }, { status: 404 });
-    }
-
-    const inHierarchy = await isUserInHierarchy(adminClient, callerUser.id, id);
-    if (!inHierarchy) {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Step 3: Return the profile
@@ -86,10 +87,11 @@ export async function PATCH(
     const resolvedParams = await Promise.resolve(params);
     const id = resolvedParams.id;
 
-    const inHierarchy = await isUserInHierarchy(adminClient, callerUser.id, id);
-    if (!inHierarchy) {
+    // Check hierarchy permission
+    if (!await isUserInHierarchy(adminClient, callerUser.id, id)) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
+
 
     // Step 2: Parse JSON body
     // Validates: Requirement 6.4
@@ -152,8 +154,8 @@ export async function PATCH(
         (existingScalperResult.data ?? []).map(s => `${s.segment.toUpperCase()}-${s.side.toUpperCase()}`)
       );
 
-      const defaultSettingsRows = [];
-      const defaultScalperSettingsRows = [];
+      const defaultSettingsRows: any[] = [];
+      const defaultScalperSettingsRows: any[] = [];
 
       for (const seg of activeSegments) {
         const segUpper = seg.toUpperCase();
@@ -227,10 +229,10 @@ export async function PATCH(
 
       await Promise.all([
         defaultSettingsRows.length > 0
-          ? adminClient.from('segment_settings').insert(defaultSettingsRows)
+          ? adminClient.from('segment_settings').upsert(defaultSettingsRows, { onConflict: 'user_id,segment,side' })
           : Promise.resolve(),
         defaultScalperSettingsRows.length > 0
-          ? adminClient.from('scalper_segment_settings').insert(defaultScalperSettingsRows)
+          ? adminClient.from('scalper_segment_settings').upsert(defaultScalperSettingsRows, { onConflict: 'user_id,segment,side' })
           : Promise.resolve(),
       ]);
     }

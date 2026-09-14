@@ -110,6 +110,15 @@ BEGIN
         updated_at = now()
     WHERE id = p_position_id;
 
+    -- Cancel all open/pending orders linked to this position or symbol upon full closure
+    IF (v_qty_open - p_close_qty) <= 0 THEN
+        UPDATE public.orders
+        SET status = 'CANCELLED', updated_at = now()
+        WHERE user_id = v_user_id
+          AND UPPER(status) IN ('PENDING', 'OPEN', 'TRIGGER_PENDING', 'VALIDATION_PENDING')
+          AND (info = p_position_id::text OR linked_position_id = p_position_id OR symbol = v_symbol);
+    END IF;
+
     -- Determine lot size to calculate lots
     SELECT lot_size INTO v_lot_size FROM public.script_settings WHERE v_symbol LIKE '%' || symbol || '%' ORDER BY length(symbol) DESC LIMIT 1;
     IF v_lot_size IS NULL OR v_lot_size <= 0 THEN
@@ -154,7 +163,7 @@ BEGIN
             price, fill_price, ltp_at_entry, order_type, product_type, info, is_exit, idempotency_key
         )
         VALUES (
-            v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'NSE-EQ'), v_exit_side, 'EXECUTED', p_close_qty, v_lots,
+            v_user_id, v_symbol, v_symbol, COALESCE(v_settlement, 'STOCKS'), v_exit_side, 'EXECUTED', p_close_qty, v_lots,
             p_close_price, p_close_price, p_close_price, 'MARKET', COALESCE(v_product_type, 'INTRADAY'), p_position_id::text, true, p_idempotency_key
         );
     END IF;
