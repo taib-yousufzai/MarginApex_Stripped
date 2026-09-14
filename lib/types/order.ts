@@ -5,7 +5,7 @@
 export type OrderSide        = 'BUY' | 'SELL';
 export type OrderType        = 'MARKET' | 'LIMIT' | 'SL' | 'SLM' | 'GTT';
 export type ProductType      = 'INTRADAY' | 'CARRY';
-export type OrderStatus      = 'PENDING' | 'EXECUTED' | 'CANCELLED' | 'REJECTED' | 'TRIGGERED';
+export type OrderStatus      = 'SUBMITTING' | 'PENDING' | 'EXECUTED' | 'CANCELLED' | 'REJECTED' | 'TRIGGERED';
 
 // ─── Request (client → POST /api/orders) ─────────────────────────────────────
 export interface PlaceOrderRequest {
@@ -58,6 +58,8 @@ export interface PlaceOrderResponse {
 export interface MyOrder {
   id: string;
   symbol: string;
+  kite_instrument?: string;
+  linked_position_id?: string;
   segment: string;
   side: OrderSide;
   status: OrderStatus;
@@ -85,6 +87,7 @@ export interface MyPosition {
   side: OrderSide;
   status: 'open' | 'active' | 'closed';
   qty_open: number;
+  lots?: number;
   qty_total: number;
   avg_price: number;
   entry_price: number;

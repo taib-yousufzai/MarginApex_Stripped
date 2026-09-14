@@ -31,6 +31,19 @@ import { resolveUnderlyingKiteId, validateOptionStrike } from '@/lib/trading/Opt
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function cleanSymHelper(s?: string | null): string {
+  if (!s) return '';
+  let str = s.replace(/^(CRYPTO:|NSE:|NFO:|MCX:|BSE:|BFO:|US:|FOREX:|COMEX:|BINANCE:)/i, '').replace(/[\/\s\_]/g, '').toUpperCase();
+  const nonCrypto = ['GBPUSD', 'EURUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDJPY', 'USDCHF', 'XAUUSD', 'XAGUSD', 'XTIUSD', 'XNGUSD', 'XCUUSD'];
+  const knownBaseCrypto = ['BTC', 'ETH', 'DOGE', 'SOL', 'XRP', 'ADA', 'BNB', 'DOT', 'LTC', 'AVAX', 'MATIC', 'LINK', 'UNI', 'BCH', 'SHIB', 'PEPE', 'TRX', 'NEAR', 'SUI', 'APT', 'FET', 'RNDR', 'INJ', 'TIA', 'OP', 'ARB'];
+  if (knownBaseCrypto.includes(str)) {
+    str += 'USDT';
+  } else if (str.endsWith('USD') && !str.endsWith('USDT') && !nonCrypto.includes(str)) {
+    str = str.slice(0, -3) + 'USDT';
+  }
+  return str;
+}
+
 /**
  * Fetch the Binance quote (LTP, bid, ask, depth) for a crypto symbol.
  */
@@ -1078,6 +1091,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    let resolvedIsExit: boolean = is_exit ?? false;
+    let resolvedLinkedPositionId: string | null = linked_position_id ?? null;
+
+    if (!resolvedLinkedPositionId) {
+      const targetClean = cleanSymHelper(symbol);
+      const targetProd = (product_type || 'INTRADAY').toUpperCase();
+      const matchingPosition = openPositions.find((p: any) =>
+        cleanSymHelper(p.symbol || p.kite_instrument) === targetClean &&
+        p.side !== side &&                              // opposite side
+        (p.product_type || 'INTRADAY').toUpperCase() === targetProd
+      );
+      if (matchingPosition) {
+        resolvedIsExit = true;
+        resolvedLinkedPositionId = matchingPosition.id;
+        console.log(
+          `[POST /api/orders] Auto-resolved is_exit=true & linkedPositionId=${matchingPosition.id} for ${targetOrderType} order ` +
+          `(symbol=${symbol}, side=${matchingPosition.side})`
+        );
+      }
+    }
+
     const executeDbCall = async () => {
       const { data: oId, error: rpcErr } = await admin.rpc('place_order_v2', {
         p_user_id:      user.id,
@@ -1091,7 +1125,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         p_lots:         lots ?? 0,
         p_ltp:          baseLtp,
         p_fill_price:   fillPrice,
-        p_is_exit:      is_exit ?? false,
+        p_is_exit:      resolvedIsExit,
         p_buffer_fee:   0,
         p_status:       isImmediate ? 'EXECUTED' : 'PENDING',
         p_trigger_price: resolvedTriggerPrice,
@@ -1101,7 +1135,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         p_expected_margin: requiredMargin,
         p_expected_brokerage: expectedBrokerage,
         p_idempotency_key: null,
-        p_linked_position_id: linked_position_id ?? null
+        p_linked_position_id: resolvedLinkedPositionId
       });
       if (rpcErr) {
         throw new Error(rpcErr.message || 'Order execution failed. Please try again.');

@@ -3,20 +3,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { api } from '@/lib/api';
+
 import { getSharedSessionSync } from '@/lib/sharedSession';
 
 export interface BalanceContextType {
   balance: number;
   settlementAmount: number;
   loading: boolean;
-  /**
-   * Explicitly re-fetch balance from the API.
-   * Normally not needed — the provider updates automatically via:
-   *   1. Supabase realtime on profile row UPDATE
-   *   2. `order_placed` window event listener
-   * Only use this in edge cases where neither fires in time.
-   */
   refresh: () => Promise<void>;
+  validatePreflight: (requiredMargin: number) => { valid: boolean; reason?: string };
 }
 
 const BalanceDataContext = createContext<BalanceContextType | null>(null);
@@ -31,13 +26,18 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
 
   const fetchBalance = useCallback(async () => {
     if (fetchingRef.current) return;
+    const { token } = getSharedSessionSync();
+    if (!token) return;
+
     fetchingRef.current = true;
     try {
       const data = await api.get<{ balance?: number; settlementAmount?: number }>('/api/pay/balance');
       setBalance(Number(data.balance ?? 0));
       setSettlementAmount(Math.abs(Number(data.settlementAmount ?? 0)));
-    } catch (err) {
-      console.error('[BalanceProvider] failed to fetch balance:', err);
+    } catch (err: any) {
+      if (err?.status !== 401) {
+        console.error('[BalanceProvider] failed to fetch balance:', err);
+      }
     } finally {
       fetchingRef.current = false;
     }
@@ -49,6 +49,13 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
 
     const init = async (session?: any) => {
       if (cancelled) return;
+      if (!session) {
+        const { token } = getSharedSessionSync();
+        if (!token) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+      }
 
       // Initial fetch
       setLoading(true);
@@ -58,8 +65,10 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
           setBalance(Number(data.balance ?? 0));
           setSettlementAmount(Math.abs(Number(data.settlementAmount ?? 0)));
         }
-      } catch (err) {
-        console.error('[BalanceProvider] failed to fetch balance:', err);
+      } catch (err: any) {
+        if (err?.status !== 401) {
+          console.error('[BalanceProvider] failed to fetch balance:', err);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -97,6 +106,8 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
       if (!cancelled) fetchBalance();
     };
     window.addEventListener('order_placed', handleOrderPlaced);
+    window.addEventListener('position-closed', handleOrderPlaced);
+    window.addEventListener('position_closed', handleOrderPlaced);
 
     // Auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -111,17 +122,8 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
     const { token } = getSharedSessionSync();
     if (token) {
       fetchBalance();
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session && !cancelled) init(session);
-      });
     } else {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session && !cancelled) {
-          init(session);
-        } else {
-          if (!cancelled) setLoading(false);
-        }
-      });
+      if (!cancelled) setLoading(false);
     }
 
     // Active balance polling fallback: fetch balance every 10 seconds as safety net
@@ -146,11 +148,23 @@ export const BalanceDataProvider = ({ children }: { children: React.ReactNode })
       subscription.unsubscribe();
       if (channel) supabase.removeChannel(channel);
       window.removeEventListener('order_placed', handleOrderPlaced);
+      window.removeEventListener('position-closed', handleOrderPlaced);
+      window.removeEventListener('position_closed', handleOrderPlaced);
     };
   }, [fetchBalance]);
 
+  const validatePreflight = useCallback((requiredMargin: number): { valid: boolean; reason?: string } => {
+    if (balance > 0 && requiredMargin > balance) {
+      return {
+        valid: false,
+        reason: `Insufficient margin. Required: ₹${requiredMargin.toLocaleString('en-IN', { maximumFractionDigits: 2 })}, Available: ₹${balance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+      };
+    }
+    return { valid: true };
+  }, [balance]);
+
   return (
-    <BalanceDataContext.Provider value={{ balance, settlementAmount, loading, refresh: fetchBalance }}>
+    <BalanceDataContext.Provider value={{ balance, settlementAmount, loading, refresh: fetchBalance, validatePreflight }}>
       {children}
     </BalanceDataContext.Provider>
   );
