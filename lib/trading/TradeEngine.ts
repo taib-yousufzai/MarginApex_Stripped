@@ -10,7 +10,9 @@ import { ExecutionService, ExecutionParams } from './ExecutionService';
 import { ConfigurationService } from './ConfigurationService';
 import { mapSegmentToDbSegment, mapSymbolToSegment } from './SymbolMapping';
 import { SymbolNormalizer } from './SymbolNormalizer';
-import { parseOptionSymbol } from '../parseOptionSymbol';
+import { getLotSizeFallback } from '@/lib/lotSize';
+import { parseOptionSymbol } from '../positionStore';
+import { validateOptionStrike } from './OptionStrikeValidator';
 
 export interface PlaceOrderRequest {
   symbol: string;
