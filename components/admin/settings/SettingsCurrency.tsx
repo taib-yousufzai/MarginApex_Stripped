@@ -6,19 +6,42 @@ export default function SettingsCurrency() {
   const [exchangeRate, setExchangeRate] = useState('83.50');
   const [toast, setToast] = useState<ToastState>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    fetch('/api/admin/platform-settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.settings?.USD_INR_RATE) {
+          setExchangeRate(data.settings.USD_INR_RATE);
+        }
+      })
+      .catch(err => console.error('Failed to load currency rate', err))
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleSave = async () => {
-    if (!exchangeRate || isNaN(Number(exchangeRate))) {
-      setToast({ message: 'Please enter a valid number', type: 'error' });
+    if (!exchangeRate || isNaN(Number(exchangeRate)) || Number(exchangeRate) <= 0) {
+      setToast({ message: 'Please enter a valid positive number', type: 'error' });
       return;
     }
     
     setSaveLoading(true);
-    // TODO: Implement actual API call to save currency settings
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/admin/platform-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ USD_INR_RATE: exchangeRate }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save currency rate');
+
       setToast({ message: 'Currency settings saved successfully', type: 'success' });
+    } catch (err: any) {
+      setToast({ message: err.message || 'Error saving currency settings', type: 'error' });
+    } finally {
       setSaveLoading(false);
-    }, 800);
+    }
   };
 
   return (
@@ -58,7 +81,7 @@ export default function SettingsCurrency() {
           <button 
             className="adm-btn-primary" 
             onClick={handleSave} 
-            disabled={saveLoading}
+            disabled={saveLoading || loading}
           >
             {saveLoading ? 'Saving...' : 'Save Exchange Rate'}
           </button>

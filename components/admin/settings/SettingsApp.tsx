@@ -19,6 +19,15 @@ export default function SettingsApp() {
         if (data.settings?.EXIT_PRICE_MODE) {
           setExitPriceMode(data.settings.EXIT_PRICE_MODE);
         }
+        if (data.settings?.MAINTENANCE_MODE !== undefined) {
+          setMaintenanceMode(data.settings.MAINTENANCE_MODE === 'true');
+        }
+        if (data.settings?.GLOBAL_KILL_SWITCH !== undefined) {
+          setGlobalKillSwitch(data.settings.GLOBAL_KILL_SWITCH === 'true');
+        }
+        if (data.settings?.ALLOW_REGISTRATIONS !== undefined) {
+          setAllowNewRegistrations(data.settings.ALLOW_REGISTRATIONS === 'true');
+        }
       })
       .catch(err => console.error('Failed to load platform settings', err))
       .finally(() => setLoadingSettings(false));
@@ -30,12 +39,17 @@ export default function SettingsApp() {
       const res = await fetch('/api/admin/platform-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ EXIT_PRICE_MODE: exitPriceMode }),
+        body: JSON.stringify({ 
+          EXIT_PRICE_MODE: exitPriceMode,
+          MAINTENANCE_MODE: String(maintenanceMode),
+          GLOBAL_KILL_SWITCH: String(globalKillSwitch),
+          ALLOW_REGISTRATIONS: String(allowNewRegistrations),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save settings');
 
-      setToast({ message: 'App & Exit Price settings saved successfully', type: 'success' });
+      setToast({ message: 'App & Platform settings saved successfully', type: 'success' });
     } catch (err: any) {
       setToast({ message: err.message || 'Error saving settings', type: 'error' });
     } finally {

@@ -1,15 +1,28 @@
 import { requireAuth } from '@/lib/api-middleware';
 import { getPlatformSetting, setPlatformSetting } from '@/lib/getPlatformSetting';
 
-const ALLOWED_SETTINGS = ['EXIT_PRICE_MODE'] as const;
+const ALLOWED_SETTINGS = [
+  'EXIT_PRICE_MODE',
+  'MAINTENANCE_MODE',
+  'GLOBAL_KILL_SWITCH',
+  'ALLOW_REGISTRATIONS',
+  'USD_INR_RATE',
+] as const;
 type AllowedSetting = typeof ALLOWED_SETTINGS[number];
 
 const DEFAULTS: Record<AllowedSetting, string> = {
   EXIT_PRICE_MODE: 'BID_ASK',
+  MAINTENANCE_MODE: 'false',
+  GLOBAL_KILL_SWITCH: 'false',
+  ALLOW_REGISTRATIONS: 'true',
+  USD_INR_RATE: '83.50',
 };
 
-const VALID_VALUES: Record<AllowedSetting, string[]> = {
+const VALID_VALUES: Partial<Record<AllowedSetting, string[]>> = {
   EXIT_PRICE_MODE: ['BID_ASK', 'LTP'],
+  MAINTENANCE_MODE: ['true', 'false'],
+  GLOBAL_KILL_SWITCH: ['true', 'false'],
+  ALLOW_REGISTRATIONS: ['true', 'false'],
 };
 
 /** GET /api/admin/platform-settings — returns all platform settings */
@@ -45,10 +58,18 @@ export async function PUT(request: Request) {
       errors.push(`Unknown setting: ${key}`);
       continue;
     }
-    const valid = VALID_VALUES[key as AllowedSetting];
-    if (!valid.includes(value)) {
-      errors.push(`${key} must be one of: ${valid.join(', ')}`);
-      continue;
+    if (key === 'USD_INR_RATE') {
+      const num = parseFloat(value);
+      if (isNaN(num) || num <= 0) {
+        errors.push('USD_INR_RATE must be a positive number');
+        continue;
+      }
+    } else {
+      const valid = VALID_VALUES[key as AllowedSetting];
+      if (valid && !valid.includes(value)) {
+        errors.push(`${key} must be one of: ${valid.join(', ')}`);
+        continue;
+      }
     }
     await setPlatformSetting(key, value);
     updated.push(key);
