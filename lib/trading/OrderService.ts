@@ -1,4 +1,4 @@
-import { parseOptionSymbol } from '../../lib/positionStore';
+import { parseOptionSymbol } from '../parseOptionSymbol';
 import { resolveEffectivePrices } from './marketPriceResolver';
 import { calculateBufferedPrice } from './BufferCalculator';
 
