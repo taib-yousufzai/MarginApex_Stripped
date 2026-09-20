@@ -102,6 +102,14 @@ export async function POST(request: Request): Promise<Response> {
       await Promise.all(profileUpdatePromises);
     }
 
+    // Invalidate Redis segment settings cache for all updated users
+    try {
+      const { invalidateUserSegmentSettings } = await import('@/lib/redisSettingsCache');
+      await Promise.all(targetUserIds.map(uid => invalidateUserSegmentSettings(uid)));
+    } catch (cacheErr) {
+      console.warn('[bulk-segments] Cache invalidation warning:', cacheErr);
+    }
+
     // Trigger margin checks in parallel for all target users
     try {
       const { checkAndSquareOffPositionsForMargin } = await import('@/lib/marginSquareOff');

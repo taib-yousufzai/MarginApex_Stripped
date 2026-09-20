@@ -34,6 +34,8 @@ export default function PayinOutPage({ isDemoMode }: { isDemoMode: boolean }) {
   const [rulesSaving, setRulesSaving] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [lightboxRotation, setLightboxRotation] = useState(0);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
 
   // Stats calculation (simplified for now, ideally from API)
   const stats = {
@@ -258,11 +260,57 @@ export default function PayinOutPage({ isDemoMode }: { isDemoMode: boolean }) {
       <Toast toast={toast} onDismiss={() => setToast(null)} />
       
       {lightboxImg && (
-        <div className="adm-lightbox" onClick={() => setLightboxImg(null)}>
-          <div className="adm-lightbox-content" onClick={e => e.stopPropagation()}>
-            <button className="adm-lightbox-close" onClick={() => setLightboxImg(null)}>✕</button>
-            <img src={lightboxImg} alt="Screenshot" className="adm-lightbox-img" />
-            <div className="adm-lightbox-caption">Payment Proof Screenshot</div>
+        <div className="adm-lightbox" onClick={() => { setLightboxImg(null); setLightboxRotation(0); setLightboxZoom(1); }}>
+          <div className="adm-lightbox-content" onClick={e => e.stopPropagation()} style={{ position: 'relative', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '10px' }}>
+              <button 
+                type="button"
+                title="Rotate 90 degrees"
+                onClick={() => setLightboxRotation(r => (r + 90) % 360)}
+                style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+              >
+                <i className="fas fa-redo" style={{ marginRight: '4px' }} /> Rotate
+              </button>
+              <button 
+                type="button"
+                title="Zoom In"
+                onClick={() => setLightboxZoom(z => Math.min(3, z + 0.25))}
+                style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+              >
+                + Zoom
+              </button>
+              <button 
+                type="button"
+                title="Zoom Out"
+                onClick={() => setLightboxZoom(z => Math.max(0.5, z - 0.25))}
+                style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+              >
+                - Zoom
+              </button>
+              <button 
+                type="button"
+                className="adm-lightbox-close" 
+                onClick={() => { setLightboxImg(null); setLightboxRotation(0); setLightboxZoom(1); }}
+                style={{ position: 'static' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ overflow: 'hidden', maxHeight: '75vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <img 
+                src={lightboxImg} 
+                alt="Screenshot" 
+                className="adm-lightbox-img" 
+                style={{
+                  transform: `rotate(${lightboxRotation}deg) scale(${lightboxZoom})`,
+                  transition: 'transform 0.2s ease',
+                  maxHeight: '70vh',
+                  maxWidth: '100%',
+                  objectFit: 'contain'
+                }}
+              />
+            </div>
+            <div className="adm-lightbox-caption" style={{ marginTop: '12px' }}>Payment Proof Screenshot</div>
           </div>
         </div>
       )}

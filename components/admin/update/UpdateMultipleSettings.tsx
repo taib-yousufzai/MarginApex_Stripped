@@ -1,6 +1,6 @@
 'use client';
-import React, { useState } from 'react';
-import { apiCall, Toast, ToastState } from '../AdminUtils';
+import React, { useState, useEffect } from 'react';
+import { apiCall, Toast, ToastState, UserListItem } from '../AdminUtils';
 import { SegmentSettingsType } from './UpdateSegments';
 
 const ALL_SEGMENTS = ['INDEX-FUT', 'STOCK-OPT', 'STOCKS', 'COMEX', 'INDEX-OPT', 'MCX-FUT', 'CRYPTO', 'STOCK-FUT', 'MCX-OPT', 'FOREX', 'US-EQ'];
@@ -25,18 +25,39 @@ const defaultSeg = (): SegmentSettingsType => ({
 
 export default function UpdateMultipleSettings({ selectedUser: _selectedUser }: { selectedUser?: { id: string } }) {
   const [targetBroker, setTargetBroker] = useState('');
-  const [segmentsToUpdate, setSegmentsToUpdate] = useState<string[]>([]);
+  const [segmentsToUpdate, setSegmentsToUpdate] = useState<string[]>(ALL_SEGMENTS);
   const [config, setConfig] = useState<SegmentSettingsType>(defaultSeg());
+  const [brokers, setBrokers] = useState<UserListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
+
+  // Load list of brokers and admins
+  useEffect(() => {
+    apiCall('/api/admin/users', { method: 'GET' }).then(({ ok, data }) => {
+      if (ok && Array.isArray(data)) {
+        const brokerUsers = (data as UserListItem[]).filter(u => 
+          u.role === 'broker' || u.role === 'sub_broker' || u.role === 'admin' || u.role === 'super_admin'
+        );
+        setBrokers(brokerUsers);
+      }
+    }).catch(() => {});
+  }, []);
 
   const toggleSeg = (s: string) => {
     setSegmentsToUpdate(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
 
+  const handleSelectAll = () => {
+    if (segmentsToUpdate.length === ALL_SEGMENTS.length) {
+      setSegmentsToUpdate([]);
+    } else {
+      setSegmentsToUpdate(ALL_SEGMENTS);
+    }
+  };
+
   const handleApply = async () => {
-    if (!targetBroker) {
-      setToast({ message: 'Please enter a target Broker ID', type: 'error' });
+    if (!targetBroker.trim()) {
+      setToast({ message: 'Please select a Target Broker or Admin group', type: 'error' });
       return;
     }
     if (segmentsToUpdate.length === 0) {
@@ -45,27 +66,23 @@ export default function UpdateMultipleSettings({ selectedUser: _selectedUser }: 
     }
 
     setLoading(true);
-    // Simulated API Call
     try {
-      const { ok } = await apiCall(`/api/admin/users/bulk-segments`, {
+      const res = await apiCall(`/api/admin/users/bulk-segments`, {
         method: 'POST',
-        body: JSON.stringify({ broker: targetBroker, segments: segmentsToUpdate, config }),
+        body: JSON.stringify({ broker: targetBroker.trim(), segments: segmentsToUpdate, config }),
       });
       
-      if (!ok) {
-        setTimeout(() => {
-          setLoading(false);
-          setToast({ message: `Successfully updated ${segmentsToUpdate.length} segments for users under ${targetBroker}`, type: 'success' });
-          setSegmentsToUpdate([]);
-        }, 800);
-        return;
+      if (res.ok) {
+        const msg = (res.data as any)?.message || `Successfully updated ${segmentsToUpdate.length} segments for users under ${targetBroker}`;
+        setToast({ message: msg, type: 'success' });
+      } else {
+        const errMsg = (res.data as any)?.error || 'Failed to apply bulk settings';
+        setToast({ message: errMsg, type: 'error' });
       }
-      
+    } catch (e: any) {
+      setToast({ message: e.message || 'Error applying bulk update', type: 'error' });
+    } finally {
       setLoading(false);
-      setToast({ message: 'Bulk update applied successfully', type: 'success' });
-    } catch (e) {
-      setLoading(false);
-      setToast({ message: 'Simulated API call for UI', type: 'success' });
     }
   };
 
@@ -75,23 +92,48 @@ export default function UpdateMultipleSettings({ selectedUser: _selectedUser }: 
     <div className="adm-upd-root" style={{ padding: '0 0 40px 0' }}>
       <div className="adm-upd-section-title">Bulk Update Segment Settings</div>
       <p style={{ color: '#8b949e', fontSize: '14px', marginBottom: 20 }}>
-        Apply a specific segment configuration to all users under a specific Broker.
+        Apply uniform leverage, hold times, brokerage buffers, and segment configurations to all client users under a broker.
       </p>
 
       <div className="adm-upd-card">
         <div className="adm-upd-field">
-          <label className="adm-upd-label">Target Broker ID</label>
-          <input 
+          <label className="adm-upd-label">Target Broker / Hierarchy Group</label>
+          <select 
             className="adm-upd-input" 
-            placeholder="e.g. BROKER_MUMBAI_1"
+            style={{ cursor: 'pointer' }}
             value={targetBroker} 
-            onChange={e => setTargetBroker(e.target.value)} 
-          />
+            onChange={e => setTargetBroker(e.target.value)}
+          >
+            <option value="">-- Select Target Broker / Master Account --</option>
+            {brokers.map(b => (
+              <option key={b.id} value={b.id}>
+                {b.full_name || b.email} ({b.role}) - ID: {b.id.slice(0, 8)}...
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="adm-upd-section-title" style={{ marginTop: 24, fontSize: '15px' }}>
-          Target Segments
+          Select Segments to Bulk Update ({segmentsToUpdate.length}/{ALL_SEGMENTS.length})
         </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <button 
+            onClick={handleSelectAll}
+            style={{ 
+              background: 'transparent', 
+              border: '1px solid #30363d', 
+              color: '#8b949e', 
+              padding: '6px 12px', 
+              borderRadius: '4px',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            {segmentsToUpdate.length === ALL_SEGMENTS.length ? 'Deselect All' : 'Select All'}
+          </button>
+        </div>
+
         <div className="adm-cu-segments-grid">
           {ALL_SEGMENTS.map(s => (
             <label className="adm-cu-seg-item" key={s}>
@@ -243,7 +285,7 @@ export default function UpdateMultipleSettings({ selectedUser: _selectedUser }: 
         disabled={loading} 
         onClick={handleApply}
       >
-        {loading ? 'Processing…' : 'Apply Bulk Update'}
+        {loading ? 'Applying Bulk Settings…' : 'Apply Bulk Update'}
       </button>
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

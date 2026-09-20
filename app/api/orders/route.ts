@@ -721,6 +721,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               }
             } catch {}
             return {};
+          } else if (
+            dbSegment === 'US-EQ' || dbSegment === 'US' ||
+            ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'SPY', 'QQQ', 'DIA', 'ES=F', 'NQ=F', 'YM=F'].some(c => symbol.toUpperCase().includes(c)) ||
+            symbol.toUpperCase().includes('APPLE') || symbol.toUpperCase().includes('TESLA')
+          ) {
+            try {
+              const { fetchUSStockQuote, normalizeUSStockSymbol } = await import('@/lib/datafeed/USStockService');
+              const usQ = await fetchUSStockQuote(symbol);
+              const lastP = (usQ as any)?.price ?? (usQ as any)?.lastPrice ?? 0;
+              if (usQ && lastP > 0) {
+                const qObj: ServerQuote = {
+                  last_price: lastP,
+                  bid: usQ.bid || lastP,
+                  ask: usQ.ask || lastP,
+                };
+                const clean = normalizeUSStockSymbol(symbol);
+                return {
+                  [kiteInst]: qObj,
+                  [symbol]: qObj,
+                  [clean]: qObj,
+                  [`US:${clean}`]: qObj,
+                  [`US-EQ:${clean}`]: qObj,
+                };
+              }
+            } catch {}
+            return {};
           } else {
             return fetchKiteQuotes(instrumentsToFetch);
           }
@@ -743,7 +769,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       balance: Number(balanceResult.data?.balance ?? 0),
     } : null;
     const profileErr = !profile ? 'Profile not found' : null;
-    const rawQuote = quotesMap[kiteInst];
+    const cleanSymKey = cleanSymHelper(symbol);
+    const rawQuote = quotesMap[kiteInst] ?? quotesMap[symbol] ?? quotesMap[cleanSymKey] ?? quotesMap[`CRYPTO:${cleanSymKey}`] ?? quotesMap[`US:${cleanSymKey}`] ?? null;
     const kiteLtp = typeof rawQuote === 'number' ? rawQuote : (rawQuote?.last_price ?? null);
     const dbScriptSettings = (scriptSettingsResult?.data as any[]) ?? [];
 
@@ -844,6 +871,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const symbolLotSize = lots > 0 ? (qty / lots) : getLotSize(symbol, dbScriptSettings);
+    const newOrderLots = lots > 0 ? lots : (symbolLotSize > 0 ? qty / symbolLotSize : qty);
     const maxOrderLot = Number(segSetting.max_order_lot || segSetting.max_lot || 0);
     if (!is_exit && maxOrderLot > 0) {
       const maxQty = maxOrderLot * symbolLotSize;
@@ -896,8 +924,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           }
         }
       }
-
-      const newOrderLots = lots > 0 ? lots : (symbolLotSize > 0 ? qty / symbolLotSize : qty);
 
       if (totalOpenInstrumentLots + newOrderLots > maxLotCap) {
         const remainingInstLots = Math.max(0, maxLotCap - totalOpenInstrumentLots);
@@ -1364,7 +1390,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         ? (exitPos.side === 'BUY' ? 'SELL' : 'BUY')
         : side;
 
-      const { data: oId, error: rpcErr } = await admin.rpc('place_order_v2', {
+      let oId: any = null;
+      let rpcErr: any = null;
+
+      const resV2 = await admin.rpc('place_order_v2', {
         p_user_id: user.id,
         p_symbol: finalSymbol,
         p_kite_inst: kiteInst,
@@ -1388,6 +1417,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         p_idempotency_key: null,
         p_linked_position_id: resolvedLinkedPositionId
       });
+
+      if (resV2.error) {
+        console.warn('[POST /api/orders] place_order_v2 error, falling back to v1:', resV2.error);
+        const resV1 = await admin.rpc('place_order', {
+          p_user_id: user.id,
+          p_symbol: finalSymbol,
+          p_kite_inst: kiteInst,
+          p_segment: dbSegment,
+          p_side: finalSide,
+          p_order_type: rpcOrderType,
+          p_product_type: finalProductType,
+          p_qty: qty,
+          p_lots: lots ?? 0,
+          p_ltp: baseLtp,
+          p_fill_price: fillPrice,
+          p_info: resolvedLinkedPositionId,
+          p_trigger_price: resolvedTriggerPrice,
+          p_stop_loss: resolvedStopLoss,
+          p_target: target ? parseFloat(target.toString()) : null,
+          p_is_exit: resolvedIsExit,
+        });
+        oId = resV1.data;
+        rpcErr = resV1.error;
+      } else {
+        oId = resV2.data;
+        rpcErr = resV2.error;
+      }
+
       if (rpcErr) {
         throw new Error(rpcErr.message || 'Order execution failed. Please try again.');
       }
