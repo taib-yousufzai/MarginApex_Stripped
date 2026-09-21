@@ -327,10 +327,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const isFresh = searchParams.get('fresh') === 'true';
     const statusParam = searchParams.get('status');
     const requestedStatuses = statusParam ? statusParam.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : null;
+    const isHistoryQuery = requestedStatuses ? requestedStatuses.every(s => ['executed', 'rejected', 'cancelled'].includes(s)) : false;
     const admin = getAdminClient();
 
+    // Fast Redis cache check
     if (!isFresh && searchParams.get('page') === null) {
-      const cachedOrders = await getCachedUserOrders(user.id);
+      const cachedOrders = await getCachedUserOrders(user.id, isHistoryQuery);
       if (cachedOrders !== null && Array.isArray(cachedOrders) && cachedOrders.length > 0) {
         let result = cachedOrders;
         if (requestedStatuses && requestedStatuses.length > 0) {
@@ -342,11 +344,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         }
       }
     }
-    const includeVirtualOrders = !requestedStatuses || requestedStatuses.some(s => ['open', 'pending', 'active', 'trigger_pending'].includes(s));
+
+    const includeVirtualOrders = !isHistoryQuery && (!requestedStatuses || requestedStatuses.some(s => ['open', 'pending', 'active', 'trigger_pending'].includes(s)));
 
     let ordersQuery = admin
       .from('orders')
-      .select('*')
+      .select('id, user_id, symbol, segment, side, status, qty, lots, fill_price, ltp_at_entry, price, order_type, product_type, info, linked_position_id, brokerage, client_price, trigger_price, stop_loss, target, is_exit, created_at, updated_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -366,14 +369,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       includeVirtualOrders
         ? admin
             .from('positions')
-            .select('*')
+            .select('id, symbol, side, qty_open, lots, avg_price, entry_price, product_type, settlement, stop_loss, sl, target, tp, created_at')
             .eq('user_id', user.id)
             .in('status', ['open', 'OPEN', 'active', 'ACTIVE'])
         : Promise.resolve({ data: [] })
     ]);
 
     const timeoutPromise = new Promise<any>((resolve) =>
-      setTimeout(() => resolve({ timeout: true }), 8000)
+      setTimeout(() => resolve({ timeout: true }), 6000)
     );
 
     const raceRes = await Promise.race([queryPromise, timeoutPromise]).catch(err => {
@@ -382,8 +385,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     if (raceRes?.timeout) {
-      console.warn('[GET /api/orders] Supabase Cloud query timed out (8s)');
-      return NextResponse.json({ error: 'Orders query timed out' }, { status: 504 });
+      console.warn('[GET /api/orders] Supabase Cloud query timed out (6s), returning fallback');
+      const cachedOrders = await getCachedUserOrders(user.id, isHistoryQuery);
+      if (cachedOrders && Array.isArray(cachedOrders)) {
+        return NextResponse.json({ orders: cachedOrders.slice(0, limit), page, limit });
+      }
+      return NextResponse.json({ orders: [], page, limit });
     }
 
     let userProfile: any = null;
@@ -442,94 +449,93 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       };
     });
 
-
     // Dynamically synthesize virtual pending orders for positions with SL/Target
     // BUT only when a real DB order doesn't already cover that exit (to avoid duplicates
     // e.g. SLM entry inserts a real SL order — we must not also add a virtual one).
     const virtualOrders: MyOrder[] = [];
 
-    // Build a set of real pending exit orders keyed by symbol+side to detect duplicates
-    const realPendingExitKeys = new Set<string>();
-    for (const o of orders) {
-      const isPending = ['PENDING', 'pending', 'TRIGGER_PENDING', 'trigger_pending'].includes(o.status as string);
-      if (isPending && o.is_exit) {
-        realPendingExitKeys.add(`${o.symbol}|${o.side}`);
+    if (includeVirtualOrders && openPositions.length > 0) {
+      // Build a set of real pending exit orders keyed by symbol+side to detect duplicates
+      const realPendingExitKeys = new Set<string>();
+      for (const o of orders) {
+        const isPending = ['PENDING', 'pending', 'TRIGGER_PENDING', 'trigger_pending'].includes(o.status as string);
+        if (isPending && o.is_exit) {
+          realPendingExitKeys.add(`${o.symbol}|${o.side}`);
+        }
       }
-    }
 
-    for (const pos of openPositions) {
-      const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
-      const exitKey = `${pos.symbol}|${exitSide}`;
+      for (const pos of openPositions) {
+        const exitSide = pos.side === 'BUY' ? 'SELL' : 'BUY';
+        const exitKey = `${pos.symbol}|${exitSide}`;
 
-      const stopLoss = pos.stop_loss ? Number(pos.stop_loss) : (pos.sl ? Number(pos.sl) : null);
-      const target = pos.target ? Number(pos.target) : (pos.tp ? Number(pos.tp) : null);
+        const stopLoss = pos.stop_loss ? Number(pos.stop_loss) : (pos.sl ? Number(pos.sl) : null);
+        const target = pos.target ? Number(pos.target) : (pos.tp ? Number(pos.tp) : null);
 
-      // Check if both SL and Target exist -> Synthesize a single GTT order
-      if (stopLoss !== null && stopLoss > 0 && target !== null && target > 0 && !realPendingExitKeys.has(exitKey)) {
-        virtualOrders.push({
-          id: `pos-gtt-${pos.id}`,
-          symbol: pos.symbol,
-          segment: pos.settlement || '',
-          side: pos.side === 'BUY' ? 'SELL' : 'BUY', // GTT exit is opposite side
-          is_exit: true,
-          status: 'PENDING',
-          qty: Number(pos.qty_open),
-          lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
-          fill_price: stopLoss, // GTT doesn't have a single fill price, use SL as visual fallback
-          ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
-          order_type: 'GTT',
-          product_type: (pos.product_type as any) ?? 'INTRADAY',
-          info: 'GTT (Exit)',
-          brokerage: 0,
-          trigger_price: stopLoss,
-          stop_loss: stopLoss,
-          target: target,
-          created_at: pos.created_at || new Date().toISOString(),
-        });
-      } 
-      // Only add virtual SL card if ONLY SL exists (or Target is 0/null) and no real pending exit order exists
-      else if (stopLoss !== null && stopLoss > 0 && !realPendingExitKeys.has(exitKey)) {
-        virtualOrders.push({
-          id: `pos-sl-${pos.id}`,
-          symbol: pos.symbol,
-          segment: pos.settlement || '',
-          side: pos.side === 'BUY' ? 'SELL' : 'BUY', // Stop loss exit is opposite side
-          is_exit: true,
-          status: 'PENDING',
-          qty: Number(pos.qty_open),
-          lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
-          fill_price: stopLoss,
-          ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
-          order_type: 'SL',
-          product_type: (pos.product_type as any) ?? 'INTRADAY',
-          info: 'Stop Loss (Exit)',
-          brokerage: 0,
-          trigger_price: stopLoss,
-          stop_loss: stopLoss,
-          created_at: pos.created_at || new Date().toISOString(),
-        });
-      }
-      // Only add virtual Target card if ONLY Target exists (or SL is 0/null) and no real pending exit order
-      else if (target !== null && target > 0 && !realPendingExitKeys.has(exitKey)) {
-        virtualOrders.push({
-          id: `pos-target-${pos.id}`,
-          symbol: pos.symbol,
-          segment: pos.settlement || '',
-          side: pos.side === 'BUY' ? 'SELL' : 'BUY', // Target exit is opposite side
-          is_exit: true,
-          status: 'PENDING',
-          qty: Number(pos.qty_open),
-          lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
-          fill_price: target,
-          ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
-          order_type: 'LIMIT',
-          product_type: (pos.product_type as any) ?? 'INTRADAY',
-          info: 'Target (Exit)',
-          brokerage: 0,
-          client_price: target,
-          target: target,
-          created_at: pos.created_at || new Date().toISOString(),
-        });
+        // Check if both SL and Target exist -> Synthesize a single GTT order
+        if (stopLoss !== null && stopLoss > 0 && target !== null && target > 0 && !realPendingExitKeys.has(exitKey)) {
+          virtualOrders.push({
+            id: `pos-gtt-${pos.id}`,
+            symbol: pos.symbol,
+            segment: pos.settlement || '',
+            side: pos.side === 'BUY' ? 'SELL' : 'BUY',
+            is_exit: true,
+            status: 'PENDING',
+            qty: Number(pos.qty_open),
+            lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+            fill_price: stopLoss,
+            ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
+            order_type: 'GTT',
+            product_type: (pos.product_type as any) ?? 'INTRADAY',
+            info: 'GTT (Exit)',
+            brokerage: 0,
+            trigger_price: stopLoss,
+            stop_loss: stopLoss,
+            target: target,
+            created_at: pos.created_at || new Date().toISOString(),
+          });
+        } 
+        else if (stopLoss !== null && stopLoss > 0 && !realPendingExitKeys.has(exitKey)) {
+          virtualOrders.push({
+            id: `pos-sl-${pos.id}`,
+            symbol: pos.symbol,
+            segment: pos.settlement || '',
+            side: pos.side === 'BUY' ? 'SELL' : 'BUY',
+            is_exit: true,
+            status: 'PENDING',
+            qty: Number(pos.qty_open),
+            lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+            fill_price: stopLoss,
+            ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
+            order_type: 'SL',
+            product_type: (pos.product_type as any) ?? 'INTRADAY',
+            info: 'Stop Loss (Exit)',
+            brokerage: 0,
+            trigger_price: stopLoss,
+            stop_loss: stopLoss,
+            created_at: pos.created_at || new Date().toISOString(),
+          });
+        }
+        else if (target !== null && target > 0 && !realPendingExitKeys.has(exitKey)) {
+          virtualOrders.push({
+            id: `pos-target-${pos.id}`,
+            symbol: pos.symbol,
+            segment: pos.settlement || '',
+            side: pos.side === 'BUY' ? 'SELL' : 'BUY',
+            is_exit: true,
+            status: 'PENDING',
+            qty: Number(pos.qty_open),
+            lots: Number(pos.lots ?? 0) || (pos.qty_open > 0 ? 1 : 0),
+            fill_price: target,
+            ltp_at_entry: Number(pos.avg_price ?? pos.entry_price),
+            order_type: 'LIMIT',
+            product_type: (pos.product_type as any) ?? 'INTRADAY',
+            info: 'Target (Exit)',
+            brokerage: 0,
+            client_price: target,
+            target: target,
+            created_at: pos.created_at || new Date().toISOString(),
+          });
+        }
       }
     }
 
@@ -537,12 +543,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const combinedOrders = [...virtualOrders, ...orders];
     combinedOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    setCachedUserOrders(user.id, combinedOrders).catch(() => {});
+    setCachedUserOrders(user.id, combinedOrders, isHistoryQuery).catch(() => {});
 
     return NextResponse.json({ orders: combinedOrders, page, limit });
   } catch (err) {
     console.error('[GET /api/orders]', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ orders: [], page: 1, limit: 50 }, { status: 200 });
   }
 }
 
